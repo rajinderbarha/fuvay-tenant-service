@@ -3335,6 +3335,10 @@ export interface DashboardAlert {
   scheduled_time_window?: string | null;
   created_at?: string;
   assignment_deadline_at?: string;
+  assignment_required?: boolean;
+  assignment_overdue?: boolean;
+  assignment_window_minutes?: number;
+  urgent_assignment?: boolean;
 }
 
 export interface DashboardAlerts {
@@ -3379,6 +3383,26 @@ export interface EligibleStaffRecord {
   blocked_reasons?: string[];
 }
 
+export interface MaskedContact {
+  job_id: string;
+  customer_display?: string;
+  contact_display?: string;
+  contact_role?: "provider" | "technician";
+  phone_number_visible: false;
+  phone_number_policy: string;
+  can_call: boolean;
+  cannot_call_reason: string | null;
+  connected_before: boolean;
+  last_call?: { status: string; created_at?: string | null } | null;
+}
+
+export interface MaskedCallResult {
+  id: string;
+  job_id: string;
+  status: "requested" | "ringing" | "connected" | "completed" | "failed" | "no_answer" | "busy" | "expired";
+  direction: string;
+}
+
 // ── Sprint 20: Provider Job Assignment API ───────────────────────────────────
 export const serviceJobAssignmentApi = {
   listAssignable: (params?: { assignment_status?: string; limit?: number }) => {
@@ -3393,6 +3417,12 @@ export const serviceJobAssignmentApi = {
     apiFetch<{ job: ServiceJobRecord; current_assignment: ServiceJobAssignmentRecord | null }>(
       `/v1/provider/service-jobs/${jobId}/assignment-context`
     ),
+  getContact: (jobId: string) =>
+    apiFetch<MaskedContact>(`/v1/staff/service-jobs/${jobId}/contact`),
+  callCustomer: (jobId: string) =>
+    apiFetch<MaskedCallResult>(`/v1/staff/service-jobs/${jobId}/call`, {
+      method: "POST", body: "{}",
+    }),
   getEligibleStaff: (jobId: string) =>
     apiFetch<{ job_id: string; eligible_staff: EligibleStaffRecord[]; blocked_staff: EligibleStaffRecord[] }>(
       `/v1/provider/service-jobs/${jobId}/eligible-staff`
@@ -4688,6 +4718,8 @@ export const homeServiceStaffJobsApi = {
   list: () => apiFetch<{ jobs: HomeServiceJobItem[]; count: number }>("/v1/staff/service-jobs"),
   get: async (jobId: string) =>
     unwrapStaffJobResult<HomeServiceJobDetail>(await apiFetch<unknown>(`/v1/staff/service-jobs/${jobId}`)),
+  getContact: (jobId: string) => apiFetch<MaskedContact>(`/v1/staff/service-jobs/${jobId}/contact`),
+  callCustomer: (jobId: string) => apiFetch<MaskedCallResult>(`/v1/staff/service-jobs/${jobId}/call`, { method: "POST", body: "{}" }),
   accept: async (jobId: string) =>
     unwrapStaffJobResult<{ job_id: string; status: string }>(
       await apiFetch<unknown>(`/v1/staff/service-jobs/${jobId}/accept`, { method: "POST", body: "{}" })),

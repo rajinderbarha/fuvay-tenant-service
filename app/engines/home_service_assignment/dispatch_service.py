@@ -205,16 +205,6 @@ class HomeServiceDispatchProjectionService:
             get_home_services_operations_policy,
         )
         operations_policy = await get_home_services_operations_policy(self.db)
-        if operations_policy.assignment_timeout_enabled:
-            offer_cutoff = _utcnow() - timedelta(
-                minutes=operations_policy.assignment_timeout_minutes
-            )
-            unassigned_conditions.append(or_(
-                ServiceJob.status.notin_(("pending_assignment", "accepted")),
-                func.coalesce(
-                    ServiceJob.provider_offer_started_at, ServiceJob.created_at,
-                ) > offer_cutoff,
-            ))
         if technician_id:
             # A job cannot be both unassigned and assigned to the selected technician.
             unassigned_conditions.append(ServiceJob.id.is_(None))
@@ -444,17 +434,13 @@ class HomeServiceDispatchProjectionService:
             get_home_services_operations_policy,
         )
         operations_policy = await get_home_services_operations_policy(self.db)
-        offered_at = job.provider_offer_started_at or job.created_at
-        if offered_at and offered_at.tzinfo is None:
-            offered_at = offered_at.replace(tzinfo=timezone.utc)
-        offer_expired = bool(
+        from app.engines.home_service_assignment.assignment_deadlines import for_job
+        assignment_deadline = for_job(job, operations_policy, _utcnow())
+        assignment_overdue = bool(
             operations_policy.assignment_timeout_enabled
             and job.assigned_staff_id is None
             and job.status in ("pending_assignment", "accepted")
-            and offered_at
-            and _utcnow() >= offered_at + timedelta(
-                minutes=operations_policy.assignment_timeout_minutes
-            )
+            and assignment_deadline.overdue
         )
         booking = await self._load_booking_row(job.booking_id)
         service_name = await self._master_service_name(job.offering_id) if job.offering_id else None
@@ -511,7 +497,7 @@ class HomeServiceDispatchProjectionService:
             )
 
         actions: list[str] = []
-        if job.status not in TERMINAL_STATUSES and not offer_expired:
+        if job.status not in TERMINAL_STATUSES:
             if current_assignment:
                 actions.append("unassign")
                 if eligible_out:
@@ -540,7 +526,12 @@ class HomeServiceDispatchProjectionService:
                 **self._job_summary(job, booking),
                 "master_service_name": service_name,
                 "customer_health": customer_health,
-                "offer_expired": offer_expired,
+                "offer_expired": False,
+                "assignment_overdue": assignment_overdue,
+                "assignment_deadline_at": (
+                    assignment_deadline.deadline.isoformat()
+                    if assignment_deadline.deadline else None
+                ),
             },
             "eligible_technicians":  eligible_out,
             "excluded_technicians":  excluded_out,

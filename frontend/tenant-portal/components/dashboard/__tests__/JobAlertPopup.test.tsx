@@ -13,6 +13,7 @@ const newJob: DashboardAlert = {
   title: "New booking received", message: "AC service has been booked for today.",
   scheduled_date: "2026-09-02", scheduled_time_window: "14:00-16:00",
   assignment_deadline_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+  assignment_required: true, assignment_overdue: false,
 };
 const delayedJob: DashboardAlert = {
   job_id: "job-late", label: "FUV-1001", city: "Ludhiana", tone: "warning",

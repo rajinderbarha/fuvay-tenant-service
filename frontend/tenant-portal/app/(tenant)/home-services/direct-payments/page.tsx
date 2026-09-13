@@ -116,6 +116,8 @@ function DirectPaymentsPageInner() {
    *  declaration and rejects a write against a stale version, so the read
    *  version is sent back as `expected_version`. */
   const [editOpen, setEditOpen] = useState(false);
+  const [disputeOpen, setDisputeOpen] = useState(false);
+  const [disputeDescription, setDisputeDescription] = useState("");
   const [editForm, setEditForm] = useState<{
     amount: string; method: string; reference_id: string; note: string;
     correction_reason: string; difference_reason: string;
@@ -174,6 +176,8 @@ function DirectPaymentsPageInner() {
   }, []);
 
   useEffect(() => {
+    setDisputeOpen(false);
+    setDisputeDescription("");
     if (!paymentId) { setDetail(null); setDetailError(null); return; }
     if (paymentId.startsWith("job:")) {
       setDetail(null);
@@ -222,6 +226,14 @@ function DirectPaymentsPageInner() {
       difference_reason: editForm.difference_reason.trim() || undefined,
     }), "Declaration corrected. The customer sees the updated amount.");
     if (saved) setEditOpen(false);
+  }
+
+  async function submitDispute() {
+    if (!detail || disputeDescription.trim().length < 10) return;
+    const saved = await run("dispute", () => homeServicesDirectPaymentsApi.openDispute(
+      detail.record.id, disputeDescription.trim()),
+    "Payment dispute opened in the Complaints & Resolution Center.");
+    if (saved) { setDisputeOpen(false); setDisputeDescription(""); }
   }
 
   function doExport() {
@@ -429,7 +441,7 @@ function DirectPaymentsPageInner() {
             itemLabel="payments" alwaysShow />}
         </section>
 
-        <Modal open={!!paymentId && !editOpen} onClose={() => setParam({ payment_id: null })} title="Payment details" size="xl">
+        <Modal open={!!paymentId && !editOpen && !disputeOpen} onClose={() => setParam({ payment_id: null })} title="Payment details" size="xl">
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {notice && <p role={notice.kind === "err" ? "alert" : "status"} style={{ color: notice.kind === "err" ? "var(--danger-text)" : "var(--success-text)", fontSize: 13 }}>{notice.text}</p>}
           {detailLoading ? (
@@ -450,10 +462,7 @@ function DirectPaymentsPageInner() {
               onRemind={() => run("remind",
                 () => homeServicesDirectPaymentsApi.remind(detail.record.id),
                 "Confirmation reminder sent through Fuvay.")}
-              onDispute={() => run("dispute",
-                () => homeServicesDirectPaymentsApi.openDispute(detail.record.id,
-                  "The customer reports a different amount for this direct payment."),
-                "Payment dispute opened in the Complaints & Resolution Center.")}
+              onDispute={() => { setNotice(null); setDisputeDescription(""); setDisputeOpen(true); }}
               onEdit={() => {
                 const pd = detail.provider_declaration ?? {};
                 setEditForm({
@@ -475,6 +484,25 @@ function DirectPaymentsPageInner() {
             </Card>
           )}
         </div>
+        </Modal>
+        <Modal open={disputeOpen && !!detail} onClose={() => setDisputeOpen(false)} title="Open payment dispute">
+          {detail && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--text-secondary)" }}>
+              Explain the actual payment discrepancy for {detail.record.job_ref}. The reason is recorded in the complaint case and shared with the customer.
+              {detail.record.status === "confirmed" && " Both sides previously confirmed this payment; explain what new information changed."}
+            </p>
+            <label htmlFor="payment-dispute-description" style={dpLbl()}>What happened? (at least 10 characters)</label>
+            <textarea id="payment-dispute-description" rows={4} maxLength={2000}
+              value={disputeDescription} onChange={e => setDisputeDescription(e.target.value)}
+              placeholder="For example, describe the amount or method recorded and what you believe was actually paid."
+              style={{ ...dpField(), height: "auto", minHeight: 96, padding: 10, resize: "vertical" }}/>
+            {notice?.kind === "err" && <p role="alert" style={{ margin: 0, color: "var(--danger-text)", fontSize: 12 }}>{notice.text}</p>}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Btn variant="ghost" onClick={() => setDisputeOpen(false)}>Cancel</Btn>
+              <Btn variant="danger" loading={action === "dispute"}
+                disabled={disputeDescription.trim().length < 10} onClick={submitDispute}>Open dispute</Btn>
+            </div>
+          </div>}
         </Modal>
       </div>
 
@@ -889,12 +917,14 @@ function DetailPane({ d, busy, onRemind, onDispute, onEdit }: {
           <AlertTriangle size={15} style={{ color: "var(--danger-text)", flexShrink: 0, marginTop: 2 }}/>
           <div>
             <p style={{ fontSize: 12.5, color: "var(--danger-text)", margin: 0, fontWeight: 700 }}>
-              If customer reports another amount, open a payment dispute.
+              {d.dispute ? "Payment dispute is being handled as a complaint case."
+                : "Have a payment discrepancy? Open a case with the specific details."}
             </p>
             <p style={{ fontSize: 11, color: "var(--danger-text)", opacity: 0.85, margin: "2px 0 0" }}>
               Disputes go to Complaints &amp; Resolution Center.
               {d.dispute ? ` Linked: ${d.dispute.complaint_number ?? d.dispute.complaint_id} (${d.dispute.status}).` : ""}
             </p>
+            {d.dispute?.view_path && <a href={d.dispute.view_path} style={{ color: "var(--danger-text)", fontSize: 12, fontWeight: 700 }}>Open complaint case</a>}
           </div>
         </div>
         <Btn variant="danger" icon={<ShieldAlert size={14}/>} onClick={onDispute}

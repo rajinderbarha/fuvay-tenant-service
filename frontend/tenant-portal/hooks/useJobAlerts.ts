@@ -80,8 +80,9 @@ export function useJobAlerts(): JobAlertsState {
       setNewTotal(res.new_job_total ?? 0);
       setDelayedTotal(res.delayed_total ?? 0);
 
+      const assignmentIds = new Set((res.new_jobs ?? []).map(alert => alert.job_id));
       const all = [...(res.delayed_jobs ?? []), ...(res.new_jobs ?? [])];
-      setPending(all.filter(alert => alert.tone === "success"
+      setPending(all.filter(alert => assignmentIds.has(alert.job_id)
         ? (snoozedOffersRef.current.get(alert.job_id) ?? 0) <= Date.now()
         : !seenRef.current.has(alertKey(alert))));
     } catch {
@@ -100,7 +101,7 @@ export function useJobAlerts(): JobAlertsState {
     setPending(current => {
       const seen = new Set(seenRef.current);
       for (const alert of current) {
-        if (alert.tone === "success") {
+        if (alert.assignment_required) {
           snoozedOffersRef.current.set(alert.job_id, Date.now() + OFFER_SNOOZE_MS);
         } else {
           seen.add(alertKey(alert));

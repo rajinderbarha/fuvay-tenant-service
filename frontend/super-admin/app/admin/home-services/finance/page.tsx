@@ -484,7 +484,10 @@ function MonetizationTab() {
       provider_health_score_max_age_days: 30,
       provider_health_max_effective_percentage: "25",
       assignment_timeout_enabled: true,
-      assignment_timeout_minutes: 15,
+      assignment_timeout_minutes: 30,
+      urgent_assignment_timeout_minutes: 10,
+      urgent_assignment_threshold_minutes: 120,
+      assignment_auto_assign_enabled: true,
       customer_reschedule_limit: 3,
       arrival_verification_enabled: true,
       arrival_radius_meters: 250,
@@ -737,7 +740,7 @@ function MonetizationTab() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
               <KV label="SLA penalty" value={current?.sla_breach_hours != null ? `${money(current.sla_penalty_amount ?? 0)} per day` : "Disabled"} />
               <KV label="SLA final day" value={current?.sla_breach_hours != null ? String(current.sla_penalty_max_days ?? 3) : "—"} />
-              <KV label="Assignment timeout" value={current?.assignment_timeout_enabled === false ? "Disabled" : `${current?.assignment_timeout_minutes ?? 15} min`} />
+              <KV label="Assignment timeout" value={current?.assignment_timeout_enabled === false ? "Disabled" : `${current?.assignment_timeout_minutes ?? 30} min (urgent ${current?.urgent_assignment_timeout_minutes ?? 10} min)`} />
               <KV label="Customer reschedules" value={String(current?.customer_reschedule_limit ?? 3)} />
               <KV label="Arrival GPS radius" value={current?.arrival_verification_enabled === false ? "Disabled" : `${current?.arrival_radius_meters ?? 250} m`} />
               <KV label="False-arrival penalty" value={current?.false_arrival_auto_close === false ? "Close disabled" : money(current?.false_arrival_penalty_amount ?? 150)} />
@@ -1220,15 +1223,22 @@ function MonetizationTab() {
               Assignment &amp; customer rescheduling
             </label>
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
-              Reassign an unstaffed job after the timeout; if no eligible alternative exists, close it.
+              Keep the confirmed provider and price fixed. After the deadline, assign the least-loaded eligible technician from that provider.
             </p>
             <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <input type="checkbox" checked={form.assignment_timeout_enabled !== false}
                 onChange={e => setForm({ ...form, assignment_timeout_enabled: e.target.checked })} />
-              Enable automatic provider reassignment
+              Enable technician-assignment deadlines
+            </label>
+            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <input type="checkbox" checked={form.assignment_auto_assign_enabled !== false}
+                onChange={e => setForm({ ...form, assignment_auto_assign_enabled: e.target.checked })} />
+              Auto-assign the least-loaded eligible technician after deadline
             </label>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
-              <div><label style={{ fontSize: 11 }}>Assignment timeout (minutes)</label><Input value={String(form.assignment_timeout_minutes ?? 15)} onChange={v => setForm({ ...form, assignment_timeout_minutes: v === "" ? 15 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Assignment timeout (minutes) — normal</label><Input value={String(form.assignment_timeout_minutes ?? 30)} onChange={v => setForm({ ...form, assignment_timeout_minutes: v === "" ? 30 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Urgent assignment window (minutes)</label><Input value={String(form.urgent_assignment_timeout_minutes ?? 10)} onChange={v => setForm({ ...form, urgent_assignment_timeout_minutes: v === "" ? 10 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Urgent when visit starts within (minutes)</label><Input value={String(form.urgent_assignment_threshold_minutes ?? 120)} onChange={v => setForm({ ...form, urgent_assignment_threshold_minutes: v === "" ? 120 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Maximum customer reschedules</label><Input value={String(form.customer_reschedule_limit ?? 3)} onChange={v => setForm({ ...form, customer_reschedule_limit: v === "" ? 3 : Number(v) })} /></div>
             </div>
           </div>
@@ -1313,7 +1323,7 @@ function MonetizationTab() {
                 { step: "provider" as PolicyStep, label: "Provider charge", value: form.provider_model === "PERCENTAGE_COMMISSION" ? `${form.provider_percentage ?? "—"}% commission` : form.provider_model === "COMPLETION_CREDITS" ? `${form.provider_credit_units ?? "—"} credits/job` : form.provider_model === "FIXED_COMPLETION_CHARGE" ? `₹${Number(form.provider_fixed_amount_minor ?? 0) / 100}/job` : "None" },
                 { step: "customer" as PolicyStep, label: "Platform charge", value: form.customer_fee_model === "FIXED" ? `₹${Number(form.customer_fee_fixed_amount_minor ?? 0) / 100}` : form.customer_fee_model?.startsWith("PERCENTAGE") ? `${form.customer_fee_percentage ?? "—"}%` : "None" },
                 { step: "sla" as PolicyStep, label: "SLA penalty", value: form.sla_breach_hours == null ? "Disabled" : `${form.sla_penalty_type === "percentage" ? `${form.sla_penalty_percentage ?? "—"}%` : `₹${form.sla_penalty_amount ?? "—"}`} × ${form.sla_penalty_max_days ?? 3} days` },
-                { step: "operations" as PolicyStep, label: "Assignment window", value: form.assignment_timeout_enabled === false ? "Disabled" : `${form.assignment_timeout_minutes ?? 15} minutes` },
+                { step: "operations" as PolicyStep, label: "Assignment window", value: form.assignment_timeout_enabled === false ? "Disabled" : `${form.assignment_timeout_minutes ?? 30} min / urgent ${form.urgent_assignment_timeout_minutes ?? 10} min` },
                 { step: "operations" as PolicyStep, label: "Verified arrival", value: form.arrival_verification_enabled === false ? "Disabled" : `${form.arrival_radius_meters ?? 250} m radius` },
                 { step: "trust" as PolicyStep, label: "Health suspension", value: form.health_suspension_threshold == null ? "Disabled" : `Below ${form.health_suspension_threshold}` },
               ].map(item => <button key={`${item.step}-${item.label}`} type="button" onClick={() => goToPolicyStep(item.step)}

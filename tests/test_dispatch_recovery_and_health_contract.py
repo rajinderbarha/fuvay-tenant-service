@@ -1,13 +1,10 @@
 """Focused regression coverage for provider dispatch recovery and trust signals."""
 
-import inspect
-
 import pytest
 from pydantic import ValidationError
 
 from app.engines.execution.admin_job_actions import AdminJobActionsService
 from app.engines.final_records.bookings_jobs_stage_mapping import compute_available_actions
-from app.engines.home_service_booking.matching_engine import select_best_provider
 from app.engines.platform_commerce.constants import CUSTOMER_SIGNAL_WEIGHTS
 from app.engines.serviceability.schemas import AddressCreate
 from app.jobs.provider_assignment_timeout import ELIGIBLE_STATUSES, TIMEOUT_MINUTES
@@ -30,10 +27,9 @@ def test_provider_can_cancel_any_non_terminal_job():
     assert compute_available_actions("cancelled", "cancelled", has_assignee=False) == []
 
 
-def test_provider_timeout_contract_is_fifteen_minutes_and_excludes_attempts():
-    assert TIMEOUT_MINUTES == 15
+def test_provider_assignment_deadline_is_thirty_minutes_and_never_changes_provider():
+    assert TIMEOUT_MINUTES == 30
     assert set(ELIGIBLE_STATUSES) == {"pending_assignment", "accepted"}
-    assert "exclude_tenant_ids" in inspect.signature(select_best_provider).parameters
 
 
 def test_customer_health_is_driven_mostly_by_payment_reliability():

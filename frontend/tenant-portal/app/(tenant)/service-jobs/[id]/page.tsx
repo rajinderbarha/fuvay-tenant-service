@@ -5,7 +5,7 @@ import { serviceJobAssignmentApi, reviewsApi } from "../../../../lib/api";
 import type { EligibleStaffRecord, WeatherRescheduleVerdict } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 import { SlotPicker } from "../../../../components/dashboard/SlotPicker";
-import { CheckCircle, XCircle, Clock, RefreshCw, Users, Calendar } from "lucide-react";
+import { CheckCircle, XCircle, Clock, RefreshCw, Users, Calendar, PhoneCall } from "lucide-react";
 
 type AssignVariant = "default"|"success"|"warning"|"danger"|"info"|"muted";
 
@@ -128,6 +128,7 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
   const ctx      = useApi(useCallback(() => serviceJobAssignmentApi.getContext(id), [id]));
   const staff    = useApi(useCallback(() => serviceJobAssignmentApi.getEligibleStaff(id), [id]));
   const timeline = useApi(useCallback(() => serviceJobAssignmentApi.getTimeline(id), [id]));
+  const contact  = useApi(useCallback(() => serviceJobAssignmentApi.getContact(id), [id]));
 
   const [showAssign,   setShowAssign]   = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -145,6 +146,9 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
   const doAssign   = useAction(serviceJobAssignmentApi.assign,   { onSuccess: () => { setShowAssign(false);   ctx.refetch(); timeline.refetch(); } });
   const doCancel   = useAction(serviceJobAssignmentApi.cancelAssignment, { onSuccess: () => { setShowCancel(false);   ctx.refetch(); timeline.refetch(); } });
   const doSchedule = useAction(serviceJobAssignmentApi.schedule, { onSuccess: () => { setShowSchedule(false); ctx.refetch(); timeline.refetch(); } });
+  const doCall = useAction(serviceJobAssignmentApi.callCustomer, {
+    onSuccess: () => { contact.refetch(); timeline.refetch(); },
+  });
 
   const job        = ctx.data?.job;
   const assignment = ctx.data?.current_assignment;
@@ -221,6 +225,11 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
         {/* Actions */}
         <Card>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
+            <Btn variant="primary" size="sm" loading={doCall.loading}
+                 disabled={contact.loading || !contact.data?.can_call}
+                 onClick={() => doCall.execute(id)}>
+              <PhoneCall size={14} style={{ marginRight: 4, display: "inline" }} /> Call customer
+            </Btn>
             {canAssign && (
               <Btn variant="primary" size="sm" onClick={() => { setShowAssign(true); staff.refetch(); }}>
                 <Users size={14} style={{ marginRight: 4, display: "inline" }} />
@@ -241,6 +250,17 @@ export default function ServiceJobDetailPage({ params }: { params: Promise<{ id:
               <RefreshCw size={14} style={{ marginRight: 4, display: "inline" }} /> Refresh
             </Btn>
           </div>
+          {doCall.error && <p style={{ color: "var(--danger)", fontSize: 12, marginTop: 8 }}>{doCall.error}</p>}
+          {contact.data?.last_call && !doCall.error && (
+            <p style={{ color: "var(--text-secondary)", fontSize: 12, marginTop: 8 }}>
+              Last tracked call: {contact.data.last_call.status.replaceAll("_", " ")}
+            </p>
+          )}
+          {!contact.loading && !contact.data?.can_call && contact.data?.cannot_call_reason && (
+            <p style={{ color: "var(--text-secondary)", fontSize: 12, marginTop: 8 }}>
+              Platform calling is currently unavailable for this job.
+            </p>
+          )}
         </Card>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>

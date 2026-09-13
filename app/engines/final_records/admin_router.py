@@ -380,6 +380,18 @@ async def admin_get_job(job_id: uuid.UUID, r: Request,
             }
     data["technician"] = technician
 
+    # Auditable call-button history. A row is created when the platform call
+    # is requested; later telephony callbacks prove ringing/connection/end.
+    # The session projection deliberately contains neither party's number.
+    from app.engines.masked_calling.models import MaskedCallSession
+    calls = (await db.execute(
+        select(MaskedCallSession)
+        .where(MaskedCallSession.job_id == job.id)
+        .order_by(MaskedCallSession.created_at.desc())
+        .limit(20)
+    )).scalars().all()
+    data["call_history"] = [call.to_dict() for call in calls]
+
     return ok(data, _RID(r), "final_records")
 
 

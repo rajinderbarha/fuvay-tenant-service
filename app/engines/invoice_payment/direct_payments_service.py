@@ -50,6 +50,7 @@ from app.engines.invoice_payment.direct_payments_constants import (
     ERR_DP_INVALID_AMOUNT, ERR_DP_INVALID_EVIDENCE_TYPE, ERR_DP_INVALID_METHOD,
     ERR_DP_JOB_NOT_FOUND, ERR_DP_LOCKED_AFTER_CONFIRM, ERR_DP_LOCKED_BY_DISPUTE,
     ERR_DP_NO_APPROVED_ESTIMATE, ERR_DP_NOT_FOUND, ERR_DP_REASON_REQUIRED,
+    ERR_DP_DISPUTE_REASON_REQUIRED,
     ERR_DP_REMINDER_RATE_LIMITED, ERR_DP_STALE_VERSION, ERR_DP_WORK_NOT_DONE,
     EVT_DP_CONFIRMATION_REQUESTED, EVT_DP_CONFIRMED_BY_CUSTOMER,
     EVT_DP_MISMATCH_REPORTED,
@@ -319,7 +320,7 @@ class DirectPaymentsService:
     # ── Projections ─────────────────────────────────────────────────────────
 
     async def _row(self, pay: ServicePaymentRecord, *, job=None, booking=None,
-                   invoice=None, service_name=None) -> dict:
+                   invoice=None, service_name=None, dispute_case_status=None) -> dict:
         job = job if job is not None else await self._job(pay.job_id)
         status = self.derive_status(pay)
         return {
@@ -351,6 +352,7 @@ class DirectPaymentsService:
             "status":           status,
             "status_label":     STATUS_LABELS.get(status, status),
             "dispute_complaint_id": str(pay.dispute_complaint_id) if pay.dispute_complaint_id else None,
+            "dispute_case_status": dispute_case_status,
             "declaration_version": pay.declaration_version,
             "reminder_count":   pay.reminder_count,
             "last_reminder_at": _iso(pay.last_reminder_at),
@@ -409,6 +411,7 @@ class DirectPaymentsService:
             "status":           RS_AWAITING_PROVIDER,
             "status_label":     STATUS_LABELS[RS_AWAITING_PROVIDER],
             "dispute_complaint_id": None,
+            "dispute_case_status": None,
             "declaration_version": 0,
             "reminder_count":   0,
             "last_reminder_at": None,
@@ -471,9 +474,23 @@ class DirectPaymentsService:
         jobs = [j for j in (await self.db.execute(jq)).scalars().all()
                 if j.id not in declared_job_ids]
 
+        # Keep the payment's disputed history, but do not leave a resolved
+        # complaint in the provider's actionable queue indefinitely.
+        from app.engines.complaints.models import CustomerComplaint
+        dispute_ids = {pay.dispute_complaint_id for pay, _ in pay_rows
+                       if pay.dispute_complaint_id}
+        dispute_statuses = dict((await self.db.execute(
+            select(CustomerComplaint.id, CustomerComplaint.status).where(
+                CustomerComplaint.id.in_(dispute_ids),
+                CustomerComplaint.tenant_id == self.tenant_id,
+            )
+        )).all()) if dispute_ids else {}
+
         rows: list[dict] = []
         for pay, job in pay_rows:
-            rows.append(await self._row(pay, job=job))
+            rows.append(await self._row(
+                pay, job=job,
+                dispute_case_status=dispute_statuses.get(pay.dispute_complaint_id)))
         for job in jobs:
             rows.append(await self._awaiting_provider_row(job))
 
@@ -489,8 +506,7 @@ class DirectPaymentsService:
         summary = self._summary(rows)
 
         tab_counts = {
-            "needs_action": sum(1 for r in rows if r["status"] in
-                                (RS_AWAITING_PROVIDER, RS_MISMATCHED, RS_DISPUTED)),
+            "needs_action": sum(1 for r in rows if self._needs_action(r)),
             "all":       len(rows),
             "awaiting_provider": sum(1 for r in rows if r["status"] == RS_AWAITING_PROVIDER),
             "awaiting_customer": sum(1 for r in rows if r["status"] == RS_AWAITING_CUSTOMER),
@@ -501,8 +517,7 @@ class DirectPaymentsService:
 
         if status and status != "all":
             if status == "needs_action":
-                rows = [r for r in rows if r["status"] in
-                        (RS_AWAITING_PROVIDER, RS_MISMATCHED, RS_DISPUTED)]
+                rows = [r for r in rows if self._needs_action(r)]
             else:
                 rows = [r for r in rows if r["status"] == status]
 
@@ -534,6 +549,16 @@ class DirectPaymentsService:
                        "Customers pay your business directly."},
             "generated_at": _utcnow().isoformat(),
         }
+
+    @staticmethod
+    def _needs_action(row: dict) -> bool:
+        if row["status"] not in (RS_AWAITING_PROVIDER, RS_MISMATCHED, RS_DISPUTED):
+            return False
+        if row["status"] == RS_DISPUTED and row.get("dispute_case_status") in {
+            "resolved", "closed", "cancelled", "rejected", "settled",
+        }:
+            return False
+        return True
 
     def _summary(self, rows: list[dict]) -> dict:
         def agg(pred):
@@ -600,6 +625,7 @@ class DirectPaymentsService:
                         "complaint_type": c.complaint_type,
                         "created_at":     _iso(c.created_at),
                         "resolution_center": "Complaints & Resolution Center",
+                        "view_path": f"/home-services/complaints/{c.id}",
                     }
             except Exception:
                 dispute = {"complaint_id": str(pay.dispute_complaint_id),
@@ -1072,6 +1098,16 @@ class DirectPaymentsService:
         if pay.dispute_complaint_id:
             raise _err(ERR_DP_DISPUTE_EXISTS,
                        "A payment dispute is already open for this record.", 409)
+        if self.derive_status(pay) not in (RS_AWAITING_CUSTOMER, RS_MISMATCHED, RS_CONFIRMED):
+            raise _err(ERR_DP_INVALID_ACTION,
+                       "A provider declaration is needed before opening a payment dispute.", 409)
+        description = (description or "").strip()
+        if len(description) < 10:
+            raise _err(
+                ERR_DP_DISPUTE_REASON_REQUIRED,
+                "Describe the payment discrepancy in at least 10 characters.",
+                422,
+            )
         job = await self._job(pay.job_id)
 
         # Canonical dispute system -- Complaints & Resolution Center. No
@@ -1080,11 +1116,16 @@ class DirectPaymentsService:
         creation_error = None
         try:
             from app.engines.complaints.complaint_service import ComplaintService
-            from app.engines.complaints.constants import RECORD_SERVICE_JOB
+            from app.engines.complaints.constants import (
+                ACTOR_CUSTOMER, ACTOR_PROVIDER, RECORD_SERVICE_JOB,
+            )
+            complaint_actor_type = (
+                ACTOR_CUSTOMER if actor_type == "customer" else ACTOR_PROVIDER
+            )
             c = await ComplaintService().create_complaint(
                 self.db,
                 customer_id=pay.customer_id,
-                category_id=getattr(job, "category_id", None),
+                category_id=getattr(job, "category_id", None) or uuid.UUID(int=0),
                 record_type=RECORD_SERVICE_JOB,
                 record_id=pay.job_id,
                 complaint_type="payment_issue",
@@ -1093,6 +1134,10 @@ class DirectPaymentsService:
                 offering_id=getattr(job, "offering_id", None),
                 title=f"Direct payment dispute — {getattr(job, 'job_number', '')}",
                 request_id=self.request_id,
+                internal_payment_dispute=True,
+                created_by_actor_type=complaint_actor_type,
+                created_by_actor_user_id=uuid.UUID(str(actor_user_id)),
+                commit=False,
             )
             complaint_id = c.id
         except Exception as exc:
@@ -1115,6 +1160,22 @@ class DirectPaymentsService:
                                    "payout_created": False, "settlement_created": False},
                         reason=description)
         await self.db.commit()
+        if actor_type != "customer":
+            # External messaging must happen only after the complaint/payment
+            # transaction commits. An in-app notification was persisted with
+            # the case and remains the fallback if the channel window closes.
+            try:
+                from app.engines.complaints.notifications import notify_customer_complaint_channel
+                sent = await notify_customer_complaint_channel(
+                    self.db, c,
+                    text=(f"Your provider opened payment review {c.complaint_number}. "
+                          "Please review and respond in the complaint case."),
+                    section_title="Payment review",
+                )
+                if sent:
+                    await self.db.commit()
+            except Exception:
+                await self.db.rollback()
         return await self.get_detail(pay.id)
 
     # ── Customer side (section 10) ──────────────────────────────────────────
@@ -1132,6 +1193,9 @@ class DirectPaymentsService:
             return {"payment_id": str(pay.id), "status": self.derive_status(pay),
                     "customer_confirmed": True, "idempotent": True,
                     "confirmed_at": _iso(pay.customer_confirmed_at)}
+        if pay.dispute_complaint_id:
+            raise _err(ERR_DP_LOCKED_BY_DISPUTE,
+                       "This payment is under review. Respond in the linked complaint case.", 409)
         now = _utcnow()
         pay.customer_confirmed = True
         pay.customer_confirmed_at = now
@@ -1172,6 +1236,9 @@ class DirectPaymentsService:
             raise _err(ERR_DP_NOT_FOUND, "Direct payment record not found.", 404)
         if str(pay.customer_id) != str(customer_id):
             raise _err(ERR_DP_ACCESS_DENIED, "This payment record is not yours.", 403)
+        if pay.dispute_complaint_id:
+            raise _err(ERR_DP_LOCKED_BY_DISPUTE,
+                       "This payment is under review. Respond in the linked complaint case.", 409)
         now = _utcnow()
         pay.customer_confirmed = False
         pay.customer_confirmation_action = action

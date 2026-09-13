@@ -357,7 +357,7 @@ class AuthService:
         ).order_by(UserSession.last_active_at.desc(), UserSession.id.desc()).offset(maximum))
         for stale in result.scalars().all():
             stale.revoked_at = utcnow()
-            stale.revoke_reason = "Concurrent session limit enforced"
+            stale.revocation_reason = "Concurrent session limit enforced"
             try:
                 await self.redis.setex(
                     f"serviceos:session:revoked:{stale.id}",

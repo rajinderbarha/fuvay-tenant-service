@@ -74,12 +74,16 @@ class TestNewJobs:
         assert result["new_job_total"] == 0
 
     @pytest.mark.asyncio
-    async def test_only_unexpired_unassigned_offers_are_new(self):
+    async def test_overdue_unassigned_jobs_stay_visible_and_become_urgent(self):
         old = job(status="pending_assignment",
                   created_at=NOW - dt.timedelta(minutes=16))
         recent = job(status="pending_assignment", created_at=NOW - dt.timedelta(minutes=5))
         result = await alerts_for([old, recent])
-        assert result["new_job_total"] == 1
+        assert result["new_job_total"] == 2
+        overdue = next(item for item in result["new_jobs"] if item["job_id"] == str(old.id))
+        assert overdue["assignment_required"] is True
+        assert overdue["assignment_overdue"] is True
+        assert overdue["tone"] == TONE_URGENT
 
     @pytest.mark.asyncio
     async def test_polling_keeps_an_actionable_offer_visible(self):

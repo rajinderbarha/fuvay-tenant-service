@@ -82,7 +82,6 @@ class SecurityAdminService:
     # ─────────────────────────────────────────────────────────────────────
 
     async def get_security_overview(self) -> dict:
-        idle_cutoff = utcnow() - timedelta(minutes=int(await self._policy_value("idle_timeout_minutes", 30)))
         open_threats_r = await self.db.execute(select(func.count(SuspiciousActivityLog.id)).where(
             SuspiciousActivityLog.status.in_(("open", "investigating"))))
         open_threats = open_threats_r.scalar_one_or_none() or 0
@@ -94,8 +93,7 @@ class SecurityAdminService:
 
         active_sessions_r = await self.db.execute(select(func.count(UserSession.id)).where(
             UserSession.revoked_at.is_(None),
-            or_(UserSession.expires_at.is_(None), UserSession.expires_at > utcnow()),
-            UserSession.last_active_at > idle_cutoff))
+            or_(UserSession.expires_at.is_(None), UserSession.expires_at > utcnow())))
         active_sessions = active_sessions_r.scalar_one_or_none() or 0
 
         blocked_ips_r = await self.db.execute(select(func.count(IPBlocklistEntry.id)).where(
@@ -121,7 +119,8 @@ class SecurityAdminService:
         failed_logins_24h = failed_logins_24h_r.scalar_one_or_none() or 0
 
         high_risk_audit_24h_r = await self.db.execute(select(func.count(PlatformAuditLog.id)).where(
-            PlatformAuditLog.is_high_risk == True,
+            or_(PlatformAuditLog.is_high_risk.is_(True),
+                PlatformAuditLog.operation.in_(HIGH_RISK_OPERATIONS)),
             PlatformAuditLog.created_at > utcnow() - timedelta(hours=24)))
         high_risk_audit_24h = high_risk_audit_24h_r.scalar_one_or_none() or 0
 
@@ -131,7 +130,8 @@ class SecurityAdminService:
         recent_threats = [self._threat_to_dict(t) for t in recent_threats_r.scalars().all()]
 
         recent_audit_r = await self.db.execute(select(PlatformAuditLog).where(
-            PlatformAuditLog.is_high_risk == True
+            or_(PlatformAuditLog.is_high_risk.is_(True),
+                PlatformAuditLog.operation.in_(HIGH_RISK_OPERATIONS))
         ).order_by(PlatformAuditLog.created_at.desc()).limit(5))
         recent_audit = [self._audit_to_dict(a) for a in recent_audit_r.scalars().all()]
 
@@ -228,11 +228,16 @@ class SecurityAdminService:
     async def update_threat_status(self, threat_id: uuid.UUID, status: str, notes: str | None = None) -> dict:
         if status not in THREAT_STATUSES:
             raise ServiceOSException("VALIDATION_ERROR", f"Invalid status. Valid: {THREAT_STATUSES}")
+        notes = (notes or "").strip()
+        if len(notes) < 5:
+            raise ServiceOSException("VALIDATION_ERROR", "A decision reason of at least 5 characters is required.")
         t = await self._get_threat(threat_id)
         before = {"status": t.status}
         t.status = status
         if status in ("resolved", "false_positive", "ignored"):
             t.resolved_at = utcnow()
+        else:
+            t.resolved_at = None
         await self._audit(f"threat.mark_{status}", str(threat_id), "security_threat",
                            before=before, after={"status": status, "notes": notes})
         return {"threat_id": str(threat_id), "status": status}
@@ -273,10 +278,8 @@ class SecurityAdminService:
         q = select(UserSession, User).join(User, User.id == UserSession.user_id).order_by(
             UserSession.last_active_at.desc(), UserSession.id.desc())
         if active_only:
-            idle_cutoff = utcnow() - timedelta(minutes=int(await self._policy_value("idle_timeout_minutes", 30)))
             q = q.where(UserSession.revoked_at.is_(None),
-                        or_(UserSession.expires_at.is_(None), UserSession.expires_at > utcnow()),
-                        UserSession.last_active_at > idle_cutoff)
+                        or_(UserSession.expires_at.is_(None), UserSession.expires_at > utcnow()))
         if tenant_id: q = q.where(UserSession.tenant_id == tenant_id)
         if role: q = q.where(User.role == role)
         if search:
@@ -301,13 +304,15 @@ class SecurityAdminService:
                 "has_next": has_next, "next_cursor": nc}
 
     def _session_to_dict(self, s: UserSession, u: User) -> dict:
-        is_active = s.revoked_at is None and (s.expires_at is None or s.expires_at > utcnow())
+        status = ("revoked" if s.revoked_at is not None else
+                  "expired" if s.expires_at is not None and s.expires_at <= utcnow()
+                  else "active")
         return {
             "session_id": str(s.id), "user_id": str(s.user_id), "user_email": u.email,
             "user_name": u.full_name, "user_role": u.role, "tenant_id": str(s.tenant_id) if s.tenant_id else None,
             "device_id": s.device_id, "device_name": s.device_name, "device_type": s.device_type,
             "ip_address": s.ip_address, "is_trusted": s.is_trusted, "is_approved": s.is_approved,
-            "status": "active" if is_active else "revoked",
+            "status": status,
             "last_active_at": s.last_active_at.isoformat() if s.last_active_at else None,
             "expires_at": s.expires_at.isoformat() if s.expires_at else None,
             "revoked_at": s.revoked_at.isoformat() if s.revoked_at else None,
@@ -486,9 +491,18 @@ class SecurityAdminService:
             raise ServiceOSException("CONFLICT", f"Entry is already {e.status}.")
         e.status = "revoked"; e.is_active = False
         e.revoked_at = utcnow(); e.revoked_by_user_id = self.actor_id
+        # Redis stores networks, not individual scoped rows. Do not remove a
+        # shared network while another unexpired active scope still uses it.
+        remaining = (await self.db.execute(select(IPBlocklistEntry.id).where(
+            IPBlocklistEntry.ip_or_cidr == e.ip_or_cidr,
+            IPBlocklistEntry.entry_type == e.entry_type,
+            IPBlocklistEntry.status == "active",
+            or_(IPBlocklistEntry.expires_at.is_(None), IPBlocklistEntry.expires_at > utcnow()),
+        ).limit(1))).scalar_one_or_none()
         try:
-            redis_set = REDIS_IP_BLOCKLIST if e.entry_type == "ip" else "serviceos:security:cidr_blocklist"
-            await self.sec.redis.srem(redis_set, e.ip_or_cidr)
+            if remaining is None:
+                redis_set = REDIS_IP_BLOCKLIST if e.entry_type == "ip" else "serviceos:security:cidr_blocklist"
+                await self.sec.redis.srem(redis_set, e.ip_or_cidr)
         except Exception:
             pass
         await self._audit("ip.unblock", str(entry_id), "ip_blocklist_entry", after={"reason": reason})
@@ -614,7 +628,7 @@ class SecurityAdminService:
             "tenant_id": str(a.tenant_id) if a.tenant_id else None,
             "actor_id": str(a.actor_id) if a.actor_id else None,
             "actor_role": a.actor_role, "actor_ip": a.actor_ip,
-            "is_high_risk": a.is_high_risk,
+            "is_high_risk": a.is_high_risk or a.operation in HIGH_RISK_OPERATIONS,
             "before_state": a.before_state, "after_state": a.after_state,
             "created_at": a.created_at.isoformat(),
         }
@@ -630,7 +644,10 @@ class SecurityAdminService:
         if operation: q = q.where(PlatformAuditLog.operation == operation)
         if actor_role: q = q.where(PlatformAuditLog.actor_role == actor_role)
         if tenant_id: q = q.where(PlatformAuditLog.tenant_id == tenant_id)
-        if is_high_risk is not None: q = q.where(PlatformAuditLog.is_high_risk == is_high_risk)
+        if is_high_risk is not None:
+            high_risk = or_(PlatformAuditLog.is_high_risk.is_(True),
+                            PlatformAuditLog.operation.in_(HIGH_RISK_OPERATIONS))
+            q = q.where(high_risk if is_high_risk else ~high_risk)
         if date_from: q = q.where(PlatformAuditLog.created_at >= date_from)
         if date_to: q = q.where(PlatformAuditLog.created_at <= date_to)
         if search:

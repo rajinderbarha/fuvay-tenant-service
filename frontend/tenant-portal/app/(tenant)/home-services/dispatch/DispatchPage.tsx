@@ -1672,9 +1672,9 @@ function AssignmentPanel({
         {error && <Alert tone="danger">{error}</Alert>}
         {options && (
           <>
-            {options.job_context.offer_expired && (
+            {options.job_context.assignment_overdue && (
               <Alert tone="warning">
-                The assignment window has expired. This job is no longer available to assign.
+                Technician assignment is overdue. Assign now; the provider and customer price remain unchanged.
               </Alert>
             )}
             <div>

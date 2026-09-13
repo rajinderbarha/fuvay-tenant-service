@@ -672,6 +672,25 @@ export default function AdminServiceJobDetailPage({ params }: { params: Promise<
               {d.technician?.email && <Field label="Technician Email" value={d.technician.email} />}
             </Section>
 
+            <Section title="Call Tracking">
+              {(d.call_history?.length ?? 0) > 0 ? d.call_history.map(call => (
+                <div key={call.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <strong>{call.initiator_role === "customer" ? "Customer called provider" : "Provider/technician called customer"}</strong>
+                    <Badge variant={call.status === "connected" || call.status === "completed" ? "success" : call.status === "failed" || call.status === "no_answer" ? "danger" : "warning"}>
+                      {humanize(call.status)}
+                    </Badge>
+                  </div>
+                  <span style={{ color: "var(--text-tertiary)" }}>
+                    {call.created_at ? new Date(call.created_at).toLocaleString() : "—"}
+                    {call.duration_seconds != null ? ` · ${call.duration_seconds}s` : ""}
+                  </span>
+                </div>
+              )) : (
+                <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No tracked call attempts for this job.</p>
+              )}
+            </Section>
+
             <Section title="Booking">
               <Field label="Booking Number" value={d.booking?.booking_number} />
               <Field label="Booking Status" value={d.booking?.status} />

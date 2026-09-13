@@ -41,6 +41,8 @@ _DRAFT_FIELDS = {
     "sla_penalty_max", "sla_breachable_statuses", "sla_penalty_max_days",
     # Assignment, rescheduling and verified-arrival enforcement.
     "assignment_timeout_enabled", "assignment_timeout_minutes",
+    "urgent_assignment_timeout_minutes", "urgent_assignment_threshold_minutes",
+    "assignment_auto_assign_enabled",
     "customer_reschedule_limit", "arrival_verification_enabled",
     "arrival_radius_meters", "arrival_location_max_age_seconds",
     "arrival_max_accuracy_meters", "false_arrival_auto_close",
@@ -302,6 +304,8 @@ class VerticalMonetizationPolicyService:
                 errors.append("sla_penalty_max_days must be an integer")
         bounded_whole_numbers = {
             "assignment_timeout_minutes": (1, 1440),
+            "urgent_assignment_timeout_minutes": (1, 1440),
+            "urgent_assignment_threshold_minutes": (1, 1440),
             "customer_reschedule_limit": (0, 20),
             "arrival_radius_meters": (25, 5000),
             "arrival_location_max_age_seconds": (15, 3600),
@@ -330,7 +334,8 @@ class VerticalMonetizationPolicyService:
             "false_arrival_health_weight", minimum=Decimal("0"), maximum=Decimal("20")
         )
         for name in (
-            "assignment_timeout_enabled", "arrival_verification_enabled",
+            "assignment_timeout_enabled", "assignment_auto_assign_enabled",
+            "arrival_verification_enabled",
             "false_arrival_auto_close", "sla_auto_cancel",
             "sla_notify_provider", "sla_penalty_to_customer",
         ):

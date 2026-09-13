@@ -140,7 +140,7 @@ class IPBlocklistMiddleware(BaseHTTPMiddleware):
         if scope == "admin":
             return bool(role and (role == "super_admin" or role.startswith("admin_")))
         if scope in {"customer", "staff"}:
-            return role == scope
+            return role == scope or (scope == "staff" and role == "technician")
         if scope == "tenant":
             return bool(entry_tenant_id and tenant_id == entry_tenant_id)
         return False
@@ -189,20 +189,32 @@ class IPBlocklistMiddleware(BaseHTTPMiddleware):
                     IPBlocklistEntry.status == "active",
                 ).order_by(IPBlocklistEntry.is_global.desc(), IPBlocklistEntry.created_at.desc()))
                 matched = None
-                for entry in result.scalars().all():
+                expired_candidates: set[tuple[str, str]] = set()
+                entries = result.scalars().all()
+                for entry in entries:
                     if entry.expires_at and entry.expires_at <= now:
                         entry.status = "expired"
                         entry.is_active = False
-                        try:
-                            redis_set = "serviceos:security:ip_blocklist" if entry.entry_type == "ip" else "serviceos:security:cidr_blocklist"
-                            await redis.srem(redis_set, entry.ip_or_cidr)
-                        except Exception:
-                            pass
+                        expired_candidates.add((entry.entry_type, entry.ip_or_cidr))
                         continue
                     if self._scope_matches(entry.scope, role, tenant_id,
                                            str(entry.tenant_id) if entry.tenant_id else None):
                         matched = entry
                         break
+                # Redis membership is shared by scoped rows with the same
+                # network. Expiring one row must not disable another active
+                # row for that network (e.g. global plus tenant scope).
+                for entry_type, network in expired_candidates:
+                    if any(e.entry_type == entry_type and e.ip_or_cidr == network
+                           and e.status == "active" and
+                           (e.expires_at is None or e.expires_at > now)
+                           for e in entries):
+                        continue
+                    try:
+                        redis_set = "serviceos:security:ip_blocklist" if entry_type == "ip" else "serviceos:security:cidr_blocklist"
+                        await redis.srem(redis_set, network)
+                    except Exception:
+                        pass
                 if matched is not None:
                     matched.hit_count += 1
                     matched.last_hit_at = now

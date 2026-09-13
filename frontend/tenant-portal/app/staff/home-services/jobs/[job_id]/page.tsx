@@ -5,6 +5,7 @@ import { StaffLayout } from "../../../../../components/layout/StaffLayout";
 import { Card, Badge, Skeleton, Btn } from "../../../../../components/shared/ui";
 import { useApi, useAction } from "../../../../../hooks/useApi";
 import { homeServiceStaffJobsApi, checklistExecutionApi, type ChecklistInstanceDetail } from "../../../../../lib/api";
+import { PhoneCall } from "lucide-react";
 
 // job.status -> the single next CTA a technician can take. Mirrors
 // JOB_TRANSITIONS in app/engines/execution/constants.py — one primary
@@ -13,7 +14,7 @@ import { homeServiceStaffJobsApi, checklistExecutionApi, type ChecklistInstanceD
 // a 422 either way, per HS8/HS8B).
 const ACTION_METHODS: Record<string, keyof typeof homeServiceStaffJobsApi> = {
   "accept": "accept",
-  "call-customer": "customerContacted",
+  "call-customer": "callCustomer",
   "on-the-way": "onTheWay",
   "reached-site": "reachedSite",
   "start-inspection": "startInspection",
@@ -29,6 +30,11 @@ export default function StaffHomeServiceJobDetailPage() {
   const job = useApi(useCallback(() => homeServiceStaffJobsApi.get(jobId), [jobId]), [jobId]);
   const parts = useApi(useCallback(() => homeServiceStaffJobsApi.listPartsRequests(jobId), [jobId]), [jobId]);
   const checklists = useApi(useCallback(() => checklistExecutionApi.listForJob(jobId), [jobId]), [jobId]);
+  const contact = useApi(useCallback(() => homeServiceStaffJobsApi.getContact(jobId), [jobId]), [jobId]);
+  const callAction = useAction(
+    useCallback(() => homeServiceStaffJobsApi.callCustomer(jobId), [jobId]),
+    { onSuccess: () => { contact.refetch(); job.refetch(); } },
+  );
 
   const statusAction = useAction(
     useCallback(async (fnName: keyof typeof homeServiceStaffJobsApi) => {
@@ -101,6 +107,19 @@ export default function StaffHomeServiceJobDetailPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <Card>
                 <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Status Action</h3>
+                <div style={{ marginBottom: 12 }}>
+                  <Btn variant="secondary" loading={callAction.loading}
+                    disabled={contact.loading || !contact.data?.can_call}
+                    onClick={() => callAction.execute()}>
+                    <PhoneCall size={15} style={{ marginRight: 6 }} /> Call customer
+                  </Btn>
+                  {callAction.error && <p style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 6 }}>{callAction.error}</p>}
+                  {contact.data?.last_call && !callAction.error && (
+                    <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6 }}>
+                      Last tracked call: {contact.data.last_call.status.replaceAll("_", " ")}
+                    </p>
+                  )}
+                </div>
                 {isCompleted ? (
                   <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>Job completed. No further status actions available.</p>
                 ) : nextAction ? (

@@ -62,6 +62,7 @@ async def call_customer(
     session = await svc.place_call(
         db, job_id=job_id, tenant_id=uuid.UUID(str(user.tenant_id)),
         initiator_user_id=uuid.UUID(str(user.user_id)),
+        initiator_access_role=str(user.role),
     )
     # Serialize BEFORE committing: commit expires the instance's attributes, and
     # touching them afterwards triggers a lazy refresh that raises
@@ -72,12 +73,26 @@ async def call_customer(
     return ok(payload, _rid(r), "staff-masked-call")
 
 
+@customer_router.get(
+    "/{booking_id}/contact",
+    summary="Get the platform call action for this booking",
+)
+async def get_customer_contact(
+    booking_id: uuid.UUID, r: Request,
+    user=Depends(require_customer), db: AsyncSession = Depends(get_db),
+):
+    data = await svc.describe_customer_contact(
+        db, booking_id, uuid.UUID(str(user.user_id)),
+    )
+    return ok(data, _rid(r), "customer-masked-contact")
+
+
 @customer_router.post(
     "/{booking_id}/call",
-    summary="Call the assigned technician through the platform",
+    summary="Call the assigned technician or provider through the platform",
     description=(
-        "Bridges the owning customer and assigned technician without returning "
-        "or revealing either party's phone number."
+        "Bridges the customer to the assigned technician, or to the provider "
+        "until assignment, without revealing either party's phone number."
     ),
 )
 async def call_assigned_technician(

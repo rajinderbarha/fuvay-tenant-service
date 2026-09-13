@@ -120,6 +120,9 @@ class ComplaintService:
         title: str | None = None,
         commit: bool = True,
         internal_refund_request: bool = False,
+        internal_payment_dispute: bool = False,
+        created_by_actor_type: str = ACTOR_CUSTOMER,
+        created_by_actor_user_id: uuid.UUID | None = None,
         request_id: str = "—",
     ) -> CustomerComplaint:
         # MODULE-L5-02 bug #25: the customer who files a complaint has no tenant
@@ -150,9 +153,15 @@ class ComplaintService:
         # only that internal path may bypass the three public type choices.
         if internal_refund_request and complaint_type != "refund_request":
             raise ValueError(ERR_COMPLAINT_NOT_ELIGIBLE)
+        if internal_payment_dispute and complaint_type != "payment_issue":
+            raise ValueError(ERR_COMPLAINT_NOT_ELIGIBLE)
         eligibility = await self._eligibility.check_eligible(
             db, customer_id, record_type, record_id,
-            complaint_type=None if internal_refund_request else complaint_type,
+            # Dedicated refund/payment workflows still pass the canonical
+            # ownership, work-started and filing-window checks, but their
+            # issue types do not appear in the generic complaint picker.
+            complaint_type=None if (internal_refund_request or internal_payment_dispute)
+            else complaint_type,
             category_id=category_id,
         )
         if not eligibility["eligible"]:
@@ -203,23 +212,36 @@ class ComplaintService:
 
         db.add(complaint)
         await db.flush()
+        creator_type = ACTOR_PROVIDER if created_by_actor_type == ACTOR_PROVIDER else ACTOR_CUSTOMER
+        creator_id = created_by_actor_user_id or customer_id
         await self._log_event(
-            db, complaint.id, tenant_id, ACTOR_CUSTOMER, customer_id,
+            db, complaint.id, tenant_id, creator_type, creator_id,
             EVT_COMPLAINT_CREATED, None, STATUS_OPEN, None, None,
             request_id=request_id,
         )
         # bug #42: tell the provider a customer has raised a complaint about their
         # job — otherwise they never know they need to respond.
         try:
-            from app.engines.complaints.notifications import notify_provider_complaint
-            await notify_provider_complaint(
-                db, complaint,
-                notification_type="complaint.filed",
-                title=f"New complaint — {complaint.complaint_number}",
-                body=(complaint.title or complaint.complaint_type.replace("_", " ")).strip()
-                     + " — please respond.",
-                severity="critical" if is_safety_concern else "warning",
+            from app.engines.complaints.notifications import (
+                notify_customer_complaint, notify_provider_complaint,
             )
+            if creator_type == ACTOR_PROVIDER:
+                await notify_customer_complaint(
+                    db, complaint,
+                    notification_type="complaint.payment_dispute_opened",
+                    title=f"Payment review opened — {complaint.complaint_number}",
+                    body="Your provider opened a payment discrepancy for this job. Review the case details.",
+                    severity="warning",
+                )
+            else:
+                await notify_provider_complaint(
+                    db, complaint,
+                    notification_type="complaint.filed",
+                    title=f"New complaint — {complaint.complaint_number}",
+                    body=(complaint.title or complaint.complaint_type.replace("_", " ")).strip()
+                         + " — please respond.",
+                    severity="critical" if is_safety_concern else "warning",
+                )
         except Exception:
             pass
         if commit:

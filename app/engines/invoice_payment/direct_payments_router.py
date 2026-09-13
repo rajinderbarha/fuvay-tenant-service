@@ -218,15 +218,14 @@ async def remind_customer(
 async def open_dispute(
     payment_id: uuid.UUID,
     r: Request,
-    payload: dict = Body(default={}),
+    payload: dict = Body(...),
     user: UserContext = Depends(_HS_ACTIVE),
     db: AsyncSession = Depends(get_db),
 ):
     _assert_perm(user, P.DIRECT_PAYMENTS_OPEN_DISPUTE)
     data = await _svc(user, db, r).open_dispute(
         payment_id=payment_id, actor_user_id=user.user_id,
-        description=payload.get("description")
-        or "The customer reports a different amount for this direct payment.",
+        description=payload.get("description") or payload.get("reason") or "",
     )
     return ok(data, _RID(r), "direct_payments")
 
@@ -285,7 +284,7 @@ async def customer_report_mismatch(
 async def customer_open_dispute(
     payment_id: uuid.UUID,
     r: Request,
-    payload: dict = Body(default={}),
+    payload: dict = Body(...),
     user: UserContext = Depends(require_customer),
     db: AsyncSession = Depends(get_db),
 ):
@@ -300,7 +299,6 @@ async def customer_open_dispute(
     svc = DirectPaymentsService(db, pay.tenant_id, _RID(r))
     data = await svc.open_dispute(
         payment_id=payment_id, actor_user_id=user.user_id, actor_type="customer",
-        description=payload.get("description")
-        or "I did not pay the amount recorded by the provider.",
+        description=payload.get("description") or payload.get("reason") or "",
     )
     return ok(data, _RID(r), "direct_payments")

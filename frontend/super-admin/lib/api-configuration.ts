@@ -194,6 +194,9 @@ export interface MonetizationPolicy {
   sla_penalty_max_days?: number;
   assignment_timeout_enabled?: boolean;
   assignment_timeout_minutes?: number;
+  urgent_assignment_timeout_minutes?: number;
+  urgent_assignment_threshold_minutes?: number;
+  assignment_auto_assign_enabled?: boolean;
   customer_reschedule_limit?: number;
   arrival_verification_enabled?: boolean;
   arrival_radius_meters?: number;

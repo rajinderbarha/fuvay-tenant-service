@@ -100,7 +100,10 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     # audited policy as SLA enforcement so administrators can change runtime
     # behaviour without a code release. Defaults preserve the launch rules.
     assignment_timeout_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    assignment_timeout_minutes: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    assignment_timeout_minutes: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    urgent_assignment_timeout_minutes: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    urgent_assignment_threshold_minutes: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
+    assignment_auto_assign_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     customer_reschedule_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     arrival_verification_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     arrival_radius_meters: Mapped[int] = mapped_column(Integer, default=250, nullable=False)
@@ -187,6 +190,9 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "sla_penalty_max_days": self.sla_penalty_max_days,
             "assignment_timeout_enabled": self.assignment_timeout_enabled,
             "assignment_timeout_minutes": self.assignment_timeout_minutes,
+            "urgent_assignment_timeout_minutes": self.urgent_assignment_timeout_minutes,
+            "urgent_assignment_threshold_minutes": self.urgent_assignment_threshold_minutes,
+            "assignment_auto_assign_enabled": self.assignment_auto_assign_enabled,
             "customer_reschedule_limit": self.customer_reschedule_limit,
             "arrival_verification_enabled": self.arrival_verification_enabled,
             "arrival_radius_meters": self.arrival_radius_meters,

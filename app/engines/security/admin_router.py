@@ -12,7 +12,7 @@ from typing import Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import P, require_permission
-from app.dependencies.auth import UserContext, require_super_admin
+from app.dependencies.auth import UserContext
 from app.dependencies.db import get_db
 from app.engines.security.admin_service import SecurityAdminService
 from app.schemas.base import ApiResponse, ok
@@ -23,9 +23,10 @@ ENGINE_ID = "security"
 
 def _svc(r: Request, db: AsyncSession = Depends(get_db),
          u: UserContext = Depends(require_permission(P.SECURITY_READ))) -> SecurityAdminService:
+    from app.core.security import get_client_ip
     return SecurityAdminService(db=db, request_id=getattr(r.state, "request_id", "—"),
                                  actor_id=uuid.UUID(u.user_id) if u.user_id else None,
-                                 actor_role=u.role, actor_ip=r.client.host if r.client else None)
+                                 actor_role=u.role, actor_ip=get_client_ip(r))
 
 
 def _rid(r): return getattr(r.state, "request_id", "—")
@@ -36,7 +37,7 @@ def _rid(r): return getattr(r.state, "request_id", "—")
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/overview", response_model=ApiResponse[dict], summary="SOC overview")
-async def overview(r: Request, s: SecurityAdminService = Depends(_svc), u: UserContext = Depends(require_super_admin)):
+async def overview(r: Request, s: SecurityAdminService = Depends(_svc)):
     return ok(await s.get_security_overview(), _rid(r), ENGINE_ID)
 
 
@@ -74,7 +75,7 @@ async def assign_threat(r: Request, threat_id: uuid.UUID, body: AssignThreatBody
 
 class ThreatStatusBody(BaseModel):
     status: Literal["open", "investigating", "contained", "resolved", "false_positive", "ignored"]
-    notes: str | None = Field(None, max_length=1000)
+    notes: str = Field(min_length=5, max_length=1000)
 
 
 @router.post("/threats/{threat_id}/status", response_model=ApiResponse[dict], summary="Update threat status")

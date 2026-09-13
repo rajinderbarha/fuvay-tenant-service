@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.home_service_assignment import urgency as urgency_rules
+from app.engines.home_service_assignment.assignment_deadlines import for_job
 from app.engines.platform_notifications.constants import (
     EVT_JOB_DELAYED, SEV_SUCCESS, SEV_WARNING,
 )
@@ -78,11 +79,19 @@ async def build_alerts(
     moment = now or dt.datetime.now(dt.timezone.utc)
     jobs = await _load_jobs(db, tenant_id)
     timeout_enabled = True
+    policy = None
     if assignment_timeout_minutes is None:
         from app.engines.vertical_monetization.runtime_operations import get_home_services_operations_policy
         policy = await get_home_services_operations_policy(db)
         assignment_timeout_minutes = policy.assignment_timeout_minutes
         timeout_enabled = policy.assignment_timeout_enabled
+    if policy is None:
+        from types import SimpleNamespace
+        policy = SimpleNamespace(
+            assignment_timeout_minutes=assignment_timeout_minutes,
+            urgent_assignment_timeout_minutes=assignment_timeout_minutes,
+            urgent_assignment_threshold_minutes=0,
+        )
 
     new_jobs = []
     delayed = []
@@ -91,25 +100,32 @@ async def build_alerts(
         if offered is not None:
             if offered.tzinfo is None:
                 offered = offered.replace(tzinfo=dt.timezone.utc)
-            deadline = offered + dt.timedelta(minutes=assignment_timeout_minutes)
-            # This is an actionable offer, not every recently created job. It
-            # remains visible on every poll until staff is assigned or the
-            # server expires the offer; a dismiss only snoozes the popup.
-            window_open = (deadline > moment if timeout_enabled
-                           else offered > moment - dt.timedelta(hours=NEW_JOB_WINDOW_HOURS))
+            assignment = for_job(job, policy, moment)
+            deadline = assignment.deadline
+            window_open = timeout_enabled or offered > moment - dt.timedelta(hours=NEW_JOB_WINDOW_HOURS)
             if (job.assigned_staff_id is None and job.status in ("pending_assignment", "accepted")
                     and window_open):
+                overdue = bool(timeout_enabled and assignment.overdue)
                 new_jobs.append({
                     "job_id": str(job.id),
                     "label": _job_label(job),
                     "city": job.city,
                     "created_at": offered.isoformat(),
-                    "assignment_deadline_at": deadline.isoformat() if timeout_enabled else None,
+                    "assignment_deadline_at": deadline.isoformat() if timeout_enabled and deadline else None,
+                    "assignment_required": True,
+                    "assignment_overdue": overdue,
+                    "assignment_window_minutes": assignment.minutes,
+                    "urgent_assignment": assignment.urgent,
                     "scheduled_date": job.scheduled_date.isoformat() if job.scheduled_date else None,
                     "scheduled_time_window": job.scheduled_time_window,
-                    "tone": TONE_CELEBRATE,
-                    "title": "New job received",
-                    "message": f"{_job_label(job)} just came in. Assign a technician to get started.",
+                    "tone": TONE_URGENT if overdue else TONE_CELEBRATE,
+                    "title": "Technician assignment overdue" if overdue else "New job received",
+                    "message": (
+                        f"{_job_label(job)} is still waiting for a technician. "
+                        "The provider and customer price remain locked."
+                        if overdue else
+                        f"{_job_label(job)} just came in. Assign a technician to get started."
+                    ),
                 })
 
         late_by = urgency_rules.minutes_late(

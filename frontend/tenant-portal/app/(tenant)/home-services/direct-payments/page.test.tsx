@@ -3,11 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import DirectPaymentsPage from "./page";
 
-const state = vi.hoisted(() => ({ query: "", push: vi.fn(), list: vi.fn(), get: vi.fn() }));
+const state = vi.hoisted(() => ({ query: "", push: vi.fn(), list: vi.fn(), get: vi.fn(), openDispute: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: state.push }), useSearchParams: () => new URLSearchParams(state.query) }));
 vi.mock("../../../../lib/api", () => ({
   API_BASE: "", getToken: () => null, ServiceOSError: class extends Error {},
-  homeServicesDirectPaymentsApi: { list: state.list, get: state.get },
+  homeServicesDirectPaymentsApi: { list: state.list, get: state.get, openDispute: state.openDispute },
 }));
 const queue = () => ({
   summary: {
@@ -78,4 +78,38 @@ it("does not invent zero summary cards on API failure", async () => {
   state.list.mockRejectedValue(new Error("Offline")); render(<DirectPaymentsPage/>);
   expect(await screen.findByRole("alert")).toHaveTextContent("We couldn't load direct payments.");
   expect(screen.queryByText("₹0")).not.toBeInTheDocument();
+});
+
+it("requires a specific dispute description and links the resulting complaint", async () => {
+  state.query = "payment_id=payment1";
+  const paymentDetail = {
+    record: {id: "payment1", job_id: "job1", job_ref: "JOB-1", currency: "INR", status: "confirmed", status_label: "Confirmed", expected_amount: "1575"},
+    job_context: {service: "AC repair", technician: "Technician", job_status: "completed"},
+    provider_declaration: {state: "confirmed", amount: "1575", currency: "INR", method_label: "Cash"},
+    customer_confirmation: {state: "confirmed", reported_amount: "1575", reassurance: "Confirmed"},
+    visit_fee_adjustment: {applied: false, adjustment: "0"},
+    expected_amount: "1575", final_payable_label: "Final payable",
+    workflow: {steps: []}, activity: [], policy: [],
+    available_actions: {open_dispute: true, remind_customer: false, edit_declaration: false},
+    dispute: null,
+  };
+  state.get.mockResolvedValueOnce(paymentDetail).mockResolvedValue({
+    ...paymentDetail,
+    record: {...paymentDetail.record, status: "disputed", status_label: "Disputed"},
+    available_actions: {...paymentDetail.available_actions, open_dispute: false},
+    dispute: {complaint_id: "case1", complaint_number: "CMP-1", status: "open", view_path: "/home-services/complaints/case1"},
+  });
+  state.openDispute.mockResolvedValue({});
+  render(<DirectPaymentsPage/>);
+  const details = await screen.findByRole("dialog", {name: "Payment details"});
+  fireEvent.click(await within(details).findByRole("button", {name: "Open dispute"}));
+  const dispute = await screen.findByRole("dialog", {name: "Open payment dispute"});
+  expect(within(dispute).getByText(/Both sides previously confirmed/)).toBeInTheDocument();
+  const submit = within(dispute).getByRole("button", {name: "Open dispute"});
+  expect(submit).toBeDisabled();
+  fireEvent.change(within(dispute).getByRole("textbox", {name: /What happened/}), {target: {value: "Customer supplied a different bank reference."}});
+  fireEvent.click(submit);
+  await waitFor(() => expect(state.openDispute).toHaveBeenCalledWith("payment1", "Customer supplied a different bank reference."));
+  const updated = await screen.findByRole("dialog", {name: "Payment details"});
+  expect(await within(updated).findByRole("link", {name: "Open complaint case"})).toHaveAttribute("href", "/home-services/complaints/case1");
 });

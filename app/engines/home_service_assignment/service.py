@@ -600,30 +600,13 @@ class HomeServiceJobAssignmentService:
         notes:           str | None       = None,
         request_id:      str | None       = None,
         allow_accepted_reassignment: bool = False,
+        assignment_type: str = ASSIGN_TYPE_MANUAL,
+        actor_role: str = "provider",
     ) -> dict:
         job = await self._load_job(job_id, for_update=True)
         if str(job.tenant_id) != str(tenant_id):
             raise ValueError(ERR_ACCESS_DENIED)
         self._validate_job_assignable(job)
-
-        # A provider cannot beat the sweeper by assigning after the offer has
-        # expired. Reassignments of work already owned by a technician are not
-        # new offers and remain possible through their usual controls.
-        offered_at = (
-            getattr(job, "provider_offer_started_at", None)
-            or getattr(job, "created_at", None)
-        )
-        if (job.assigned_staff_id is None and job.status in
-                (JOB_STATUS_PENDING_ASSIGNMENT, JOB_STATUS_ACCEPTED) and offered_at):
-            from app.engines.vertical_monetization.runtime_operations import (
-                get_home_services_operations_policy,
-            )
-            policy = await get_home_services_operations_policy(self.db)
-            if policy.assignment_timeout_enabled:
-                if offered_at.tzinfo is None:
-                    offered_at = offered_at.replace(tzinfo=timezone.utc)
-                if _utcnow() >= offered_at + timedelta(minutes=policy.assignment_timeout_minutes):
-                    raise ValueError(ERR_PROVIDER_OFFER_EXPIRED)
 
         # The legacy WIP gate counts every open job across every future date.
         # It remains the safe fallback for an unscheduled job, but must not
@@ -682,7 +665,7 @@ class HomeServiceJobAssignmentService:
             assigned_staff_member_id=staff_member_id,
             assigned_by_user_id=actor_user_id,
             assignment_status=ASSIGN_STATUS_ASSIGNED,
-            assignment_type=ASSIGN_TYPE_MANUAL,
+            assignment_type=assignment_type,
             scheduled_date=effective_date,
             scheduled_time_window=effective_window,
             notes=notes,
@@ -709,7 +692,7 @@ class HomeServiceJobAssignmentService:
         await self._emit_event(
             job_id=job_id, booking_id=job.booking_id, tenant_id=tenant_id,
             event_type=event_type, assignment_id=assignment.id,
-            actor_user_id=actor_user_id, actor_role="provider",
+            actor_user_id=actor_user_id, actor_role=actor_role,
             old_value={"assignment_status": old_status},
             new_value={"assigned_staff_member_id": str(staff_member_id),
                        "assignment_status": ASSIGN_STATUS_ASSIGNED},

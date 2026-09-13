@@ -16,7 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 @dataclass(frozen=True)
 class HomeServicesOperationsPolicy:
     assignment_timeout_enabled: bool = True
-    assignment_timeout_minutes: int = 15
+    assignment_timeout_minutes: int = 30
+    urgent_assignment_timeout_minutes: int = 10
+    urgent_assignment_threshold_minutes: int = 120
+    assignment_auto_assign_enabled: bool = True
     customer_reschedule_limit: int = 3
     arrival_verification_enabled: bool = True
     arrival_radius_meters: int = 250
@@ -32,6 +35,8 @@ async def get_home_services_operations_policy(
 ) -> HomeServicesOperationsPolicy:
     row = (await db.execute(text(
         "SELECT p.assignment_timeout_enabled, p.assignment_timeout_minutes, "
+        "p.urgent_assignment_timeout_minutes, p.urgent_assignment_threshold_minutes, "
+        "p.assignment_auto_assign_enabled, "
         "p.customer_reschedule_limit, p.arrival_verification_enabled, "
         "p.arrival_radius_meters, p.arrival_location_max_age_seconds, "
         "p.arrival_max_accuracy_meters, p.false_arrival_auto_close, "
@@ -48,6 +53,17 @@ async def get_home_services_operations_policy(
         assignment_timeout_enabled=bool(row["assignment_timeout_enabled"]),
         assignment_timeout_minutes=int(
             row["assignment_timeout_minutes"] or defaults.assignment_timeout_minutes
+        ),
+        urgent_assignment_timeout_minutes=int(
+            row.get("urgent_assignment_timeout_minutes") or defaults.urgent_assignment_timeout_minutes
+        ),
+        urgent_assignment_threshold_minutes=int(
+            row.get("urgent_assignment_threshold_minutes") or defaults.urgent_assignment_threshold_minutes
+        ),
+        assignment_auto_assign_enabled=(
+            bool(row["assignment_auto_assign_enabled"])
+            if row.get("assignment_auto_assign_enabled") is not None else
+            defaults.assignment_auto_assign_enabled
         ),
         customer_reschedule_limit=int(
             row["customer_reschedule_limit"]

@@ -87,14 +87,12 @@ def _tenant_id(user: UserContext) -> uuid.UUID:
 
 
 def _offer_expired(job: ServiceJob, *, enabled: bool, minutes: int, now: datetime) -> bool:
-    if not enabled or job.assigned_staff_id or job.status not in ("pending_assignment", "accepted"):
-        return False
-    offered_at = job.provider_offer_started_at or job.created_at
-    if not offered_at:
-        return False
-    if offered_at.tzinfo is None:
-        offered_at = offered_at.replace(tzinfo=timezone.utc)
-    return now >= offered_at + timedelta(minutes=minutes)
+    """Deprecated compatibility field.
+
+    Provider ownership no longer expires while waiting for a technician. The
+    UI receives ``False`` so it never hides the assignment action.
+    """
+    return False
 
 
 @router.get("/bookings-jobs", response_model=ApiResponse,
@@ -278,18 +276,19 @@ async def list_bookings_jobs(
     items = []
     for job, booking in rows:
         has_assignee = job.assigned_staff_id is not None
+        from app.engines.home_service_assignment.assignment_deadlines import for_job
+        assignment_deadline = for_job(job, operations_policy, now)
+        assignment_overdue = bool(
+            operations_policy.assignment_timeout_enabled and not has_assignee
+            and job.status in ("pending_assignment", "accepted")
+            and assignment_deadline.overdue
+        )
         offer_expired = _offer_expired(
             job, enabled=operations_policy.assignment_timeout_enabled,
             minutes=operations_policy.assignment_timeout_minutes, now=now,
         )
         stage_info = map_job_status(job.status, job.assignment_status, has_assignee=has_assignee)
         available_actions = compute_available_actions(job.status, job.assignment_status, has_assignee=has_assignee)
-        if offer_expired:
-            stage_info["next_action"] = None
-            available_actions = [
-                action for action in available_actions
-                if action["action_key"] != "assign_technician"
-            ]
 
         # ── Field-level authorization: CustomerOperationalAccessPolicy is the
         # single source of truth for whether raw contact/exact-address may be
@@ -337,6 +336,11 @@ async def list_bookings_jobs(
             "next_action":       stage_info["next_action"],
             "available_actions": available_actions,
             "offer_expired":    offer_expired,
+            "assignment_overdue": assignment_overdue,
+            "assignment_deadline_at": (
+                assignment_deadline.deadline.isoformat()
+                if assignment_deadline.deadline else None
+            ),
             "sla":               sla_map.get(str(job.id)),
             "open_complaint_count": complaint_counts.get(str(job.id), 0),
             "created_at":        job.created_at.isoformat() if job.created_at else None,
@@ -414,9 +418,14 @@ async def get_bookings_jobs_detail(
         minutes=operations_policy.assignment_timeout_minutes,
         now=datetime.now(timezone.utc),
     )
+    from app.engines.home_service_assignment.assignment_deadlines import for_job
+    assignment_deadline = for_job(job, operations_policy, datetime.now(timezone.utc))
+    assignment_overdue = bool(
+        operations_policy.assignment_timeout_enabled and not has_assignee
+        and job.status in ("pending_assignment", "accepted")
+        and assignment_deadline.overdue
+    )
     stage_info = map_job_status(job.status, job.assignment_status, has_assignee=has_assignee)
-    if offer_expired:
-        stage_info["next_action"] = None
 
     service_name = await db.scalar(
         select(MasterService.service_name).where(MasterService.id == job.offering_id)
@@ -536,12 +545,15 @@ async def get_bookings_jobs_detail(
         "problem_name": problem_name,
         "technician": technician,
         "stage":   stage_info,
-        "available_actions": [
-            action for action in compute_available_actions(
-                job.status, job.assignment_status, has_assignee=has_assignee,
-            ) if not offer_expired or action["action_key"] != "assign_technician"
-        ],
+        "available_actions": compute_available_actions(
+            job.status, job.assignment_status, has_assignee=has_assignee,
+        ),
         "offer_expired": offer_expired,
+        "assignment_overdue": assignment_overdue,
+        "assignment_deadline_at": (
+            assignment_deadline.deadline.isoformat()
+            if assignment_deadline.deadline else None
+        ),
         "invoice": invoice.to_dict() if invoice else None,
         "quote": quote.to_dict() if quote else None,
         "visit_fee": str(visit_fee) if visit_fee is not None else None,

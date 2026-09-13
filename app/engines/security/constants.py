@@ -91,6 +91,12 @@ HIGH_RISK_OPERATIONS   = [
     "user.delete", "tenant.suspend", "api_key.create", "api_key.revoke",
     "ip.block", "session.revoke_all", "role.change", "plan.change",
     "payment.refund", "document.void", "review.remove",
+    # Operations emitted by the current Security command center. Without
+    # these, the high-risk activity KPI and filter showed zero after real
+    # policy/access changes even though the append-only audit rows existed.
+    "api_key.rotate", "ip.unblock", "ip.update", "session.revoke",
+    "policy.update", "threat.block_ip", "threat.revoke_sessions",
+    "threat.mark_resolved", "threat.mark_false_positive",
 ]
 
 # ── Redis keys ─────────────────────────────────────────────────────────────

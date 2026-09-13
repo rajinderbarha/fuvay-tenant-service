@@ -90,10 +90,53 @@ async def _customer_number(db: AsyncSession, job) -> str | None:
 
 
 async def _staff_number(db: AsyncSession, user_id: uuid.UUID) -> str | None:
+    # Assignments normally store provider_team_members.id, while fallback
+    # staff rows store users.id. Resolve both shapes without exposing either.
     phone = (await db.execute(text(
-        "SELECT phone FROM users WHERE id=:uid"
+        "SELECT COALESCE(u.phone, ptm.phone) "
+        "FROM provider_team_members ptm "
+        "LEFT JOIN users u ON u.id=ptm.user_id "
+        "WHERE ptm.id=:uid AND ptm.deleted_at IS NULL "
+        "UNION ALL SELECT phone FROM users WHERE id=:uid LIMIT 1"
     ), {"uid": str(user_id)})).scalar()
     return str(phone) if phone else None
+
+
+async def _provider_number(db: AsyncSession, tenant_id: uuid.UUID) -> str | None:
+    phone = (await db.execute(text(
+        "SELECT phone FROM users WHERE tenant_id=:tid "
+        "AND role::text='tenant_owner' AND is_active=true "
+        "AND phone IS NOT NULL ORDER BY created_at ASC LIMIT 1"
+    ), {"tid": str(tenant_id)})).scalar()
+    return str(phone) if phone else None
+
+
+async def describe_customer_contact(
+    db: AsyncSession, booking_id: uuid.UUID, customer_id: uuid.UUID,
+) -> dict:
+    job = await _load_customer_job(db, booking_id, customer_id)
+    target = "technician" if job.get("assigned_staff_id") else "provider"
+    target_number = (
+        await _staff_number(db, job["assigned_staff_id"])
+        if job.get("assigned_staff_id") else
+        await _provider_number(db, job["tenant_id"])
+    )
+    provider = get_provider()
+    reason = None
+    if not provider.configured:
+        reason = c.ERR_CALLING_NOT_CONFIGURED
+    elif str(job["status"]) in c.NON_CALLABLE_JOB_STATUSES:
+        reason = c.ERR_JOB_NOT_CALLABLE
+    elif not target_number:
+        reason = c.ERR_NO_STAFF_NUMBER
+    return {
+        "booking_id": str(booking_id), "job_id": str(job["id"]),
+        "contact_display": "Assigned technician" if target == "technician" else "Service provider",
+        "contact_role": target, "phone_number_visible": False,
+        "phone_number_policy": "The platform connects the call and keeps both numbers private.",
+        "can_call": reason is None, "cannot_call_reason": reason,
+        "connected_before": await has_connected_call(db, job["id"]),
+    }
 
 
 async def describe_contact(db: AsyncSession, job_id: uuid.UUID, tenant_id: uuid.UUID) -> dict:
@@ -155,6 +198,7 @@ async def has_connected_call(db: AsyncSession, job_id: uuid.UUID) -> bool:
 async def place_call(
     db: AsyncSession, *, job_id: uuid.UUID, tenant_id: uuid.UUID,
     initiator_user_id: uuid.UUID, initiator_role: str = c.ROLE_STAFF,
+    initiator_access_role: str | None = None,
 ) -> MaskedCallSession:
     """Bridge the technician and the customer for this job.
 
@@ -163,6 +207,20 @@ async def place_call(
     caller, which is the invariant the whole engine rests on.
     """
     job = await _load_job(db, job_id, tenant_id)
+    if initiator_access_role == "technician":
+        owns_assignment = (await db.execute(text(
+            "SELECT 1 WHERE :sid::uuid=:uid::uuid OR EXISTS ("
+            "SELECT 1 FROM provider_team_members WHERE id=:sid "
+            "AND user_id=:uid AND deleted_at IS NULL)"
+        ), {
+            "sid": str(job.get("assigned_staff_id")) if job.get("assigned_staff_id") else None,
+            "uid": str(initiator_user_id),
+        })).fetchone()
+        if not owns_assignment:
+            raise ServiceOSException(
+                c.ERR_CALLER_NOT_ASSIGNED,
+                "This job is not assigned to you.", status_code=403,
+            )
     if str(job["status"]) in c.NON_CALLABLE_JOB_STATUSES:
         raise ServiceOSException(
             c.ERR_JOB_NOT_CALLABLE,
@@ -250,12 +308,6 @@ async def place_customer_call(
             "This job is closed, so a new call cannot be placed for it.",
             status_code=409,
         )
-    if not job.get("assigned_staff_id"):
-        raise ServiceOSException(
-            c.ERR_NO_ASSIGNED_STAFF,
-            "A technician has not been assigned yet.",
-            status_code=409,
-        )
 
     provider = get_provider()
     settings = get_settings()
@@ -274,11 +326,15 @@ async def place_customer_call(
             "Add a phone number to your profile before placing calls.",
             status_code=422,
         )
-    staff_number = await _staff_number(db, job["assigned_staff_id"])
+    staff_number = (
+        await _staff_number(db, job["assigned_staff_id"])
+        if job.get("assigned_staff_id") else
+        await _provider_number(db, job["tenant_id"])
+    )
     if not staff_number:
         raise ServiceOSException(
             c.ERR_NO_STAFF_NUMBER,
-            "Calling is not available for this technician right now.",
+            "Calling is not available for this provider right now.",
             status_code=422,
         )
 
@@ -405,7 +461,7 @@ async def apply_provider_status(
     # A real conversation satisfies the provider's first task. Recorded through
     # the execution engine's own event so there is ONE definition of
     # "customer contacted", shared with the manual endpoint.
-    if mapped in c.CONNECTED_STATUSES:
+    if mapped in c.CONNECTED_STATUSES and session.direction == c.DIR_STAFF_TO_CUSTOMER:
         await _record_customer_contacted(db, session)
     return session
 

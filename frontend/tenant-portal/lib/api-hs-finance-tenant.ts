@@ -180,8 +180,8 @@ export const homeServicesDirectPaymentsApi = {
   export: <T = FinPayload>(params?: Record<string, any>) => apiFetch<T>(`${DP}/export${query(params)}`),
   remind: <T = FinPayload>(paymentId: string) =>
     apiFetch<T>(`${DP}/${paymentId}/remind-customer`, post()),
-  openDispute: <T = FinPayload>(paymentId: string, reason: string) =>
-    apiFetch<T>(`${DP}/${paymentId}/open-dispute`, post({ reason })),
+  openDispute: <T = FinPayload>(paymentId: string, description: string) =>
+    apiFetch<T>(`${DP}/${paymentId}/open-dispute`, post({ description })),
 
   /**
    * Correct a declaration before the customer confirms it.

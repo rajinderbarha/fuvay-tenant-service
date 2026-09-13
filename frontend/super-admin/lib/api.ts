@@ -974,7 +974,7 @@ export interface CustomerAddressRow {
 export interface CustomerSessionRow {
   session_id: string; user_id: string; user_email: string; user_name: string; user_role: string;
   device_name: string; device_type: string; ip_address: string | null;
-  status: "active" | "revoked"; last_active_at: string | null; expires_at: string | null;
+  status: "active" | "expired" | "revoked"; last_active_at: string | null; expires_at: string | null;
 }
 export interface CustomerLoginEvent {
   event_type: string; ip_address: string | null; failure_reason: string | null;
@@ -8038,6 +8038,12 @@ export interface AdminServiceJobDetail {
     id: string; full_name: string; designation: string | null;
     phone: string | null; email: string | null;
   } | null;
+  call_history: Array<{
+    id: string; initiator_role: "staff" | "customer"; direction: string;
+    status: "requested" | "ringing" | "connected" | "completed" | "failed" | "no_answer" | "busy" | "expired";
+    duration_seconds: number | null; connected_at: string | null;
+    ended_at: string | null; created_at: string | null; failure_reason: string | null;
+  }>;
   price_summary: Record<string, unknown> | null;
   current_quote: ({
     quote_number: string; status: string; currency: string;
