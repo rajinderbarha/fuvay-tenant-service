@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 import type { EarnedBadge } from "../lib/api";
 
+type DisplayBadge = Pick<EarnedBadge, "name" | "description" | "icon" | "color"> & {
+  assignment_id?: string;
+  badge_key?: string;
+};
+
 const ICONS: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
   award: Award, star: Star, shield: Shield, "shield-check": ShieldCheck, crown: Crown,
   trophy: Trophy, medal: Medal, gem: Gem, sparkles: Sparkles, "badge-check": BadgeCheck,
@@ -18,7 +23,7 @@ const ICONS: Record<string, React.ComponentType<{ size?: number; color?: string 
   "check-circle": CheckCircle2, rocket: Rocket, target: Target,
 };
 
-export function TrustBadgeChip({ badge, size = 16 }: { badge: EarnedBadge; size?: number }) {
+export function TrustBadgeChip({ badge, size = 16 }: { badge: DisplayBadge; size?: number }) {
   const Cmp = ICONS[badge.icon ?? ""] ?? Award;
   const c = badge.color || "var(--warning)";
   return (
@@ -33,14 +38,14 @@ export function TrustBadgeChip({ badge, size = 16 }: { badge: EarnedBadge; size?
 }
 
 export function TrustBadges({ badges, empty = "No badges earned yet." }: {
-  badges: EarnedBadge[]; empty?: string;
+  badges: DisplayBadge[]; empty?: string;
 }) {
   if (!badges.length) {
     return <p style={{ fontSize: 13, color: "var(--text-tertiary, #888)", margin: 0 }}>{empty}</p>;
   }
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-      {badges.map(b => <TrustBadgeChip key={b.assignment_id} badge={b} />)}
+      {badges.map((b, index) => <TrustBadgeChip key={b.assignment_id ?? b.badge_key ?? `${b.name}-${index}`} badge={b} />)}
     </div>
   );
 }

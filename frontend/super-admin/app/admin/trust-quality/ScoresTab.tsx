@@ -129,7 +129,13 @@ export function ScoresTab({ formulas }: { formulas: HealthRule[] }) {
                           </div>
                         </td>
                         <td style={{ padding: "10px 16px", color: "var(--text-secondary)" }}>{s.formula_name ?? "—"}</td>
-                        <td style={{ padding: "10px 16px" }}><ScoreBar score={s.score} /></td>
+                        <td style={{ padding: "10px 16px" }}>
+                          {s.band_key
+                            ? <ScoreBar score={s.score} />
+                            : <span style={{ color: "var(--text-tertiary)", fontSize: 12, fontWeight: 600 }}>
+                                Not enough data
+                              </span>}
+                        </td>
                         <td style={{ padding: "10px 16px" }}>
                           {s.band_key
                             ? <Badge variant={BAND_TONE[s.band_key] ?? "muted"}>{s.band_key.replace(/_/g, " ")}</Badge>

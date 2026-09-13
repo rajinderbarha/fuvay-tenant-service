@@ -1326,12 +1326,16 @@ class TrustQualityService:
         if complaint_col:
             row = (await self.db.execute(
                 text(f"SELECT count(*) AS n, "
+                     f"       count(*) FILTER (WHERE status NOT IN "
+                     f"         ('resolved','closed','cancelled','rejected','settled')) AS unresolved, "
                      f"       count(*) FILTER (WHERE sla_status = 'breached') AS breached "
                      f"FROM customer_complaints WHERE {complaint_col} = :t"),
                 {"t": str(target_id)})).one()
-            n, breached = int(row.n or 0), int(row.breached or 0)
+            n = int(row.n or 0)
+            unresolved = int(row.unresolved or 0)
+            breached = int(row.breached or 0)
             if terminal:
-                rate = round(n * 100.0 / terminal, 2)
+                rate = round(unresolved * 100.0 / terminal, 2)
                 m["complaint_rate"] = rate
                 m["complaint_dispute_score"] = rate
             if n:
@@ -1341,14 +1345,18 @@ class TrustQualityService:
         elif target_type in ("staff", "technician", "tenant_staff"):
             row = (await self.db.execute(text("""
                 SELECT count(*) AS n,
+                       count(*) FILTER (WHERE cc.status NOT IN
+                         ('resolved','closed','cancelled','rejected','settled')) AS unresolved,
                        count(*) FILTER (WHERE cc.sla_status = 'breached') AS breached
                   FROM customer_complaints cc
                   JOIN service_jobs sj ON sj.id = cc.job_id
                  WHERE sj.assigned_staff_id = :target_id
             """), {"target_id": str(target_id)})).one()
-            n, breached = int(row.n or 0), int(row.breached or 0)
+            n = int(row.n or 0)
+            unresolved = int(row.unresolved or 0)
+            breached = int(row.breached or 0)
             if terminal:
-                rate = round(n * 100.0 / terminal, 2)
+                rate = round(unresolved * 100.0 / terminal, 2)
                 m["complaint_rate"] = rate
                 m["complaint_dispute_score"] = rate
             if n:

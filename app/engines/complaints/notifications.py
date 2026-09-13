@@ -43,10 +43,13 @@ async def notify_customer_complaint(
     never told when a resolution or settlement proposal was awaiting them — so it
     silently waited on someone who had no idea it was their move."""
     from app.engines.platform_notifications.models import InAppNotification
-    if not complaint.customer_id:
+    customer_id = getattr(complaint, "customer_id", None)
+    # Persisted complaints always carry a UUID.  Reject incomplete projections
+    # instead of attempting to write an unusable notification recipient.
+    if not isinstance(customer_id, uuid.UUID):
         return 0
     db.add(InAppNotification(
-        user_id=complaint.customer_id,
+        user_id=customer_id,
         tenant_id=None,
         notification_type=notification_type,
         title=title,
@@ -59,6 +62,48 @@ async def notify_customer_complaint(
         read_status="unread",
     ))
     return 1
+
+
+async def notify_customer_complaint_channel(
+    db: AsyncSession,
+    complaint,
+    *,
+    text: str,
+    rows: list[dict] | None = None,
+    section_title: str = "Complaint update",
+) -> bool:
+    """Send the same case update back to the social thread that made the job.
+
+    This is deliberately best-effort. The complaint transition remains valid if
+    Meta's 24-hour service window is closed; the in-app notification above is the
+    durable fallback. ``source_ai_session_id`` prevents an approval from leaking
+    to another Instagram account linked to the same phone/customer.
+    """
+    from sqlalchemy import text as sql_text
+    from app.engines.messaging_gateway.service import notify_customer
+
+    customer_id = getattr(complaint, "customer_id", None)
+    if not isinstance(customer_id, uuid.UUID):
+        return False
+
+    source_session_id = None
+    booking_id = getattr(complaint, "booking_id", None)
+    if not booking_id and getattr(complaint, "job_id", None):
+        booking_id = (await db.execute(sql_text(
+            "SELECT booking_id FROM service_jobs WHERE id=:job_id"
+        ), {"job_id": str(complaint.job_id)})).scalar_one_or_none()
+    if booking_id:
+        source_session_id = (await db.execute(sql_text(
+            "SELECT ai_session_id FROM service_bookings WHERE id=:booking_id"
+        ), {"booking_id": str(booking_id)})).scalar_one_or_none()
+    return await notify_customer(
+        db,
+        customer_id,
+        text,
+        rows=rows,
+        source_ai_session_id=source_session_id,
+        section_title=section_title,
+    )
 
 
 async def notify_provider_complaint(

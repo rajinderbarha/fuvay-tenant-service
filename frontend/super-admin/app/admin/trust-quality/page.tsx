@@ -145,6 +145,9 @@ export default function TrustQualityPage() {
       items: (badgeDefs.data ?? [])
         .filter(b => b.target_type === target)
         .sort((a, b) => (a.level ?? 99) - (b.level ?? 99)),
+      seededCount: (badgeDefs.data ?? [])
+        .filter(b => b.target_type === target && Boolean(b.id) && b.status !== "missing")
+        .length,
     }));
   }, [badgeDefs.data]);
 
@@ -278,11 +281,11 @@ export default function TrustQualityPage() {
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 800 }}>{group.label}</div>
                     <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                      {group.items.length} of 4 fixed badges configured
+                      {group.seededCount} of 4 fixed badges configured
                     </div>
                   </div>
-                  <Badge variant={group.items.length === 4 ? "success" : "warning"}>
-                    {group.items.length === 4 ? "Complete" : "Needs sync"}
+                  <Badge variant={group.seededCount === 4 ? "success" : "warning"}>
+                    {group.seededCount === 4 ? "Complete" : "Needs sync"}
                   </Badge>
                 </div>
                 <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>

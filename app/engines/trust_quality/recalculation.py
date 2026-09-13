@@ -284,6 +284,8 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
     if complaint_col:
         rows = (await db.execute(text(
             f"SELECT {complaint_col} AS target_key, count(*) AS n, "
+            f"       count(*) FILTER (WHERE status NOT IN "
+            f"         ('resolved','closed','cancelled','rejected','settled')) AS unresolved, "
             f"       count(*) FILTER (WHERE sla_status = 'breached') AS breached "
             f"FROM customer_complaints "
             f"WHERE {complaint_col} = ANY(CAST(:ids AS uuid[])) "
@@ -292,10 +294,12 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
             t = _key(row["target_key"])
             if t not in out:
                 continue
-            n, breached = int(row["n"] or 0), int(row["breached"] or 0)
+            n = int(row["n"] or 0)
+            unresolved = int(row["unresolved"] or 0)
+            breached = int(row["breached"] or 0)
             terminal = terminal_by_target.get(t, 0)
             if terminal:
-                rate = round(n * 100.0 / terminal, 2)
+                rate = round(unresolved * 100.0 / terminal, 2)
                 out[t]["complaint_rate"] = rate
                 out[t]["complaint_dispute_score"] = rate
             if n:
@@ -306,6 +310,8 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
     elif target_type in ("staff", "technician", "tenant_staff"):
         rows = (await db.execute(text(
             "SELECT sj.assigned_staff_id AS target_key, count(*) AS n, "
+            "       count(*) FILTER (WHERE cc.status NOT IN "
+            "         ('resolved','closed','cancelled','rejected','settled')) AS unresolved, "
             "       count(*) FILTER (WHERE cc.sla_status = 'breached') AS breached "
             "FROM customer_complaints cc "
             "JOIN service_jobs sj ON sj.id = cc.job_id "
@@ -315,10 +321,12 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
             t = _key(row["target_key"])
             if t not in out:
                 continue
-            n, breached = int(row["n"] or 0), int(row["breached"] or 0)
+            n = int(row["n"] or 0)
+            unresolved = int(row["unresolved"] or 0)
+            breached = int(row["breached"] or 0)
             terminal = terminal_by_target.get(t, 0)
             if terminal:
-                rate = round(n * 100.0 / terminal, 2)
+                rate = round(unresolved * 100.0 / terminal, 2)
                 out[t]["complaint_rate"] = rate
                 out[t]["complaint_dispute_score"] = rate
             if n:

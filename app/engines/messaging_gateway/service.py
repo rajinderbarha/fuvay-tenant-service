@@ -33,7 +33,7 @@ from app.core.security import (
 )
 from app.engines.messaging_gateway import flow, meta_client, pickers, rating_request
 from app.engines.messaging_gateway.constants import (
-    CMD_HELP, CMD_HUMAN, CMD_LINK, CMD_RESET, CMD_START, CMD_STOP, CMD_TRACK,
+    CMD_COMPLAINT, CMD_HELP, CMD_HUMAN, CMD_LINK, CMD_RESET, CMD_START, CMD_STOP, CMD_TRACK,
     CMD_VERIFY, COMMAND_PREFIX,
     CUSTOMER_SERVICE_WINDOW_HOURS, DURABLE_ACTION_PICKS,
     HANDOFF_TEXT, HELP_TEXT, KNOWN_COMMANDS, LIVE_BOOKING_STATUSES,
@@ -656,6 +656,10 @@ class MessagingGatewayService:
         elif command == CMD_TRACK:
             action = await flow._track_step(thread, self, "", msg.channel)
             reply, picker = action.text, action.picker
+        elif command == CMD_COMPLAINT:
+            await self.ensure_session(thread)
+            action = await flow._complaint_step(thread, self, "", msg.channel)
+            reply, picker = action.text, action.picker
         elif command == CMD_LINK:
             reply = await self._start_identity_link(thread, command_remainder(msg.text))
         elif command == CMD_VERIFY:
@@ -790,6 +794,244 @@ class MessagingGatewayService:
     ) -> dict:
         """Customer-safe text and artwork for a social booking status card."""
         return await self._latest_booking_status_view(thread, booking_number)
+
+    async def _social_context(self, thread: MessagingThread) -> tuple[object, dict]:
+        """Return the durable conversation context used by non-booking actions.
+
+        Complaint intake intentionally lives on the existing conversation session:
+        it survives webhook retries and process restarts without adding a second,
+        channel-only complaint draft table.
+        """
+        from app.engines.ai_conversation.models import AIConversationSession
+
+        await self.ensure_session(thread)
+        session = await self.db.get(AIConversationSession, thread.ai_session_id)
+        if session is None:  # defensive; ensure_session normally makes this impossible
+            raise ServiceOSException("SESSION_NOT_FOUND", "Conversation session not found.")
+        return session, dict(session.context_data or {})
+
+    async def social_complaint_state(self, thread: MessagingThread) -> dict | None:
+        session, context = await self._social_context(thread)
+        return dict(context.get("social_complaint") or {}) or None
+
+    async def set_social_complaint_state(
+        self, thread: MessagingThread, state: dict | None,
+    ) -> None:
+        session, context = await self._social_context(thread)
+        if state:
+            context["social_complaint"] = state
+        else:
+            context.pop("social_complaint", None)
+        session.context_data = context
+
+    async def complaint_cases(self, thread: MessagingThread) -> list[dict]:
+        """Open complaint cases owned by this exact linked customer."""
+        if not thread.customer_id:
+            return []
+        from app.engines.complaints.complaint_service import ComplaintService
+        from app.engines.complaints.constants import FINAL_STATUSES_EXT, STATUS_RESOLVED
+
+        rows = await ComplaintService().list_customer_complaints(
+            self.db, thread.customer_id,
+        )
+        return [
+            {
+                "id": str(case.id),
+                "number": case.complaint_number,
+                "type": case.complaint_type,
+                "status": case.status,
+                "title": case.title,
+                "booking_id": str(case.booking_id) if case.booking_id else None,
+            }
+            for case in rows
+            if case.status not in FINAL_STATUSES_EXT | {STATUS_RESOLVED}
+        ]
+
+    async def complaint_bookings(self, thread: MessagingThread) -> list[dict]:
+        """Recent service records against which this customer may complain.
+
+        The eligibility engine remains authoritative. A completed job is preferred
+        over its booking because that preserves technician/job context for rework,
+        warranty, and provider investigation.
+        """
+        if not thread.customer_id:
+            return []
+        from app.engines.admin_catalog.models import MasterService
+        from app.engines.complaints.constants import (
+            ELIGIBLE_STATUSES, RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB,
+        )
+        from app.engines.complaints.eligibility_service import ComplaintEligibilityService
+        from app.engines.final_records.models import ServiceBooking, ServiceJob
+
+        bookings = list((await self.db.execute(
+            select(ServiceBooking)
+            .where(ServiceBooking.customer_id == thread.customer_id)
+            .order_by(ServiceBooking.created_at.desc())
+            .limit(20)
+        )).scalars().all())
+        eligibility = ComplaintEligibilityService()
+        result: list[dict] = []
+        for booking in bookings:
+            job = (await self.db.execute(
+                select(ServiceJob).where(ServiceJob.booking_id == booking.id).limit(1)
+            )).scalars().first()
+            record_type = None
+            record_id = None
+            status = ""
+            if job and str(job.status or "").lower() in ELIGIBLE_STATUSES[RECORD_SERVICE_JOB]:
+                record_type, record_id, status = RECORD_SERVICE_JOB, job.id, str(job.status)
+            elif str(booking.status or "").lower() in ELIGIBLE_STATUSES[RECORD_SERVICE_BOOKING]:
+                record_type, record_id, status = RECORD_SERVICE_BOOKING, booking.id, str(booking.status)
+            if not record_type:
+                continue
+            check = await eligibility.check_eligible(
+                self.db, thread.customer_id, record_type, record_id,
+                category_id=booking.category_id,
+            )
+            if not check.get("eligible"):
+                continue
+            offering = await self.db.get(MasterService, booking.offering_id)
+            result.append({
+                "record_type": record_type,
+                "record_id": str(record_id),
+                "booking_id": str(booking.id),
+                "booking_number": booking.booking_number,
+                "category_id": str(booking.category_id),
+                "offering_id": str(booking.offering_id),
+                "service": getattr(offering, "service_name", None) or "Home service",
+                "problem": str(booking.issue_summary or "").strip() or None,
+                "status": status,
+            })
+        return result
+
+    async def complaint_menu_available(self, thread: MessagingThread) -> bool:
+        return bool(await self.complaint_cases(thread) or await self.complaint_bookings(thread))
+
+    async def begin_social_complaint(
+        self, thread: MessagingThread, booking: dict, complaint_type: str | None = None,
+    ) -> dict:
+        state = {
+            "mode": "new",
+            **{key: booking.get(key) for key in (
+                "record_type", "record_id", "booking_id", "booking_number",
+                "category_id", "offering_id", "service", "problem",
+            )},
+        }
+        if complaint_type:
+            state["complaint_type"] = complaint_type
+        await self.set_social_complaint_state(thread, state)
+        return state
+
+    async def begin_social_complaint_message(
+        self, thread: MessagingThread, complaint_id: str,
+    ) -> None:
+        await self.set_social_complaint_state(
+            thread, {"mode": "message", "complaint_id": complaint_id},
+        )
+
+    async def file_social_complaint(
+        self, thread: MessagingThread, description: str,
+    ) -> dict:
+        state = await self.social_complaint_state(thread)
+        if not thread.customer_id or not state or state.get("mode") != "new":
+            raise ServiceOSException("COMPLAINT_STATE_MISSING", "Start the complaint again.")
+        description = (description or "").strip()
+        if len(description) < 10:
+            raise ServiceOSException(
+                "COMPLAINT_DESCRIPTION_REQUIRED",
+                "Please describe what happened in at least 10 characters.",
+            )
+        from app.engines.complaints.complaint_service import ComplaintService
+
+        complaint_type = str(state.get("complaint_type") or "other")
+        complaint = await ComplaintService().create_complaint(
+            self.db,
+            thread.customer_id,
+            category_id=uuid.UUID(str(state["category_id"])),
+            record_type=str(state["record_type"]),
+            record_id=uuid.UUID(str(state["record_id"])),
+            complaint_type=complaint_type,
+            description=description,
+            offering_id=uuid.UUID(str(state["offering_id"])) if state.get("offering_id") else None,
+            title=f"{complaint_type.replace('_', ' ').title()} — {state.get('booking_number')}",
+            request_id=self.request_id,
+        )
+        await self.set_social_complaint_state(thread, None)
+        return {
+            "id": str(complaint.id), "number": complaint.complaint_number,
+            "status": complaint.status, "booking_number": state.get("booking_number"),
+        }
+
+    async def add_social_complaint_message(
+        self, thread: MessagingThread, text_value: str,
+    ) -> dict:
+        state = await self.social_complaint_state(thread)
+        if not thread.customer_id or not state or state.get("mode") != "message":
+            raise ServiceOSException("COMPLAINT_STATE_MISSING", "Choose a complaint first.")
+        message = (text_value or "").strip()
+        if len(message) < 2:
+            raise ServiceOSException("COMPLAINT_MESSAGE_REQUIRED", "Please type your update.")
+        from app.engines.complaints.complaint_service import ComplaintService
+
+        complaint_id = uuid.UUID(str(state["complaint_id"]))
+        await ComplaintService().add_customer_message(
+            self.db, thread.customer_id, complaint_id, message,
+            request_id=self.request_id,
+        )
+        await self.set_social_complaint_state(thread, None)
+        return {"complaint_id": str(complaint_id)}
+
+    async def complaint_status_view(
+        self, thread: MessagingThread, complaint_id: str,
+    ) -> dict:
+        if not thread.customer_id:
+            raise ServiceOSException("COMPLAINT_ACCESS_DENIED", "Link your account first.")
+        from app.engines.complaints.complaint_service import ComplaintService
+        from app.engines.complaints.constants import RES_PROPOSED
+
+        service = ComplaintService()
+        complaint = await service.get_customer_complaint(
+            self.db, thread.customer_id, uuid.UUID(str(complaint_id)),
+        )
+        resolutions = await service.list_resolutions(self.db, complaint.id)
+        proposed = next((item for item in resolutions if item.status == RES_PROPOSED), None)
+        return {
+            "id": str(complaint.id),
+            "number": complaint.complaint_number,
+            "type": complaint.complaint_type,
+            "status": complaint.status,
+            "description": complaint.description,
+            "sla_status": complaint.sla_status,
+            "resolution": ({
+                "id": str(proposed.id),
+                "type": proposed.resolution_type,
+                "description": proposed.description,
+                "notes": proposed.customer_visible_notes,
+            } if proposed else None),
+        }
+
+    async def decide_social_complaint_resolution(
+        self, thread: MessagingThread, complaint_id: str, resolution_id: str,
+        decision: str,
+    ) -> str:
+        if not thread.customer_id:
+            raise ServiceOSException("COMPLAINT_ACCESS_DENIED", "Link your account first.")
+        from app.engines.complaints.complaint_service import ComplaintService
+
+        service = ComplaintService()
+        if decision == "accept":
+            await service.customer_accept_resolution(
+                self.db, thread.customer_id, uuid.UUID(complaint_id),
+                uuid.UUID(resolution_id), request_id=self.request_id,
+            )
+            return "accepted"
+        await service.customer_reject_resolution(
+            self.db, thread.customer_id, uuid.UUID(complaint_id),
+            uuid.UUID(resolution_id),
+            reason="Customer rejected the proposed resolution in Instagram chat.",
+            request_id=self.request_id,
+        )
+        return "rejected"
 
     async def cancel_options(self, thread: MessagingThread, booking_number: str) -> dict:
         """What the SERVER says about cancelling this booking.
@@ -1328,6 +1570,7 @@ class MessagingGatewayService:
             "Service partner: confirmed" if booking.tenant_id
             else "Service partner: matching in progress"
         )
+        provider_badge_names: list[str] = []
 
         staff_id = getattr(job, "assigned_staff_id", None) if job else None
         technician_name = None
@@ -1389,7 +1632,25 @@ class MessagingGatewayService:
         else:
             lines.extend(("", "YOUR TECHNICIAN", "Technician: assignment in progress"))
 
+        if booking.tenant_id:
+            try:
+                from app.engines.home_service_booking.matching_engine import _public_badges
+                provider_badge_names = [
+                    str(item.get("name") or "").strip()
+                    for item in await _public_badges(
+                        self.db, booking.tenant_id, None, None,
+                    )
+                    if str(item.get("name") or "").strip()
+                ]
+            except Exception as exc:  # trust decoration must never break tracking
+                logger.warning(
+                    "messaging_gateway.provider_badges_failed",
+                    booking_number=booking.booking_number, error=str(exc),
+                )
+
         service_details = [partner_line]
+        if provider_badge_names:
+            service_details.append(f"Provider badges: {' · '.join(provider_badge_names)}")
         area = " ".join(str(value) for value in (
             getattr(job, "city", None) if job else booking.city,
             getattr(job, "zipcode", None) if job else booking.zipcode,
@@ -1425,7 +1686,12 @@ class MessagingGatewayService:
             "image_url": card_image,
             "booking_number": booking.booking_number,
             "technician_verified": technician_verified,
+            # Backward-compatible field: existing mobile/chat consumers use
+            # ``badges`` for the assigned technician. Provider trust claims are
+            # additive and explicitly named.
             "badges": badge_names,
+            "provider_badges": provider_badge_names,
+            "technician_badges": badge_names,
         }
 
     async def _latest_booking_status(

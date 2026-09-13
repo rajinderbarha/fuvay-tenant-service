@@ -2612,6 +2612,12 @@ export interface HomeServicesDashboardData {
     score: number | null;
     band: string | null;
     note: string;
+    badges: Array<{
+      name: string;
+      icon?: string | null;
+      color?: string | null;
+      description?: string | null;
+    }>;
   };
   attention_queue: HomeServicesDashboardAttentionItem[];
   job_pipeline: Array<{ key: string; label: string; count: number }>;
@@ -4801,7 +4807,7 @@ export interface TenantStatusAuditLogEntry {
 
 // MODULE-L5-12: earned trust badges (with icon/colour) for this provider + staff.
 export interface EarnedBadge {
-  assignment_id: string; badge_key: string; name: string; description?: string | null;
+  assignment_id?: string; badge_key?: string; name: string; description?: string | null;
   icon?: string | null; color?: string | null;
   customer_visible: boolean; tenant_visible: boolean;
   award_source: string; earned_at: string | null; expires_at: string | null;

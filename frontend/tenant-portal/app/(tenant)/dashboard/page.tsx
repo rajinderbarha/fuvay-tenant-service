@@ -10,6 +10,7 @@ import {
 import { Alert, Button, Card, PageHeader, PageShell } from "@serviceos/design-system";
 import { Badge, KpiGrid, Skeleton, SummaryCard } from "../../../components/shared/ui";
 import { JobAlertPopup } from "../../../components/dashboard/JobAlertPopup";
+import { TrustBadges } from "../../../components/TrustBadges";
 import { useJobAlerts } from "../../../hooks/useJobAlerts";
 import { useApi } from "../../../hooks/useApi";
 import {
@@ -98,7 +99,7 @@ function OperationalDashboard() {
     <JobAlertPopup alerts={alerts.pending} newTotal={alerts.newTotal} delayedTotal={alerts.delayedTotal} onDismiss={alerts.dismiss} onOpenJob={(jobId) => { alerts.dismiss(); router.push(`/home-services/bookings-jobs?job_id=${jobId}`); }} onSeeAllDelayed={() => { alerts.dismiss(); router.push("/home-services/bookings-jobs?sla=AT_RISK"); }} onOpenBoard={() => { alerts.dismiss(); router.push("/home-services/bookings-jobs"); }} />
 
     <Card padding="sm"><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}><div className="dashboard-metric-icon" style={{ width: 42, height: 42, background: "var(--accent-muted)", color: "var(--accent)" }}><BriefcaseBusiness size={19} /></div><div><div style={{ color: "var(--text-primary)", fontWeight: 700, fontSize: 14 }}>{data.workspace.business_name}</div><div style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--text-tertiary)", fontSize: 11, marginTop: 3 }}><MapPin size={12} />{location}</div></div></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}><div className="dashboard-metric-icon" style={{ width: 42, height: 42, background: "var(--accent-muted)", color: "var(--accent)" }}><BriefcaseBusiness size={19} /></div><div><div style={{ color: "var(--text-primary)", fontWeight: 700, fontSize: 14 }}>{data.workspace.business_name}</div><div style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--text-tertiary)", fontSize: 11, marginTop: 3 }}><MapPin size={12} />{location}</div>{data.provider_health.badges.length > 0 && <div style={{ marginTop: 8 }}><TrustBadges badges={data.provider_health.badges} /></div>}</div></div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><Badge variant={data.bookability.is_bookable ? "success" : "danger"} dot>{data.bookability.is_bookable ? "Accepting bookings" : "Bookings blocked"}</Badge><span style={{ color: "var(--text-tertiary)", fontSize: 11 }}>Updated {timeAgo(data.generated_at)}</span></div>
     </div></Card>
     {data.failed_modules.length > 0 && <Alert tone="warning" title="Some live modules are temporarily unavailable">The core dashboard is available. Refresh to retry: {data.failed_modules.map(humanize).join(", ")}.</Alert>}

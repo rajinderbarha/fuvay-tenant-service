@@ -64,6 +64,27 @@ def test_admin_ui_no_longer_exposes_badge_creation_form():
     assert "Fixed customer trust catalog" in page
 
 
+def test_catalog_completion_counts_only_database_backed_badges():
+    page = ADMIN_PAGE.read_text(encoding="utf-8")
+    assert 'seededCount: (badgeDefs.data ?? [])' in page
+    assert 'Boolean(b.id) && b.status !== "missing"' in page
+    assert 'group.seededCount === 4 ? "Complete" : "Needs sync"' in page
+
+
+def test_unbanded_health_rows_do_not_present_raw_zero_as_a_verdict():
+    scores = (ADMIN_PAGE.parent / "ScoresTab.tsx").read_text(encoding="utf-8")
+    assert "Not enough data" in scores
+    assert "s.band_key" in scores
+
+
+def test_worker_periodically_repairs_defaults_and_refreshes_trust_snapshots():
+    worker = (ROOT / "app" / "jobs" / "trust_quality_worker.py").read_text(encoding="utf-8")
+    assert "AUTOMATIC_REFRESH_INTERVAL = timedelta(hours=6)" in worker
+    assert "_enqueue_automatic_refresh_if_due" in worker
+    assert "await service.seed_defaults()" in worker
+    assert 'triggered_by="scheduled"' in worker
+
+
 def test_admin_api_dropdown_targets_are_only_supported_badge_targets():
     src = API_TS.read_text(encoding="utf-8")
     assert 'badgeTargets: ["tenant", "staff", "technician"]' in src

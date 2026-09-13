@@ -265,6 +265,17 @@ class ComplaintService:
         await db.flush()
         await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_CUSTOMER, customer_id,
                               EVT_CUSTOMER_MESSAGE_ADDED, None, None, None, None, request_id=request_id)
+        complaint.provider_response_required = True
+        try:
+            from app.engines.complaints.notifications import notify_provider_complaint
+            await notify_provider_complaint(
+                db, complaint,
+                notification_type="complaint.customer_message",
+                title=f"Customer update — {complaint.complaint_number}",
+                body=message_text.strip()[:240], severity="info",
+            )
+        except Exception:
+            pass
         await db.commit()
         return msg
 
@@ -380,6 +391,16 @@ class ComplaintService:
         await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_CUSTOMER, customer_id,
                               EVT_RESOLUTION_ACCEPTED, None, None, None, {"resolution_id": str(resolution_id)},
                               request_id=request_id)
+        try:
+            from app.engines.complaints.notifications import notify_provider_complaint
+            await notify_provider_complaint(
+                db, complaint,
+                notification_type="complaint.resolution_accepted",
+                title=f"Resolution accepted — {complaint.complaint_number}",
+                body="The customer accepted the proposed resolution.", severity="success",
+            )
+        except Exception:
+            pass
         await db.commit()
         return resolution
 
@@ -405,6 +426,17 @@ class ComplaintService:
                                reason=reason, request_id=request_id)
         await self._log_event(db, complaint_id, complaint.tenant_id, ACTOR_CUSTOMER, customer_id,
                               EVT_RESOLUTION_REJECTED, None, None, None, {"reason": reason}, request_id=request_id)
+        complaint.provider_response_required = True
+        try:
+            from app.engines.complaints.notifications import notify_provider_complaint
+            await notify_provider_complaint(
+                db, complaint,
+                notification_type="complaint.resolution_rejected",
+                title=f"Resolution rejected — {complaint.complaint_number}",
+                body=reason.strip()[:240], severity="warning",
+            )
+        except Exception:
+            pass
         await db.commit()
         return resolution
 
@@ -539,10 +571,32 @@ class ComplaintService:
             visibility     = VIS_PUBLIC,
         )
         db.add(msg)
+        # Stop the first-response SLA as soon as the provider genuinely replies.
+        # The case can remain unresolved (and still affect quality health), but
+        # it must not later be charged as if no response was sent.
+        await self.check_and_update_sla(db, complaint, request_id=request_id)
         complaint.provider_responded_at = datetime.now(timezone.utc)
+        complaint.provider_response_required = False
         await db.flush()
         await self._log_event(db, complaint_id, tenant_id, ACTOR_PROVIDER, actor_user_id,
                               EVT_PROVIDER_RESPONDED, None, None, None, None, request_id=request_id)
+        try:
+            from app.engines.complaints.notifications import (
+                notify_customer_complaint, notify_customer_complaint_channel,
+            )
+            await notify_customer_complaint(
+                db, complaint,
+                notification_type="complaint.provider_response",
+                title=f"Provider replied — {complaint.complaint_number}",
+                body=message_text.strip()[:240], severity="info",
+            )
+            await notify_customer_complaint_channel(
+                db, complaint,
+                text=(f"Update on complaint {complaint.complaint_number}:\n\n"
+                      f"{message_text.strip()}\n\nSend /complaint to view or reply."),
+            )
+        except Exception:
+            pass
         await db.commit()
         return msg
 
@@ -585,7 +639,10 @@ class ComplaintService:
         # accept/reject — otherwise the complaint sits in resolution_proposed
         # forever with nobody aware it is the customer's move.
         try:
-            from app.engines.complaints.notifications import notify_customer_complaint
+            from app.engines.complaints.notifications import (
+                notify_customer_complaint, notify_customer_complaint_channel,
+            )
+            from app.engines.messaging_gateway.constants import PICK_COMPLAINT, PICKER_SEP
             await notify_customer_complaint(
                 db, complaint,
                 notification_type="complaint.resolution_offered",
@@ -593,6 +650,27 @@ class ComplaintService:
                 body=f"The provider offered: {resolution_type.replace('_', ' ')}. "
                      "Open the complaint to accept or reject it.",
                 severity="info",
+            )
+            await notify_customer_complaint_channel(
+                db, complaint,
+                text=(f"Resolution offered for complaint {complaint.complaint_number}:\n\n"
+                      f"{resolution_type.replace('_', ' ').title()}\n"
+                      f"{description.strip()}"),
+                rows=[
+                    {
+                        "id": PICKER_SEP.join((
+                            PICK_COMPLAINT, "accept", str(complaint.id), str(resolution.id),
+                        )),
+                        "title": "Accept resolution",
+                    },
+                    {
+                        "id": PICKER_SEP.join((
+                            PICK_COMPLAINT, "reject", str(complaint.id), str(resolution.id),
+                        )),
+                        "title": "Reject resolution",
+                    },
+                ],
+                section_title="Complaint resolution",
             )
         except Exception:
             pass
@@ -713,8 +791,18 @@ class ComplaintService:
         if complaint.status in FINAL_STATUSES:
             return complaint
 
+        # This deadline measures the provider's FIRST response, not how long a
+        # mutually worked complaint remains open. Once a response exists, later
+        # scheduler passes must never turn an answered case into a false breach.
+        if complaint.provider_responded_at is not None:
+            return complaint
+
         due = complaint.tenant_first_response_due_at
-        if not due:
+        # Historical/imported rows (and a few thin API projections) can carry
+        # no concrete deadline.  Treat anything other than a real datetime as
+        # "not scheduled" rather than letting a response fail while comparing
+        # an opaque value to the clock.
+        if not isinstance(due, datetime):
             return complaint
 
         old_sla = complaint.sla_status

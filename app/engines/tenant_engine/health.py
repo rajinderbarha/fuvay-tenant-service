@@ -217,19 +217,39 @@ async def refresh_provider_operational_health(db, tenant_id: uuid.UUID) -> dict:
                    WHERE tenant_id=:tid AND event_type='provider_assignment_timeout') AS assignment_timeouts
                   ,(SELECT count(DISTINCT job_id) FROM service_job_execution_events
                    WHERE tenant_id=:tid AND event_type='false_arrival_detected') AS false_arrivals
+                  ,(SELECT count(*) FROM customer_complaints
+                   WHERE tenant_id=:tid
+                     AND status NOT IN ('resolved','closed','cancelled','rejected','settled')) AS unresolved_complaints
+                  ,(SELECT count(*) FROM customer_complaints
+                   WHERE tenant_id=:tid AND sla_status IN ('breached','escalated')
+                     AND status NOT IN ('resolved','closed','cancelled','rejected','settled')) AS complaint_sla_breaches
             """), {"tid": str(tenant_id)})).mappings().first()
             completed = int((row or {}).get("completed") or 0)
             cancelled = int((row or {}).get("provider_cancelled") or 0)
             timeouts = int((row or {}).get("assignment_timeouts") or 0)
             false_arrivals = int((row or {}).get("false_arrivals") or 0)
+            unresolved_complaints = int((row or {}).get("unresolved_complaints") or 0)
+            complaint_sla_breaches = int((row or {}).get("complaint_sla_breaches") or 0)
             prior = 4
             false_arrival_weight = float(operations_policy.false_arrival_health_weight)
             completion_score = round(
                 100.0 * (completed + prior)
                 / (completed + cancelled + (false_arrivals * false_arrival_weight) + prior), 2)
-            response_score = round(100.0 * prior / (timeouts + prior), 2)
+            response_score = round(
+                100.0 * prior / (timeouts + complaint_sla_breaches + prior), 2,
+            )
+            # Only unresolved complaints reduce quality. A resolved case is no
+            # longer an active failure, while an ignored open case becomes a
+            # visible and steadily meaningful health signal.
+            satisfaction_score = round(
+                100.0 * (completed + prior)
+                / (completed + prior + (unresolved_complaints * 2)), 2,
+            )
             await write_health_signal(tenant_id, "job_completion_rate", completion_score, ttl_hours=24)
             await write_health_signal(tenant_id, "response_time", response_score, ttl_hours=24)
+            await write_health_signal(
+                tenant_id, "customer_satisfaction", satisfaction_score, ttl_hours=24,
+            )
             health = await compute_health_score(tenant_id, db=db)
     except Exception as exc:  # health telemetry must never strand job cancellation
         logger.warning("health.operational_refresh_failed", tenant_id=str(tenant_id), error=str(exc))
@@ -239,5 +259,8 @@ async def refresh_provider_operational_health(db, tenant_id: uuid.UUID) -> dict:
         "completion_score": completion_score, "response_score": response_score,
         "provider_cancellations": cancelled, "assignment_timeouts": timeouts,
         "false_arrivals": false_arrivals,
+        "unresolved_complaints": unresolved_complaints,
+        "complaint_sla_breaches": complaint_sla_breaches,
+        "customer_satisfaction_score": satisfaction_score,
         "false_arrival_health_weight": false_arrival_weight,
     }

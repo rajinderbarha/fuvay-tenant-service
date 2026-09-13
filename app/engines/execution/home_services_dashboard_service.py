@@ -500,6 +500,15 @@ async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
         "tenant_code, city, state, zipcode, logo_url, health_score, health_band "
         "FROM tenants WHERE id=:tid"
     ), {"tid": str(tid)})).fetchone()
+    from app.engines.home_service_booking.matching_engine import _public_badges
+    public_badges = await _safe(
+        _public_badges(
+            db, tid,
+            tenant.health_score if tenant else None,
+            None,
+        ),
+        "provider_badges", errors,
+    ) or []
     today_total = (await db.execute(text(
         "SELECT count(*) FROM service_jobs WHERE tenant_id=:tid "
         "AND scheduled_date=CURRENT_DATE"
@@ -531,6 +540,7 @@ async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
             "score": float(tenant.health_score) if tenant and tenant.health_score is not None else None,
             "band": tenant.health_band if tenant else None,
             "note": "Cancellations, assignment response, completed work, customer satisfaction and payment readiness contribute to this score.",
+            "badges": public_badges,
         },
         "attention_queue": attention,
         "job_pipeline": pipeline,

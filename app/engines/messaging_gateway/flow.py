@@ -40,7 +40,7 @@ from app.engines.messaging_gateway.constants import (
     PICK_CONFIRM, PICK_DUPLICATE, PICK_EMERGENCY, PICK_MORE, PICK_OFFERING,
     PICK_PROBLEM,
     PICK_HANDOVER, PICK_PARTS, PICK_PAYMENT, PICK_QUESTION, PICK_QUOTE,
-    PICK_RATING, PICK_RESTART, PICK_SKIP, PICK_SLOT, PICK_PHONE,
+    PICK_RATING, PICK_RESTART, PICK_SKIP, PICK_SLOT, PICK_PHONE, PICK_COMPLAINT,
     PICK_TRACK, PICK_ADDON,
     PICKER_SEP, SLOT_EMERGENCY_FLAG,
 )
@@ -136,6 +136,7 @@ NO_BOOKING_OPTIONS = "What would you like to do?"
 NOTHING_OPEN = "You have no booking open right now."
 TRACK_ROW = "Track my booking"
 NEW_BOOKING_ROW = "Book another service"
+COMPLAINT_ROW = "Report or track issue"
 NO_BOOKINGS = "There is no booking on this number yet."
 CANCEL_ROW = "Cancel booking"
 CANCEL_NOT_ALLOWED = (
@@ -253,6 +254,19 @@ class Turn:
 # answer (currently OTP) opt out with ``allow_text``.
 TAP_AN_OPTION = "Please tap one of the options shown below to continue."
 
+COMPLAINT_TYPES = (
+    ("service_quality", "Poor work quality"),
+    ("technician_behavior", "Technician behaviour"),
+    ("late_arrival", "Late arrival"),
+    ("no_show", "Technician did not come"),
+    ("overcharging", "Overcharging"),
+    ("payment_issue", "Payment issue"),
+    ("warranty_claim", "Warranty problem"),
+    ("property_damage", "Property damage"),
+    ("service_not_completed", "Work not completed"),
+    ("other", "Another problem"),
+)
+
 
 def _requires_option_tap(turn: Turn) -> bool:
     return bool(turn.picker) and not bool(turn.picker.get("allow_text"))
@@ -294,6 +308,35 @@ async def advance(
         # thing a tap would have.
         reply_id = await _resolve_numbered_choice(thread, text)
 
+    # Complaint descriptions and case updates are the two intentional free-text
+    # steps in an otherwise tap-only chat. They are persisted in the existing
+    # conversation context, so a process restart or webhook retry cannot apply
+    # the text to the booking address/question flow by mistake.
+    typed = (text or "").strip()
+    if typed and not reply_id and identity is not None:
+        complaint_state = await identity.social_complaint_state(thread)
+        if complaint_state:
+            try:
+                if complaint_state.get("mode") == "new" and complaint_state.get("complaint_type"):
+                    created = await identity.file_social_complaint(thread, typed)
+                    return await _complaint_step(
+                        thread, identity, f"case{PICKER_SEP}{created['id']}", channel,
+                        notice=(
+                            f"Complaint {created['number']} has been sent to the provider. "
+                            "We will keep its status here."
+                        ),
+                    )
+                if complaint_state.get("mode") == "message":
+                    complaint_id = str(complaint_state["complaint_id"])
+                    await identity.add_social_complaint_message(thread, typed)
+                    return await _complaint_step(
+                        thread, identity, f"case{PICKER_SEP}{complaint_id}", channel,
+                        notice="Your update has been sent to the provider.",
+                    )
+            except Exception as exc:  # domain rejection stays inside the chat
+                detail = getattr(exc, "detail", None) or str(exc)
+                return Turn(str(detail))
+
     # A customer can still see and use Meta's composer underneath buttons and
     # cards.  Reconstruct the current step before applying free text; if that
     # step is a picker, do not let the text become an address or another later
@@ -301,7 +344,6 @@ async def advance(
     # TIMES remains the documented escape hatch when a WhatsApp Flow cannot
     # open, and OTP explicitly allows typing alongside its change-number
     # button.
-    typed = (text or "").strip()
     whatsapp_times = channel == CHANNEL_WHATSAPP and typed.lower() in {
         "times", "time", "show times", "show time slots",
     }
@@ -321,6 +363,7 @@ async def advance(
         if not thread.zipcode and kind not in {
             PICK_RESTART, PICK_AREA, PICK_AREA_CITY, PICK_TRACK, PICK_CANCEL,
             PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_RATING,
+            PICK_COMPLAINT,
         }:
             # Instagram quick replies and buttons on old messages remain
             # tappable. Once a new booking has cleared its area, an old
@@ -328,7 +371,7 @@ async def advance(
             return Turn(ASK_PINCODE)
         if _is_finished(draft) and kind not in {
             PICK_RESTART, PICK_TRACK, PICK_CANCEL, PICK_PARTS, PICK_QUOTE,
-            PICK_HANDOVER, PICK_PAYMENT, PICK_RATING,
+            PICK_HANDOVER, PICK_PAYMENT, PICK_RATING, PICK_COMPLAINT,
         }:
             # Old service cards remain tappable after confirmation. Treat a
             # category/service choice as the start of another booking, which
@@ -509,6 +552,11 @@ async def _navigate(db, executor, reply_id: str, draft, thread, channel: str,
         booking_id, _, stars = rest.partition(PICKER_SEP)
         note = await rating_request.record_rating(db, thread, booking_id, stars)
         return await _booked_menu_for(identity, thread, "", note)
+
+    if kind == PICK_COMPLAINT:
+        if identity is None:
+            return None
+        return await _complaint_step(thread, identity, rest, channel)
 
     if kind == PICK_SKIP and draft:
         await _merge_address(db, draft, {"location_skipped": True})
@@ -1070,6 +1118,19 @@ async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> 
         else:
             rows.append({"id": f"{PICK_CANCEL}{PICKER_SEP}", "title": CANCEL_ROW})
 
+    if identity is not None:
+        try:
+            if await identity.complaint_menu_available(thread):
+                rows.append({
+                    "id": f"{PICK_COMPLAINT}{PICKER_SEP}",
+                    "title": COMPLAINT_ROW,
+                })
+        except Exception as exc:  # a complaint read must not break booking controls
+            logger.warning(
+                "messaging_gateway.flow.complaint_menu_failed",
+                thread_id=str(getattr(thread, "id", "-")), error=str(exc),
+            )
+
     rows.append({"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": NEW_BOOKING_ROW})
     if identity is not None and not bookings and text == ALREADY_BOOKED:
         # Only said when we actually looked and found nothing — "this booking
@@ -1077,6 +1138,191 @@ async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> 
         # to ask about live bookings.
         text = NOTHING_OPEN
     return _booked_menu(text, rows, has_booking=bool(bookings))
+
+
+async def _complaint_step(
+    thread, identity, rest: str, channel: str, *, notice: str | None = None,
+) -> Turn:
+    """Create, track, update, and resolve a customer complaint in social chat."""
+    if identity is None or not getattr(thread, "customer_id", None):
+        return Turn(
+            "Please link your mobile number before opening a complaint. "
+            "Send /link followed by your 10-digit mobile number."
+        )
+
+    action, _, tail = (rest or "").partition(PICKER_SEP)
+    if not action:
+        cases = await identity.complaint_cases(thread)
+        bookings = await identity.complaint_bookings(thread)
+        rows = [
+            {
+                "id": PICKER_SEP.join((PICK_COMPLAINT, "case", case["id"])),
+                "title": case["number"],
+                "description": (
+                    f"{case['type'].replace('_', ' ').title()} · "
+                    f"{case['status'].replace('_', ' ').title()}"
+                ),
+            }
+            for case in cases[:8]
+        ]
+        if bookings:
+            rows.append({
+                "id": PICKER_SEP.join((PICK_COMPLAINT, "new")),
+                "title": "Report a new problem",
+                "description": "Choose the completed service",
+            })
+        if not rows:
+            return Turn(
+                "There is no completed or eligible service on this account for a complaint. "
+                "If you still need help, send /human."
+            )
+        picker = pickers._paginate(
+            rows, "What would you like help with?", channel, 0,
+            kind=PICK_COMPLAINT, list_button="Choose", section_title="Complaints",
+        )
+        return Turn(notice, picker)
+
+    if action == "new":
+        bookings = await identity.complaint_bookings(thread)
+        if not bookings:
+            return Turn(
+                "No recent service is eligible for a new complaint. "
+                "An existing open complaint must be resolved before the same issue is filed again."
+            )
+        if len(bookings) == 1:
+            booking = bookings[0]
+            await identity.begin_social_complaint(thread, booking)
+            return _complaint_type_turn(booking, channel)
+        rows = [
+            {
+                "id": PICKER_SEP.join((
+                    PICK_COMPLAINT, "booking", booking["record_type"], booking["record_id"],
+                )),
+                "title": booking.get("problem") or booking.get("service") or booking["booking_number"],
+                "description": f"{booking['booking_number']} · {booking.get('service') or 'Home service'}",
+            }
+            for booking in bookings[:10]
+        ]
+        picker = pickers._paginate(
+            rows, "Which service had the problem?", channel, 0,
+            kind=PICK_COMPLAINT, list_button="Choose", section_title="Your services",
+        )
+        return Turn(None, picker)
+
+    if action == "booking":
+        record_type, _, record_id = tail.partition(PICKER_SEP)
+        booking = next((
+            item for item in await identity.complaint_bookings(thread)
+            if item["record_type"] == record_type and item["record_id"] == record_id
+        ), None)
+        if booking is None:
+            return Turn("That service is no longer eligible for a new complaint.")
+        await identity.begin_social_complaint(thread, booking)
+        return _complaint_type_turn(booking, channel)
+
+    if action == "type":
+        complaint_type = tail
+        if complaint_type not in {key for key, _label in COMPLAINT_TYPES}:
+            return Turn("Please choose one of the complaint types shown.")
+        state = await identity.social_complaint_state(thread)
+        if not state or state.get("mode") != "new":
+            return await _complaint_step(thread, identity, "new", channel)
+        await identity.begin_social_complaint(thread, state, complaint_type)
+        return Turn(
+            "Please describe what happened, including the important details. "
+            "Your next message will be sent to the provider as the complaint description."
+        )
+
+    if action == "case":
+        complaint_id = tail
+        try:
+            view = await identity.complaint_status_view(thread, complaint_id)
+        except Exception as exc:
+            return Turn(getattr(exc, "detail", None) or str(exc))
+        lines = [
+            f"Complaint {view['number']}",
+            f"Status: {view['status'].replace('_', ' ').title()}",
+            f"Type: {view['type'].replace('_', ' ').title()}",
+            f"Response SLA: {str(view.get('sla_status') or 'on_time').replace('_', ' ').title()}",
+            "",
+            view["description"],
+        ]
+        rows = [{
+            "id": PICKER_SEP.join((PICK_COMPLAINT, "update", complaint_id)),
+            "title": "Send an update",
+        }]
+        resolution = view.get("resolution")
+        if resolution:
+            lines.extend((
+                "", "PROPOSED RESOLUTION",
+                resolution["type"].replace("_", " ").title(),
+                resolution.get("description") or "The provider proposed a resolution.",
+            ))
+            if resolution.get("notes"):
+                lines.append(str(resolution["notes"]))
+            rows = [
+                {
+                    "id": PICKER_SEP.join((
+                        PICK_COMPLAINT, "accept", complaint_id, resolution["id"],
+                    )),
+                    "title": "Accept resolution",
+                },
+                {
+                    "id": PICKER_SEP.join((
+                        PICK_COMPLAINT, "reject", complaint_id, resolution["id"],
+                    )),
+                    "title": "Reject resolution",
+                },
+                *rows,
+            ]
+        picker = {
+            "body": "Choose an action for this complaint.",
+            "rows": rows,
+            "list_button": "Choose",
+            "section_title": "Complaint actions",
+            "presentation": "quick_replies" if channel == CHANNEL_INSTAGRAM else "buttons",
+        }
+        text_value = "\n".join(lines)
+        return Turn(f"{notice}\n\n{text_value}" if notice else text_value, picker)
+
+    if action == "update":
+        await identity.begin_social_complaint_message(thread, tail)
+        return Turn(
+            "Type the update you want to add. Your next message will be shared "
+            "with the provider on this complaint."
+        )
+
+    if action in {"accept", "reject"}:
+        complaint_id, _, resolution_id = tail.partition(PICKER_SEP)
+        try:
+            decision = await identity.decide_social_complaint_resolution(
+                thread, complaint_id, resolution_id, action,
+            )
+        except Exception as exc:
+            return Turn(getattr(exc, "detail", None) or str(exc))
+        return await _complaint_step(
+            thread, identity, "", channel,
+            notice=f"The proposed resolution was {decision}.",
+        )
+
+    return await _complaint_step(thread, identity, "", channel)
+
+
+def _complaint_type_turn(booking: dict, channel: str) -> Turn:
+    rows = [
+        {
+            "id": PICKER_SEP.join((PICK_COMPLAINT, "type", key)),
+            "title": label,
+        }
+        for key, label in COMPLAINT_TYPES
+    ]
+    picker = pickers._paginate(
+        rows,
+        f"What went wrong with {booking.get('problem') or booking.get('service') or 'this service'}?",
+        channel, 0, kind=PICK_COMPLAINT, list_button="Choose",
+        section_title="Problem type",
+    )
+    return Turn(None, picker)
 
 
 async def _parts_step(

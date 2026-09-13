@@ -123,13 +123,28 @@ VALID_RECORD_TYPES = {
 
 # ── Eligible statuses per record type ─────────────────────────────────────────
 ELIGIBLE_STATUSES: dict[str, set[str]] = {
-    RECORD_SERVICE_BOOKING:      {"completed","payment_collected","paid","cancelled","failed","quote_rejected"},
+    # Operational complaints such as late arrival, no-show, behaviour, and
+    # payment disputes can happen before completion. Keep every canonical live
+    # Home Services state eligible so the customer can ask for help while the
+    # event is still actionable, not only after the job has ended.
+    RECORD_SERVICE_BOOKING:      {
+        "pending_assignment", "assigned", "accepted", "scheduled",
+        "on_the_way", "reached_site", "in_progress", "inspection_started",
+        "inspection_done", "quote_required", "service_started", "work_done",
+        "customer_not_available", "completed", "payment_collected", "paid",
+        "cancelled", "failed", "quote_rejected",
+    },
     # MODULE-L5-02 bug #23 (same class as the review-eligibility fix): a
     # completed job transitions to invoice_issued the moment it is billed, and to
     # paid once settled. Excluding those states meant a customer could not file a
     # complaint about a completed job that had gone through billing — the normal
     # flow — so poor-quality billed work became uncontestable.
-    RECORD_SERVICE_JOB:          {"completed","work_done","cancelled","invoice_issued","paid"},
+    RECORD_SERVICE_JOB:          {
+        "pending_assignment", "assigned", "dispatched", "accepted", "scheduled",
+        "on_the_way", "reached_site", "in_progress", "inspection_started",
+        "inspection_done", "quote_required", "service_started", "work_done",
+        "customer_not_available", "completed", "cancelled", "invoice_issued", "paid",
+    },
     RECORD_SERVICE_INVOICE:      {"issued","paid","overdue","cancelled"},
     RECORD_COACHING_APPOINTMENT: {"completed","no_show","cancelled"},
     RECORD_REAL_ESTATE_LEAD:     {"accepted","contacted","follow_up","site_visit_planned",

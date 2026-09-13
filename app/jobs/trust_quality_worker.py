@@ -49,6 +49,11 @@ STALE_RUNNING_MINUTES = 30
 # Jobs are the sweep's audit record, but they are not needed forever.
 JOB_RETENTION_DAYS = 90
 CLEANUP_INTERVAL_SECONDS = 60 * 60
+# Health and badge results are snapshots, so a worker that only consumes manual
+# jobs eventually serves stale trust data forever.  Refresh the complete
+# platform at least every six hours.  Manual sweeps still work and reset this
+# window; failed/cancelled sweeps do not postpone the next automatic attempt.
+AUTOMATIC_REFRESH_INTERVAL = timedelta(hours=6)
 
 # Yield to the event loop between batches. The worker shares its process with the
 # API; without this a large sweep would monopolise the loop and add latency to
@@ -106,6 +111,53 @@ async def _recover_stale_jobs(db) -> int:
         await db.commit()
         log.warning("trust_quality_worker.stale_recovered", count=len(stale))
     return len(stale)
+
+
+async def _enqueue_automatic_refresh_if_due(db, now: datetime | None = None) -> bool:
+    """Seed fixed trust defaults and queue a periodic full refresh when due.
+
+    Production enables this loop in exactly one dedicated worker process.  The
+    active-job guard also makes the function safe when a manual sweep is already
+    running: it waits and tries again on the next tick instead of creating a
+    second expensive platform walk.
+    """
+    run_at = now or utcnow()
+    active = await db.scalar(
+        select(TrustQualityRecalculationJob.id)
+        .where(TrustQualityRecalculationJob.status.in_(("queued", "running", "cancelling")))
+        .limit(1)
+    )
+    if active is not None:
+        return False
+
+    latest_full_refresh = await db.scalar(
+        select(TrustQualityRecalculationJob.created_at)
+        .where(
+            TrustQualityRecalculationJob.job_type == "all",
+            TrustQualityRecalculationJob.scope_type == "all",
+            TrustQualityRecalculationJob.status.in_(("completed", "completed_with_errors")),
+        )
+        .order_by(TrustQualityRecalculationJob.created_at.desc())
+        .limit(1)
+    )
+    if latest_full_refresh is not None:
+        # SQLite-backed tests may return a naive value while PostgreSQL returns
+        # timestamptz.  Treat both as UTC so the freshness rule is deterministic.
+        if latest_full_refresh.tzinfo is None:
+            latest_full_refresh = latest_full_refresh.replace(tzinfo=timezone.utc)
+        if latest_full_refresh > run_at - AUTOMATIC_REFRESH_INTERVAL:
+            return False
+
+    # The fixed catalog is operational data, not optional demo data.  Repair a
+    # partially seeded environment before loading the ruleset for this sweep.
+    from app.engines.trust_quality.service import TrustQualityService
+
+    service = TrustQualityService(db)
+    await service.seed_defaults()
+    queued = await service.enqueue_recalculation_job(
+        "all", "all", triggered_by="scheduled"
+    )
+    return not bool(queued.get("already_running"))
 
 
 async def _is_cancelled(db, job_id: uuid.UUID) -> bool:
@@ -232,6 +284,7 @@ async def run_worker_tick(batch_limit: int = BATCH_LIMIT) -> dict:
     session_factory = get_session_factory()
     async with session_factory() as db:
         await _recover_stale_jobs(db)
+        scheduled = await _enqueue_automatic_refresh_if_due(db)
 
     ran = 0
     for _ in range(batch_limit):
@@ -241,7 +294,12 @@ async def run_worker_tick(batch_limit: int = BATCH_LIMIT) -> dict:
                 break
             await process_job(db, job)
             ran += 1
-    return {"worker_id": WORKER_ID, "ran": ran, "run_at": utcnow().isoformat()}
+    return {
+        "worker_id": WORKER_ID,
+        "ran": ran,
+        "scheduled": scheduled,
+        "run_at": utcnow().isoformat(),
+    }
 
 
 async def run_cleanup(retention_days: int = JOB_RETENTION_DAYS) -> dict:

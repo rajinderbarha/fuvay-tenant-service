@@ -44,12 +44,13 @@ CMD_STOP = "stop"
 CMD_HELP = "help"
 CMD_HUMAN = "human"
 CMD_TRACK = "track"
+CMD_COMPLAINT = "complaint"
 CMD_LINK = "link"
 CMD_VERIFY = "verify"
 
 #: Commands understood regardless of casing or surrounding whitespace.
 KNOWN_COMMANDS = {
-    CMD_START, CMD_RESET, CMD_STOP, CMD_HELP, CMD_HUMAN, CMD_TRACK,
+    CMD_START, CMD_RESET, CMD_STOP, CMD_HELP, CMD_HUMAN, CMD_TRACK, CMD_COMPLAINT,
     CMD_LINK, CMD_VERIFY,
 }
 
@@ -70,10 +71,10 @@ KNOWN_COMMANDS = {
 SESSION_IDLE_TIMEOUT_HOURS = 1
 
 HELP_TEXT = (
-    "I can book a home service for you, or show you where an existing "
-    "booking has got to.\n\n"
+    "I can book a home service, track an existing booking, or help you report "
+    "a problem with completed work.\n\n"
     "Everything is a tap — just choose from the options I show you. "
-    "Send /fuvay at any time to start over."
+    "Send /fuvay at any time to start over, or /complaint for help with a service."
 )
 
 STOP_TEXT = (
@@ -178,13 +179,14 @@ PICK_PHONE = "phone"      # phone|change — discard pending OTP and enter anoth
 PICK_ADDON = "ao"         # ao|draft_id|price_token|action|mapping_id|quantity
 PICK_DIMENSION = "dim"    # dim|<dimension_key>|<value_id> — e.g. dim|type|<uuid>
 PICK_RATING = "rt"        # rt|<booking_id>|<1-5> — see rating_request.py
+PICK_COMPLAINT = "cmp"    # cmp|<action>|... — complaint intake and resolution
 PICKER_PREFIXES = (
     PICK_QUESTION, PICK_SLOT, PICK_MORE,
     PICK_CATEGORY, PICK_OFFERING, PICK_PROBLEM, PICK_CONFIRM, PICK_DUPLICATE,
     PICK_EMERGENCY,
     PICK_RESTART, PICK_TRACK, PICK_AREA, PICK_AREA_CITY, PICK_CANCEL,
     PICK_SKIP, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_PHONE, PICK_ADDON,
-    PICK_DIMENSION, PICK_RATING,
+    PICK_DIMENSION, PICK_RATING, PICK_COMPLAINT,
 )
 
 #: The Job-Type Blueprint dimensions the chat can ask for, mapped to the draft
@@ -203,7 +205,7 @@ DIMENSION_DRAFT_FIELD = {
 #: after an hour those genuinely are a new conversation.
 DURABLE_ACTION_PICKS = {
     PICK_TRACK, PICK_CANCEL, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT,
-    PICK_RATING,
+    PICK_RATING, PICK_COMPLAINT,
 }
 
 #: Where a finished job's "how would you rate it?" is asked. Instagram only for

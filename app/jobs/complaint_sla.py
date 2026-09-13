@@ -90,6 +90,7 @@ async def run_sla_check() -> dict:
             select(CustomerComplaint).where(
                 CustomerComplaint.status.notin_(list(FINAL_STATUSES | {STATUS_SETTLED})),
                 CustomerComplaint.tenant_first_response_due_at.is_not(None),
+                CustomerComplaint.provider_responded_at.is_(None),
             ).limit(500)
         )).scalars().all()
 
