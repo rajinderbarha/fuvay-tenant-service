@@ -133,7 +133,9 @@ class TestEligibilityContract:
             _exec_result(None),
             _exec_result(None),  # duplicate check
         ])
-        result = await svc.check_eligible(db, cid, RECORD_SERVICE_BOOKING, _uuid(), complaint_type="service_quality")
+        # After completion, service-quality recurrence belongs to warranty;
+        # property damage remains a valid provider-handled incident.
+        result = await svc.check_eligible(db, cid, RECORD_SERVICE_BOOKING, _uuid(), complaint_type="property_damage")
         assert result["eligible"] is True
         assert result["reason_code"] is None
 
@@ -150,7 +152,7 @@ class TestEligibilityContract:
             _exec_result(None),      # get_complaint_policy default lookup (no category_id supplied)
             _exec_result(existing),  # duplicate check finds one
         ])
-        result = await svc.check_eligible(db, cid, RECORD_SERVICE_BOOKING, _uuid(), complaint_type="service_quality")
+        result = await svc.check_eligible(db, cid, RECORD_SERVICE_BOOKING, _uuid(), complaint_type="property_damage")
         assert result["eligible"] is False
         assert result["reason_code"] == ERR_COMPLAINT_DUPLICATE_OPEN
 

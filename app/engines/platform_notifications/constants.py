@@ -123,6 +123,7 @@ SENSITIVE_FIELDS = {
 EVT_BOOKING_CONFIRMED     = "booking.confirmed"
 EVT_BOOKING_REMINDER_24H  = "booking.reminder_24h"
 EVT_BOOKING_REMINDER_1H   = "booking.reminder_1h"
+EVT_JOB_VISIT_REMINDER_30M = "job.visit_reminder_30m"
 EVT_JOB_CREATED           = "job.created"
 EVT_JOB_ASSIGNED          = "job.assigned"
 EVT_JOB_ACCEPTED          = "job.accepted"

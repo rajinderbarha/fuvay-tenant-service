@@ -183,6 +183,8 @@ class ServiceJob(ServiceOSBase):
     reschedule_count:       Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
     reminder_24h_sent_at:   Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
     reminder_1h_sent_at:    Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_reminder_30m_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    staff_reminder_30m_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sla_due_at:             Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
     sla_breached_at:        Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
     sla_penalty_charged:    Mapped[Decimal | None]   = mapped_column(Numeric(12, 2), nullable=True)
@@ -214,6 +216,8 @@ class ServiceJob(ServiceOSBase):
             "assigned_staff_id":     str(self.assigned_staff_id) if self.assigned_staff_id else None,
             "scheduled_date":        self.scheduled_date.isoformat() if self.scheduled_date else None,
             "scheduled_time_window": self.scheduled_time_window,
+            "provider_reminder_30m_sent_at": self.provider_reminder_30m_sent_at.isoformat() if self.provider_reminder_30m_sent_at else None,
+            "staff_reminder_30m_sent_at": self.staff_reminder_30m_sent_at.isoformat() if self.staff_reminder_30m_sent_at else None,
             "city":                  self.city,
             "zipcode":               self.zipcode,
             "address_snapshot":      self.address_snapshot,

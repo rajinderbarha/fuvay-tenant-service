@@ -24,7 +24,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.home_service_assignment import urgency as urgency_rules
-from app.engines.home_service_assignment.assignment_deadlines import for_job
+from app.engines.home_service_assignment.assignment_deadlines import (
+    TECHNICIAN_ASSIGNMENT_PENDING_STATUSES, for_job,
+)
 from app.engines.platform_notifications.constants import (
     EVT_JOB_DELAYED, SEV_SUCCESS, SEV_WARNING,
 )
@@ -51,6 +53,7 @@ async def _load_jobs(db: AsyncSession, tenant_id: uuid.UUID):
             ServiceJob.scheduled_date, ServiceJob.scheduled_time_window,
             ServiceJob.created_at, ServiceJob.city,
             ServiceJob.assigned_staff_id, ServiceJob.provider_offer_started_at,
+            ServiceJob.is_emergency,
         ).where(ServiceJob.tenant_id == tenant_id)
     )).all()
 
@@ -103,7 +106,8 @@ async def build_alerts(
             assignment = for_job(job, policy, moment)
             deadline = assignment.deadline
             window_open = timeout_enabled or offered > moment - dt.timedelta(hours=NEW_JOB_WINDOW_HOURS)
-            if (job.assigned_staff_id is None and job.status in ("pending_assignment", "accepted")
+            if (job.assigned_staff_id is None
+                    and job.status in TECHNICIAN_ASSIGNMENT_PENDING_STATUSES
                     and window_open):
                 overdue = bool(timeout_enabled and assignment.overdue)
                 new_jobs.append({

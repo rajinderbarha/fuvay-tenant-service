@@ -18,6 +18,7 @@ from app.engines.messaging_gateway.constants import (
     DURABLE_ACTION_PICKS,
     KNOWN_COMMANDS,
     PICK_COMPLAINT,
+    PICK_WARRANTY,
 )
 
 
@@ -61,6 +62,7 @@ class FakeComplaintIdentity:
 def test_complaint_is_a_known_durable_social_action():
     assert CMD_COMPLAINT in KNOWN_COMMANDS
     assert PICK_COMPLAINT in DURABLE_ACTION_PICKS
+    assert PICK_WARRANTY in DURABLE_ACTION_PICKS
 
 
 @pytest.mark.asyncio
@@ -192,7 +194,73 @@ def test_home_service_complaints_start_with_actual_work():
     assert "completed" in HOME_SERVICE_WORK_STARTED_STATUSES
     assert "assigned" not in HOME_SERVICE_WORK_STARTED_STATUSES
     assert "on_the_way" not in HOME_SERVICE_WORK_STARTED_STATUSES
-    assert "inspection_started" not in HOME_SERVICE_WORK_STARTED_STATUSES
+    assert "inspection_started" in HOME_SERVICE_WORK_STARTED_STATUSES
+
+
+@pytest.mark.asyncio
+async def test_social_menu_does_not_offer_issue_reporting_immediately_after_booking():
+    """A pre-service booking can be tracked/cancelled, but cannot create a case."""
+    class Identity:
+        async def live_bookings(self, _thread):
+            return [{"number": "BK-1", "service": "AC repair", "status": "Assigned"}]
+
+        async def cancel_options(self, _thread, _booking_number):
+            return {"can_cancel": True}
+
+        async def complaint_cases(self, _thread):
+            return []
+
+        async def complaint_bookings(self, _thread):
+            return []
+
+        async def warranty_menu_available(self, _thread):
+            return False
+
+    thread = SimpleNamespace(customer_id=uuid.uuid4(), id=uuid.uuid4())
+    turn = await flow._booked_menu_for(Identity(), thread, "BK-1", "Booked")
+    titles = {row["title"] for row in turn.picker["rows"]}
+    assert flow.TRACK_ROW in titles
+    assert flow.CANCEL_ROW in titles
+    assert flow.REPORT_ISSUE_ROW not in titles
+    assert flow.TRACK_COMPLAINT_ROW not in titles
+    assert flow.WARRANTY_ROW not in titles
+
+
+@pytest.mark.asyncio
+async def test_social_menu_separates_old_case_tracking_from_new_issue_permission():
+    """An older open case must not make a fresh booking look reportable."""
+    class Identity:
+        async def live_bookings(self, _thread):
+            return [{"number": "BK-2", "service": "AC install", "status": "Assigned"}]
+
+        async def cancel_options(self, _thread, _booking_number):
+            return {"can_cancel": True}
+
+        async def complaint_cases(self, _thread):
+            return [{"id": str(uuid.uuid4()), "status": "awaiting_provider"}]
+
+        async def complaint_bookings(self, _thread):
+            return []
+
+        async def warranty_menu_available(self, _thread):
+            return False
+
+    thread = SimpleNamespace(customer_id=uuid.uuid4(), id=uuid.uuid4())
+    turn = await flow._booked_menu_for(Identity(), thread, "BK-2", "Booked")
+    rows = {row["title"]: row["id"] for row in turn.picker["rows"]}
+    assert rows[flow.TRACK_COMPLAINT_ROW] == "cmp|cases"
+    assert flow.REPORT_ISSUE_ROW not in rows
+
+
+def test_completed_service_uses_warranty_for_quality_but_keeps_incident_types():
+    booking = _booking() | {
+        "complaint_types": ["technician_behavior", "property_damage"],
+    }
+    turn = flow._complaint_type_turn(booking, CHANNEL_INSTAGRAM)
+    ids = {row["id"] for row in turn.picker["rows"]}
+    assert "cmp|type|service_quality" not in ids
+    assert "cmp|type|technician_behavior" in ids
+    assert "cmp|type|property_damage" in ids
 
 
 @pytest.mark.asyncio
@@ -213,6 +281,73 @@ async def test_pre_work_home_service_complaint_is_not_eligible():
     )
     assert result["eligible"] is False
     assert "after the technician starts" in result["reason"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["work_done", "completed", "invoice_issued", "paid"])
+async def test_completed_quality_problem_is_warranty_not_complaint(status):
+    from app.engines.complaints.constants import ERR_COMPLAINT_TYPE_NOT_SUPPORTED
+    from app.engines.complaints.eligibility_service import ComplaintEligibilityService
+
+    customer_id = uuid.uuid4()
+    service = ComplaintEligibilityService()
+    service._fetch_record = AsyncMock(return_value=SimpleNamespace(
+        status=status, customer_id=customer_id,
+        created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
+    ))
+    service._home_service_work_started = AsyncMock(return_value=True)
+    service._customer_owns_record = AsyncMock(return_value=True)
+
+    result = await service.check_eligible(
+        AsyncMock(), customer_id, "service_job", uuid.uuid4(),
+        complaint_type="service_quality",
+    )
+    assert result["eligible"] is False
+    assert result["reason_code"] == ERR_COMPLAINT_TYPE_NOT_SUPPORTED
+    assert "warranty" in result["reason"].lower()
+
+
+@pytest.mark.asyncio
+async def test_warranty_support_collects_issue_type_then_description():
+    class WarrantyIdentity:
+        def __init__(self):
+            self.state = None
+
+        async def warranty_jobs(self, _thread):
+            return [{
+                "job_id": str(uuid.uuid4()),
+                "booking_id": str(uuid.uuid4()),
+                "booking_number": "BK-20260913-000009",
+                "service": "AC repair",
+                "problem": "AC not cooling",
+                "warranty_expires_at": "2026-09-18T12:00:00+00:00",
+            }]
+
+        async def begin_social_warranty(self, _thread, job, claim_type=None):
+            self.state = {"mode": "new", **job}
+            if claim_type:
+                self.state["claim_type"] = claim_type
+            return self.state
+
+        async def social_warranty_state(self, _thread):
+            return self.state
+
+    identity = WarrantyIdentity()
+    thread = SimpleNamespace(customer_id=uuid.uuid4(), id=uuid.uuid4())
+    choose_type = await flow._warranty_step(
+        thread, identity, "new", CHANNEL_INSTAGRAM,
+    )
+    ids = {row["id"] for row in choose_type.picker["rows"]}
+    assert "wty|type|problem_returned" in ids
+    assert "wty|type|service_not_working" in ids
+    assert "wty|type|workmanship_issue" in ids
+
+    describe = await flow._warranty_step(
+        thread, identity, "type|problem_returned", CHANNEL_INSTAGRAM,
+    )
+    assert describe.picker is None
+    assert "next message" in describe.text.lower()
+    assert identity.state["claim_type"] == "problem_returned"
 
 
 @pytest.mark.asyncio

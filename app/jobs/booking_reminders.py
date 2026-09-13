@@ -1,8 +1,8 @@
-"""Idempotent Home Services booking reminders.
+"""Idempotent Home Services booking and visit reminders.
 
 The job stores delivery markers on the canonical ServiceJob record. A process
 restart or repeated scheduler tick therefore cannot charge an external channel
-twice for the same 24-hour/1-hour reminder.
+twice for the same customer or operational reminder.
 """
 from __future__ import annotations
 
@@ -37,6 +37,72 @@ def _start_time(window: str | None) -> time | None:
     return time(int(match.group(1)), int(match.group(2)))
 
 
+async def _operational_recipients(db, job) -> tuple[list[dict], list[dict]]:
+    """Resolve active provider owners and the assigned technician account.
+
+    ``assigned_staff_id`` is normally a provider_team_members id, while older
+    jobs can contain the linked users.id. Supporting both prevents a legacy job
+    from silently losing its visit reminder.
+    """
+    from app.engines.auth.models import User
+    from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+
+    owners = (await db.execute(
+        select(User.id).where(
+            User.tenant_id == job.tenant_id,
+            User.role == "tenant_owner",
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+        )
+    )).scalars().all()
+    provider_recipients = [
+        {"user_id": str(user_id), "recipient_type": "provider"}
+        for user_id in dict.fromkeys(owners)
+    ]
+
+    staff_recipients: list[dict] = []
+    if job.assigned_staff_id:
+        linked_user_id = (await db.execute(
+            select(ProviderTeamMember.user_id).where(
+                ProviderTeamMember.id == job.assigned_staff_id,
+                ProviderTeamMember.tenant_id == job.tenant_id,
+                ProviderTeamMember.status == "active",
+                ProviderTeamMember.deleted_at.is_(None),
+            )
+        )).scalar_one_or_none()
+        candidate_user_id = linked_user_id or job.assigned_staff_id
+        staff_user_id = (await db.execute(
+            select(User.id).where(
+                User.id == candidate_user_id,
+                User.tenant_id == job.tenant_id,
+                User.is_active.is_(True),
+                User.deleted_at.is_(None),
+            )
+        )).scalar_one_or_none()
+        if staff_user_id:
+            staff_recipients.append({"user_id": str(staff_user_id), "recipient_type": "staff"})
+
+    return provider_recipients, staff_recipients
+
+
+async def _existing_operational_reminder(db, job_id, recipient_type: str) -> datetime | None:
+    """Recover the marker if the event committed before the worker restarted."""
+    from app.engines.platform_notifications.constants import EVT_JOB_VISIT_REMINDER_30M
+    from app.engines.platform_notifications.models import NotificationEvent, NotificationOutbox
+
+    return (await db.execute(
+        select(NotificationEvent.created_at)
+        .join(NotificationOutbox, NotificationOutbox.notification_event_id == NotificationEvent.id)
+        .where(
+            NotificationEvent.event_key == EVT_JOB_VISIT_REMINDER_30M,
+            NotificationEvent.source_record_type == "service_job",
+            NotificationEvent.source_record_id == job_id,
+            NotificationOutbox.recipient_type == recipient_type,
+        )
+        .limit(1)
+    )).scalar_one_or_none()
+
+
 async def send_due_reminders() -> dict:
     from app.database import get_session_factory
     from app.engines.admin_catalog.models import MasterService
@@ -44,13 +110,14 @@ async def send_due_reminders() -> dict:
     from app.engines.platform_notifications.constants import (
         EVT_BOOKING_REMINDER_1H,
         EVT_BOOKING_REMINDER_24H,
+        EVT_JOB_VISIT_REMINDER_30M,
     )
     from app.engines.platform_notifications.notification_service import NotificationService
 
     now_local = datetime.now(timezone.utc).astimezone(LOCAL_TZ)
     today = now_local.date()
     tomorrow = today + timedelta(days=1)
-    sent_24h = sent_1h = 0
+    sent_24h = sent_1h = sent_provider_30m = sent_staff_30m = 0
 
     session_factory = get_session_factory()
     async with session_factory() as db:
@@ -107,9 +174,66 @@ async def send_due_reminders() -> dict:
                         job.reminder_1h_sent_at = datetime.now(timezone.utc)
                         sent_1h += 1
 
+            if job.scheduled_date == today and start:
+                starts_at = datetime.combine(today, start, LOCAL_TZ)
+                minutes_until = (starts_at - now_local).total_seconds() / 60
+                if 0 < minutes_until <= 30:
+                    provider_recipients, staff_recipients = await _operational_recipients(db, job)
+
+                    if job.provider_reminder_30m_sent_at is None and provider_recipients:
+                        job.provider_reminder_30m_sent_at = await _existing_operational_reminder(
+                            db, job.id, "provider"
+                        )
+                    if job.provider_reminder_30m_sent_at is None and provider_recipients:
+                        provider_payload = {
+                            **payload,
+                            "job_id": str(job.id),
+                            "action_url": f"/home-services/bookings-jobs?job_id={job.id}",
+                            "visit_instruction": (
+                                "Confirm the assigned technician is ready and on route."
+                                if job.assigned_staff_id
+                                else "No technician is assigned. Assign one now to protect the visit."
+                            ),
+                        }
+                        event = await notifier.fire_event(
+                            db, EVT_JOB_VISIT_REMINDER_30M, provider_payload,
+                            tenant_id=job.tenant_id,
+                            source_record_type="service_job", source_record_id=job.id,
+                            recipients=provider_recipients,
+                        )
+                        if event is not None:
+                            job.provider_reminder_30m_sent_at = datetime.now(timezone.utc)
+                            sent_provider_30m += 1
+
+                    if job.staff_reminder_30m_sent_at is None and staff_recipients:
+                        job.staff_reminder_30m_sent_at = await _existing_operational_reminder(
+                            db, job.id, "staff"
+                        )
+                    if job.staff_reminder_30m_sent_at is None and staff_recipients:
+                        staff_payload = {
+                            **payload,
+                            "job_id": str(job.id),
+                            "action_url": f"/staff/jobs/{job.id}",
+                            "visit_instruction": "Open the job, confirm your route and prepare for the visit.",
+                        }
+                        event = await notifier.fire_event(
+                            db, EVT_JOB_VISIT_REMINDER_30M, staff_payload,
+                            tenant_id=job.tenant_id,
+                            source_record_type="service_job", source_record_id=job.id,
+                            recipients=staff_recipients,
+                        )
+                        if event is not None:
+                            job.staff_reminder_30m_sent_at = datetime.now(timezone.utc)
+                            sent_staff_30m += 1
+
         await db.commit()
 
-    result = {"sent_24h": sent_24h, "sent_1h": sent_1h}
-    if sent_24h or sent_1h:
+    result = {
+        "sent_24h": sent_24h,
+        "sent_1h": sent_1h,
+        "sent_provider_30m": sent_provider_30m,
+        "sent_staff_30m": sent_staff_30m,
+    }
+    if any(result.values()):
         log.info("booking_reminders.sent", **result)
     return result

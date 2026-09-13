@@ -113,7 +113,22 @@ class MediaAssetService:
         # 2. Access check
         self._access.assert_can_upload(self.actor, media_context, owner_type, owner_id)
 
-        # 3. Store
+        # 3. Resolve tenant_id / customer_id from actor (never from request body)
+        tenant_id: uuid.UUID | None = None
+        customer_id: uuid.UUID | None = None
+        if self.actor.tenant_id:
+            tenant_id = uuid.UUID(self.actor.tenant_id)
+        if self.actor.role == "customer":
+            customer_id = uuid.UUID(self.actor.user_id)
+
+        # 4. Enforce quota before storing bytes. This canonical endpoint powers
+        # logos, documents and job media, so it cannot bypass the Media page cap.
+        if tenant_id is not None:
+            from app.engines.media.service import MediaService
+            quota_service = MediaService(self.db, actor_tenant_id=tenant_id)
+            await quota_service.assert_storage_capacity(tenant_id, len(file_bytes))
+
+        # 5. Store only after all checks pass.
         stored = await self._storage.store_file(
             file_bytes=file_bytes,
             original_filename=original_name,
@@ -121,14 +136,6 @@ class MediaAssetService:
             media_context=media_context,
             owner_id=owner_id,
         )
-
-        # 4. Resolve tenant_id / customer_id from actor (never from request body)
-        tenant_id: uuid.UUID | None = None
-        customer_id: uuid.UUID | None = None
-        if self.actor.tenant_id:
-            tenant_id = uuid.UUID(self.actor.tenant_id)
-        if self.actor.role == "customer":
-            customer_id = uuid.UUID(self.actor.user_id)
 
         ext = pathlib.Path(original_name).suffix.lower()
 
@@ -390,6 +397,11 @@ class MediaAssetService:
 
         self._validation.validate_upload(file_bytes, original_name, mime_type, old_asset.media_context)
 
+        if old_asset.tenant_id is not None:
+            from app.engines.media.service import MediaService
+            quota_service = MediaService(self.db, actor_tenant_id=old_asset.tenant_id)
+            await quota_service.assert_storage_capacity(old_asset.tenant_id, len(file_bytes))
+
         stored = await self._storage.store_file(
             file_bytes=file_bytes,
             original_filename=original_name,
@@ -459,9 +471,10 @@ class MediaAssetService:
         asset.deleted_at = utcnow()
         asset.updated_at = utcnow()
 
-        # Physical delete for local storage (safe — no shared references for new assets)
-        if asset.storage_driver == "local":
-            await self._storage.delete_file(asset.storage_driver, asset.storage_key)
+        # Remove the backing object for every supported driver. The DB soft
+        # delete frees tenant quota immediately; this also releases the real
+        # Cloudinary/S3/local capacity instead of leaving paid orphan bytes.
+        await self._storage.delete_file(asset.storage_driver, asset.storage_key)
 
         if asset.media_context in ICON_LIBRARY_CONTEXTS:
             from app.redis_client import cache_delete, RedisKeys

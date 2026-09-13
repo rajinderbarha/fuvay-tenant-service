@@ -14,14 +14,16 @@ from sqlalchemy import func, select
 
 from app.engines.execution.models import ServiceJobExecutionEvent
 from app.engines.final_records.models import ServiceJob
-from app.engines.home_service_assignment.assignment_deadlines import for_job
+from app.engines.home_service_assignment.assignment_deadlines import (
+    TECHNICIAN_ASSIGNMENT_PENDING_STATUSES, for_job,
+)
 from app.engines.home_service_assignment.constants import ASSIGN_TYPE_AUTO
 from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
 
 logger = structlog.get_logger("jobs.provider_assignment_timeout")
 TIMEOUT_MINUTES = 30
 INTERVAL_SECONDS = 60
-ELIGIBLE_STATUSES = ("pending_assignment", "accepted")
+ELIGIBLE_STATUSES = TECHNICIAN_ASSIGNMENT_PENDING_STATUSES
 EVENT_TYPE = "technician_assignment_overdue"
 
 

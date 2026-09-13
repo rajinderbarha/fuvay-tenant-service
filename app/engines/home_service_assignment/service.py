@@ -1167,6 +1167,8 @@ class HomeServiceJobAssignmentService:
         # markers belong to the previous schedule and must not suppress them.
         job.reminder_24h_sent_at = None
         job.reminder_1h_sent_at = None
+        job.provider_reminder_30m_sent_at = None
+        job.staff_reminder_30m_sent_at = None
         if old_status == "reached_site":
             job.status = JOB_STATUS_SCHEDULED
             job.arrival_verified_at = None

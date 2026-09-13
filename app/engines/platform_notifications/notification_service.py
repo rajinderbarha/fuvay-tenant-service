@@ -111,7 +111,13 @@ class NotificationService:
         recipient_type = recip.get("recipient_type", "customer")
 
         for channel in channels:
-            pref_enabled = await self._check_preference(db, uuid.UUID(str(user_id)), event.event_key, channel)
+            # Operationally mandatory events always remain visible inside the
+            # product. External push/email/SMS preferences are still respected.
+            pref_enabled = (
+                cfg.is_mandatory and channel == CHANNEL_IN_APP
+            ) or await self._check_preference(
+                db, uuid.UUID(str(user_id)), event.event_key, channel
+            )
 
             tmpl = await self._get_template(db, f"{event.event_key}.{channel}")
             if not tmpl:

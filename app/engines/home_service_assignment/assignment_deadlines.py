@@ -10,6 +10,15 @@ from datetime import datetime, timedelta, timezone
 
 from app.engines.weather.slots import slot_start
 
+# Provider ownership and technician ownership are separate. Older/manual flows
+# may already have advanced the job projection to assigned/scheduled while the
+# technician snapshot is still empty. Every surface and the recovery worker
+# must treat those states alike instead of displaying a breach the worker will
+# never pick up.
+TECHNICIAN_ASSIGNMENT_PENDING_STATUSES = (
+    "pending_assignment", "accepted", "assigned", "scheduled",
+)
+
 
 @dataclass(frozen=True)
 class AssignmentDeadline:
@@ -31,7 +40,18 @@ def for_job(job, policy, now: datetime | None = None) -> AssignmentDeadline:
         getattr(job, "scheduled_date", None),
         getattr(job, "scheduled_time_window", None),
     )
-    urgent = bool(visit and visit.astimezone(timezone.utc) <= moment + timedelta(minutes=threshold_minutes))
+    visit_is_same_day = bool(
+        visit and visit.date() == moment.astimezone(visit.tzinfo).date()
+    )
+    urgent = bool(
+        getattr(job, "is_emergency", False)
+        or visit_is_same_day
+        or (
+            visit
+            and visit.astimezone(timezone.utc)
+            <= moment + timedelta(minutes=threshold_minutes)
+        )
+    )
     minutes = urgent_minutes if urgent else normal_minutes
     if offered is None:
         return AssignmentDeadline(None, minutes, urgent, False)

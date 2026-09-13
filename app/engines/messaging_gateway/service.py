@@ -857,7 +857,12 @@ class MessagingGatewayService:
         if not thread.customer_id:
             return []
         from app.engines.admin_catalog.models import MasterService
-        from app.engines.complaints.constants import RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB
+        from app.engines.complaints.constants import (
+            HOME_SERVICE_COMPLETED_STATUSES,
+            HOME_SERVICE_POST_COMPLETION_COMPLAINT_TYPES,
+            HOME_SERVICE_PROVIDER_COMPLAINT_TYPES,
+            RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB,
+        )
         from app.engines.complaints.eligibility_service import ComplaintEligibilityService
         from app.engines.final_records.models import ServiceBooking, ServiceJob
 
@@ -889,6 +894,11 @@ class MessagingGatewayService:
                 continue
             record_type, record_id, status = selected
             offering = await self.db.get(MasterService, booking.offering_id)
+            complaint_types = (
+                HOME_SERVICE_POST_COMPLETION_COMPLAINT_TYPES
+                if status.lower() in HOME_SERVICE_COMPLETED_STATUSES
+                else HOME_SERVICE_PROVIDER_COMPLAINT_TYPES
+            )
             result.append({
                 "record_type": record_type,
                 "record_id": str(record_id),
@@ -899,11 +909,164 @@ class MessagingGatewayService:
                 "service": getattr(offering, "service_name", None) or "Home service",
                 "problem": str(booking.issue_summary or "").strip() or None,
                 "status": status,
+                "complaint_types": sorted(complaint_types),
             })
         return result
 
     async def complaint_menu_available(self, thread: MessagingThread) -> bool:
         return bool(await self.complaint_cases(thread) or await self.complaint_bookings(thread))
+
+    async def social_warranty_state(self, thread: MessagingThread) -> dict | None:
+        _session, context = await self._social_context(thread)
+        return dict(context.get("social_warranty") or {}) or None
+
+    async def set_social_warranty_state(
+        self, thread: MessagingThread, state: dict | None,
+    ) -> None:
+        session, context = await self._social_context(thread)
+        if state:
+            context["social_warranty"] = state
+        else:
+            context.pop("social_warranty", None)
+        session.context_data = context
+
+    async def warranty_cases(self, thread: MessagingThread) -> list[dict]:
+        """Recent warranty cases owned by this exact linked customer."""
+        if not thread.customer_id:
+            return []
+        from app.engines.admin_catalog.models import MasterService
+        from app.engines.final_records.models import ServiceBooking, ServiceJob
+        from app.engines.platform_commerce.service import CommerceService
+
+        result = await CommerceService(
+            self.db, request_id=self.request_id,
+            actor_id=thread.customer_id, actor_role="customer",
+        ).list_customer_claims(thread.customer_id, None, 20, None)
+        claims = list(result.get("claims") or [])
+        job_ids: list[uuid.UUID] = []
+        for claim in claims:
+            try:
+                job_ids.append(uuid.UUID(str(claim.get("job_id"))))
+            except (TypeError, ValueError):
+                continue
+        if not job_ids:
+            return claims
+
+        rows = (await self.db.execute(
+            select(ServiceJob, ServiceBooking, MasterService)
+            .join(ServiceBooking, ServiceBooking.id == ServiceJob.booking_id)
+            .join(MasterService, MasterService.id == ServiceJob.offering_id)
+            .where(ServiceJob.id.in_(job_ids))
+        )).all()
+        jobs = {
+            str(job.id): {
+                "job_number": job.job_number,
+                "booking_number": booking.booking_number,
+                "service": offering.service_name,
+                "problem": str(booking.issue_summary or "").strip() or None,
+            }
+            for job, booking, offering in rows
+        }
+        return [{**claim, **jobs.get(str(claim.get("job_id")), {})} for claim in claims]
+
+    async def warranty_jobs(self, thread: MessagingThread) -> list[dict]:
+        """Completed customer jobs that are still inside their warranty."""
+        if not thread.customer_id:
+            return []
+        from app.engines.admin_catalog.models import MasterService
+        from app.engines.final_records.models import ServiceBooking, ServiceJob
+        from app.engines.platform_commerce.models import WarrantyClaim
+
+        claimed_job_ids = set((await self.db.execute(
+            select(WarrantyClaim.job_id).where(
+                WarrantyClaim.customer_id == thread.customer_id,
+            )
+        )).scalars().all())
+        rows = (await self.db.execute(
+            select(ServiceJob, ServiceBooking, MasterService)
+            .join(ServiceBooking, ServiceBooking.id == ServiceJob.booking_id)
+            .join(MasterService, MasterService.id == ServiceJob.offering_id)
+            .where(
+                ServiceBooking.customer_id == thread.customer_id,
+                ServiceJob.status.in_(("work_done", "completed", "invoice_issued", "paid")),
+                ServiceJob.warranty_expires_at.is_not(None),
+            )
+            .order_by(ServiceJob.updated_at.desc())
+            .limit(20)
+        )).all()
+        now = datetime.now(timezone.utc)
+        result = []
+        for job, booking, offering in rows:
+            expiry = job.warranty_expires_at
+            if expiry and expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if not expiry or expiry < now or str(job.id) in claimed_job_ids:
+                continue
+            result.append({
+                "job_id": str(job.id),
+                "booking_id": str(booking.id),
+                "booking_number": booking.booking_number,
+                "service": offering.service_name,
+                "problem": str(booking.issue_summary or "").strip() or None,
+                "warranty_expires_at": expiry.isoformat(),
+            })
+        return result
+
+    async def warranty_menu_available(self, thread: MessagingThread) -> bool:
+        return bool(await self.warranty_cases(thread) or await self.warranty_jobs(thread))
+
+    async def begin_social_warranty(
+        self, thread: MessagingThread, job: dict, claim_type: str | None = None,
+    ) -> dict:
+        state = {
+            "mode": "new",
+            **{key: job.get(key) for key in (
+                "job_id", "booking_id", "booking_number", "service", "problem",
+                "warranty_expires_at",
+            )},
+        }
+        if claim_type:
+            state["claim_type"] = claim_type
+        await self.set_social_complaint_state(thread, None)
+        await self.set_social_warranty_state(thread, state)
+        return state
+
+    async def file_social_warranty_claim(
+        self, thread: MessagingThread, description: str,
+    ) -> dict:
+        state = await self.social_warranty_state(thread)
+        if not thread.customer_id or not state or state.get("mode") != "new":
+            raise ServiceOSException("WARRANTY_STATE_MISSING", "Start warranty support again.")
+        description = (description or "").strip()
+        if len(description) < 20:
+            raise ServiceOSException(
+                "WARRANTY_DESCRIPTION_REQUIRED",
+                "Please describe the warranty problem in at least 20 characters.",
+            )
+        from app.engines.platform_commerce.service import CommerceService
+
+        result = await CommerceService(
+            self.db, request_id=self.request_id,
+            actor_id=thread.customer_id, actor_role="customer",
+        ).submit_claim(
+            thread.customer_id, state["job_id"],
+            str(state.get("claim_type") or "service_quality"),
+            description, [], None,
+        )
+        await self.set_social_warranty_state(thread, None)
+        return result
+
+    async def warranty_status_view(
+        self, thread: MessagingThread, claim_id: str,
+    ) -> dict:
+        if not thread.customer_id:
+            raise ServiceOSException("WARRANTY_ACCESS_DENIED", "Link your account first.")
+        from app.engines.platform_commerce.service import CommerceService
+
+        return await CommerceService(
+            self.db, request_id=self.request_id,
+            actor_id=thread.customer_id, actor_role="customer",
+        ).get_claim(uuid.UUID(str(claim_id)), customer_id=thread.customer_id)
 
     async def begin_social_complaint(
         self, thread: MessagingThread, booking: dict, complaint_type: str | None = None,
@@ -913,10 +1076,12 @@ class MessagingGatewayService:
             **{key: booking.get(key) for key in (
                 "record_type", "record_id", "booking_id", "booking_number",
                 "category_id", "offering_id", "service", "problem",
+                "complaint_types",
             )},
         }
         if complaint_type:
             state["complaint_type"] = complaint_type
+        await self.set_social_warranty_state(thread, None)
         await self.set_social_complaint_state(thread, state)
         return state
 

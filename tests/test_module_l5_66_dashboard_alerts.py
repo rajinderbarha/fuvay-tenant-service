@@ -37,6 +37,7 @@ def job(**overrides):
     row.created_at = overrides.get("created_at", NOW - dt.timedelta(days=3))
     row.provider_offer_started_at = overrides.get("provider_offer_started_at", row.created_at)
     row.assigned_staff_id = overrides.get("assigned_staff_id")
+    row.is_emergency = overrides.get("is_emergency", False)
     row.city = overrides.get("city", "Ludhiana")
     return row
 

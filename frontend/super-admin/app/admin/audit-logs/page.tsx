@@ -1,16 +1,15 @@
 ﻿"use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { PageShell, PageHeader } from "@serviceos/design-system";
 import EnterpriseDataGrid, { GridColumn, GridData } from "../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../components/enterprise/EnterpriseFilterBar";
 import { apiFetchPaginatedRaw, sprint27AdminApi, AuditLogRecord } from "../../../lib/api";
 
-type LogSource = "engine" | "security" | "auth";
+type LogSource = "engine" | "auth";
 
 const TABS: { id: LogSource; label: string }[] = [
-  { id: "engine",   label: "Engine Audit" },
-  { id: "security", label: "Security Audit" },
+  { id: "engine",   label: "Platform Activity" },
   { id: "auth",     label: "Auth Audit" },
 ];
 
@@ -22,16 +21,6 @@ const ENGINE_COLUMNS: GridColumn[] = [
   { key: "resource_id",   label: "Resource ID", width: 180,
     render: v => v ? String(v).slice(0, 12) : "—" },
   { key: "created_at",    label: "Time",      width: 180,
-    render: v => v ? String(v).replace("T", " ").slice(0, 19) : "—" },
-];
-
-const SECURITY_COLUMNS: GridColumn[] = [
-  { key: "event_type",  label: "Event",      width: 180 },
-  { key: "actor_type",  label: "Actor",      width: 120 },
-  { key: "ip_address",  label: "IP",         width: 130 },
-  { key: "user_agent",  label: "User Agent", width: 200, visible: false },
-  { key: "description", label: "Details",    width: 280 },
-  { key: "created_at",  label: "Time",       width: 180,
     render: v => v ? String(v).replace("T", " ").slice(0, 19) : "—" },
 ];
 
@@ -65,18 +54,6 @@ const ENGINE_FILTERS: FilterDef[] = [
   DATE_FILTER,
 ];
 
-const SECURITY_FILTERS: FilterDef[] = [
-  {
-    key: "event_type", label: "Event Type", type: "select",
-    options: [
-      { value: "rate_limit_hit",  label: "Rate Limit Hit" },
-      { value: "suspicious_ip",   label: "Suspicious IP" },
-      { value: "blocked_attempt", label: "Blocked Attempt" },
-    ],
-  },
-  DATE_FILTER,
-];
-
 const AUTH_FILTERS: FilterDef[] = [
   {
     key: "event_type", label: "Event Type", type: "select",
@@ -98,7 +75,6 @@ const TAB_CONFIG: Record<LogSource, {
   resourceKey: string;
 }> = {
   engine:   { endpoint: "/v1/admin/audit-logs",    columns: ENGINE_COLUMNS,   filters: ENGINE_FILTERS,   resourceKey: "admin_engine_audit" },
-  security: { endpoint: "/v1/security/audit-log",  columns: SECURITY_COLUMNS, filters: SECURITY_FILTERS, resourceKey: "admin_security_audit" },
   auth:     { endpoint: "/v1/admin/audit-logs/login-events", columns: AUTH_COLUMNS, filters: AUTH_FILTERS, resourceKey: "admin_auth_audit" },
 };
 
@@ -130,6 +106,19 @@ function wrapLegacy(d: unknown, params: Record<string, unknown>) {
 export default function AuditLogsPage() {
   const [tab, setTab] = useState<LogSource>("engine");
   const cfg = TAB_CONFIG[tab];
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (requested && TABS.some(item => item.id === requested)) {
+      setTab(requested as LogSource);
+    }
+  }, []);
+  function changeTab(next: LogSource) {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === "engine") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+  }
 
   // MODULE-L5-11: the record-timeline endpoint (full audit history of one record)
   // had a client method but was reachable from no UI. Wire it as a row-action
@@ -175,11 +164,11 @@ export default function AuditLogsPage() {
   return (
     <AdminLayout>
     <PageShell>
-      <PageHeader title="Audit Logs" description="Engine, security, and auth audit trails across the platform." />
+      <PageHeader title="Audit Logs" description="The immutable platform activity trail and authentication history. Security links open this workspace with the security engine filter applied." />
 
       <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)" }}>
         {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
+          <button key={t.id} onClick={() => changeTab(t.id)} style={{
             padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius: "8px 8px 0 0",
             border: tab === t.id ? "1px solid var(--border)" : "1px solid transparent",
             borderBottom: tab === t.id ? "1px solid var(--surface)" : "1px solid transparent",

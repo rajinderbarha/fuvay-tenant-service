@@ -13,6 +13,7 @@ from app.engines.platform_notifications.constants import (
     RECIP_CUSTOMER, RECIP_PROVIDER, RECIP_STAFF, RECIP_ADMIN,
     SEV_INFO, SEV_SUCCESS, SEV_WARNING, SEV_CRITICAL,
     EVT_BOOKING_CONFIRMED, EVT_BOOKING_REMINDER_24H, EVT_BOOKING_REMINDER_1H,
+    EVT_JOB_VISIT_REMINDER_30M,
     EVT_JOB_CREATED, EVT_JOB_ASSIGNED,
     EVT_JOB_ACCEPTED, EVT_JOB_REJECTED, EVT_JOB_SCHEDULED,
     EVT_JOB_ON_THE_WAY, EVT_JOB_REACHED_SITE, EVT_JOB_INSPECTION_STARTED,
@@ -87,6 +88,11 @@ _reg(NotificationEventConfig(EVT_BOOKING_REMINDER_24H, "Booking Reminder — Tom
 _reg(NotificationEventConfig(EVT_BOOKING_REMINDER_1H, "Booking Reminder — One Hour",
      "home_service", [CHANNEL_IN_APP, CHANNEL_PUSH], RECIP_CUSTOMER,
      "booking.reminder_1h.in_app", SEV_INFO))
+
+_reg(NotificationEventConfig(EVT_JOB_VISIT_REMINDER_30M, "Upcoming Service Visit",
+     "home_service", [CHANNEL_IN_APP, CHANNEL_PUSH], RECIP_PROVIDER,
+     "job.visit_reminder_30m.in_app", SEV_WARNING,
+     is_mandatory=True, also_notify=[RECIP_STAFF]))
 
 _reg(NotificationEventConfig(EVT_JOB_DELAYED, "Job Delayed",
      "home_service", [CHANNEL_IN_APP], RECIP_PROVIDER,

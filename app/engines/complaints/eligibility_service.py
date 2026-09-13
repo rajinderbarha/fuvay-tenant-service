@@ -15,6 +15,8 @@ from app.engines.complaints.constants import (
     ERR_COMPLAINT_DUPLICATE_OPEN, ERR_COMPLAINT_ACCESS_DENIED,
     ERR_COMPLAINT_TYPE_NOT_SUPPORTED,
     HOME_SERVICE_PROVIDER_COMPLAINT_TYPES, HOME_SERVICE_WORK_STARTED_STATUSES,
+    HOME_SERVICE_COMPLETED_STATUSES,
+    HOME_SERVICE_POST_COMPLETION_COMPLAINT_TYPES,
 )
 from app.engines.complaints.models import CustomerComplaint, ComplaintPolicy
 
@@ -67,6 +69,16 @@ class ComplaintEligibilityService:
                     "eligible": False,
                     "reason": "Report an issue becomes available after the technician starts the service.",
                     "reason_code": ERR_COMPLAINT_NOT_ELIGIBLE,
+                }
+            if (
+                complaint_type
+                and str(status or "").lower() in HOME_SERVICE_COMPLETED_STATUSES
+                and complaint_type not in HOME_SERVICE_POST_COMPLETION_COMPLAINT_TYPES
+            ):
+                return {
+                    "eligible": False,
+                    "reason": "Service-quality issues after completion must use the warranty workflow.",
+                    "reason_code": ERR_COMPLAINT_TYPE_NOT_SUPPORTED,
                 }
 
         policy = await self.get_complaint_policy(db, category_id, tenant_id)
@@ -129,7 +141,8 @@ class ComplaintEligibilityService:
         # An executing job's current state is sufficient, but a booking may
         # have been administratively changed without a technician ever working.
         if record_type == RECORD_SERVICE_JOB and status in {
-            "in_progress", "service_started", "work_done",
+            "inspection_started", "inspection_done", "in_progress",
+            "service_started", "work_done",
         }:
             return True
 
@@ -152,7 +165,8 @@ class ComplaintEligibilityService:
         started = (await db.execute(text(
             "SELECT 1 FROM service_job_execution_events "
             "WHERE job_id = :job_id "
-            "AND (event_type = 'service_started' OR new_status = 'service_started') "
+            "AND (event_type IN ('inspection_started', 'service_started') "
+            "     OR new_status IN ('inspection_started', 'service_started')) "
             "LIMIT 1"
         ), {"job_id": str(job_id)})).scalar_one_or_none()
         return bool(started)

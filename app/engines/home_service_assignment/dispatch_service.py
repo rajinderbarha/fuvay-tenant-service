@@ -434,12 +434,14 @@ class HomeServiceDispatchProjectionService:
             get_home_services_operations_policy,
         )
         operations_policy = await get_home_services_operations_policy(self.db)
-        from app.engines.home_service_assignment.assignment_deadlines import for_job
+        from app.engines.home_service_assignment.assignment_deadlines import (
+            TECHNICIAN_ASSIGNMENT_PENDING_STATUSES, for_job,
+        )
         assignment_deadline = for_job(job, operations_policy, _utcnow())
         assignment_overdue = bool(
             operations_policy.assignment_timeout_enabled
             and job.assigned_staff_id is None
-            and job.status in ("pending_assignment", "accepted")
+            and job.status in TECHNICIAN_ASSIGNMENT_PENDING_STATUSES
             and assignment_deadline.overdue
         )
         booking = await self._load_booking_row(job.booking_id)

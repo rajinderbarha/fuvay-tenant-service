@@ -636,7 +636,8 @@ export default function CompliancePage() {
             textTransform: "capitalize",
           }}>
             {tab === "action_queue" ? "Action Queue" : tab === "requests" ? "Requests" :
-             tab === "legal_holds" ? "Legal Holds / Exemptions" : tab.replace(/_/g, " ")}
+             tab === "legal_holds" ? "Legal Holds / Exemptions" :
+             tab === "audit" ? "Compliance Audit" : tab.replace(/_/g, " ")}
           </button>
         ))}
       </div>

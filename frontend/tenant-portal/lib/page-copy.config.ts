@@ -243,7 +243,7 @@ export const PAGE_COPY = {
     },
     media: {
       title: "Media",
-      description: "Photos, documents, and files for your business profile.",
+      description: "Manage your shared 1 GB allowance for photos, documents, and job evidence.",
     },
     chat: {
       title: "Chat",

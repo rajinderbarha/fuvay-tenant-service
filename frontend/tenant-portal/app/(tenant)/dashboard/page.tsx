@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle, ArrowRight, BriefcaseBusiness, CheckCircle2, CircleDollarSign,
-  Clock3, CreditCard, MapPin, RefreshCw, ShieldAlert, Star, Users2,
+  Clock3, CreditCard, HardDrive, MapPin, RefreshCw, ShieldAlert, Star, Users2,
 } from "lucide-react";
 import { Alert, Button, Card, PageHeader, PageShell } from "@serviceos/design-system";
 import { Badge, KpiGrid, Skeleton, SummaryCard } from "../../../components/shared/ui";
@@ -14,8 +14,8 @@ import { TrustBadges } from "../../../components/TrustBadges";
 import { useJobAlerts } from "../../../hooks/useJobAlerts";
 import { useApi } from "../../../hooks/useApi";
 import {
-  homeServicesDashboardApi, homeServicesSetupOverviewApi,
-  type HomeServicesDashboardAttentionItem, type HomeServicesDashboardData,
+  homeServicesDashboardApi, homeServicesSetupOverviewApi, mediaApi,
+  type HomeServicesDashboardAttentionItem, type HomeServicesDashboardData, type MediaQuota,
 } from "../../../lib/api";
 
 const destinationRoutes: Record<string, string> = {
@@ -29,6 +29,13 @@ const integer = new Intl.NumberFormat("en-IN");
 const pipelineColors = ["#0f6b60", "#2f9e8f", "#6aa89e", "#d5ad68", "#8f83b8", "#c2703f", "#3f7bb8", "#6b756f", "#8a857c"];
 const count = (value: number | null | undefined) => integer.format(value ?? 0);
 const humanize = (value: string) => value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+const bytes = (value: number | null | undefined) => {
+  if (value == null) return "—";
+  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`;
+  if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(0)} KB`;
+  return `${value} B`;
+};
 
 function timeAgo(value: string | null): string {
   if (!value) return "Time unavailable";
@@ -71,6 +78,8 @@ function OperationalDashboard() {
   const alerts = useJobAlerts();
   const fetchDashboard = useCallback(() => homeServicesDashboardApi.get(), []);
   const dashboard = useApi<HomeServicesDashboardData>(fetchDashboard, []);
+  const fetchMediaQuota = useCallback(() => mediaApi.getQuota(), []);
+  const mediaQuota = useApi<MediaQuota>(fetchMediaQuota, []);
   const data = dashboard.data;
   const bookabilityMessages = useMemo(() => {
     const messages = data?.bookability.blockers.map(
@@ -88,6 +97,9 @@ function OperationalDashboard() {
   const summary = data.operational_summary;
   const quality = data.customers_quality;
   const finance = data.finance_snapshot;
+  const storage = mediaQuota.data;
+  const storageFull = !!storage && (storage.is_full || (storage.quota_bytes != null && storage.used_bytes >= storage.quota_bytes));
+  const storageWarning = !!storage && (storage.alert || storage.usage_pct >= 85);
   const pipelineTotal = Math.max(1, data.job_pipeline.reduce((total, stage) => total + stage.count, 0));
 
   return <PageShell>
@@ -116,6 +128,14 @@ function OperationalDashboard() {
           onClick={() => router.push("/home-services/finance?tab=topups")}>Buy credits</Button>
       </div>
     </Alert>}
+    {storageWarning && <Alert tone={storageFull ? "danger" : "warning"} title={storageFull ? "Media storage is full" : "Media storage is nearly full"}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <span>{storageFull
+          ? `You have used ${bytes(storage.used_bytes)} of ${bytes(storage.quota_bytes)}. New uploads are blocked until you delete unused media files.`
+          : `You have used ${Math.round(storage.usage_pct)}% of your ${bytes(storage.quota_bytes)} media allowance. Delete unused files before uploads are blocked.`}</span>
+        <Button variant="primary" size="sm" leftIcon={<HardDrive size={14} />} onClick={() => router.push("/media")}>Manage media</Button>
+      </div>
+    </Alert>}
     {!data.bookability.is_bookable && bookabilityMessages.length > 0 && <Alert tone="danger" title="Customers cannot book this workspace">{bookabilityMessages.join(" · ")}</Alert>}
 
     <KpiGrid minCardWidth={180}>
@@ -124,6 +144,7 @@ function OperationalDashboard() {
       <SummaryCard icon={<Users2 />} label="Available now" value={count(summary.available_technicians)} sub={`${count(data.staff_capacity.ready)} roster-ready · ${count(data.staff_capacity.assigned_now)} assigned`} tone="success" onClick={() => router.push("/home-services/availability")} />
       <SummaryCard icon={<ShieldAlert />} label="Needs attention" value={count(summary.attention_items)} sub="Operational actions outstanding" tone={summary.attention_items > 0 ? "warning" : "success"} onClick={() => router.push("/operations/exceptions")} />
       <SummaryCard icon={<CheckCircle2 />} label="Provider health" value={data.provider_health.score == null ? "—" : `${Math.round(data.provider_health.score)}/100`} sub={data.provider_health.band ? `${humanize(data.provider_health.band)} health band` : "Building history"} tone={(data.provider_health.score ?? 100) < 60 ? "warning" : "success"} />
+      <SummaryCard icon={<HardDrive />} label="Media storage" value={storage ? `${Math.round(storage.usage_pct)}%` : "—"} sub={storage ? `${bytes(storage.used_bytes)} of ${bytes(storage.quota_bytes)}` : "Usage unavailable"} tone={storageFull ? "danger" : storageWarning ? "warning" : "success"} onClick={() => router.push("/media")} />
     </KpiGrid>
 
     <div className="dashboard-main-grid"><div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

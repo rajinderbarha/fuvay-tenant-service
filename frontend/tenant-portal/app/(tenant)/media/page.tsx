@@ -4,8 +4,8 @@ import { TenantLayout } from "../../../components/layout/TenantLayout";
 import { mediaApi, mediaAssetApi, getTenantId, type MediaAsset, type MediaQuota } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import {
-  Upload, HardDrive, FolderOpen, Cloud, Image, FileText, Film, Paperclip,
-  Eye, Trash2, ShieldAlert, Infinity as InfinityIcon,
+  Upload, HardDrive, FolderOpen, Image, FileText, Film, Paperclip,
+  Eye, Trash2, ShieldAlert,
 } from "lucide-react";
 import { PageHeader, Card, Button, Skeleton, Alert } from "@serviceos/design-system";
 
@@ -49,9 +49,9 @@ const contextLabel = (c: string) =>
 
 function fmtBytes(b: number | null | undefined) {
   if (b == null || Number.isNaN(b)) return "—";
-  if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`;
-  if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`;
-  if (b >= 1e3) return `${(b / 1e3).toFixed(0)} KB`;
+  if (b >= 1024 ** 3) return `${(b / 1024 ** 3).toFixed(1)} GB`;
+  if (b >= 1024 ** 2) return `${(b / 1024 ** 2).toFixed(1)} MB`;
+  if (b >= 1024) return `${(b / 1024).toFixed(0)} KB`;
   return `${b} B`;
 }
 
@@ -74,17 +74,18 @@ export default function MediaPage() {
   // `media_context` is a filter the endpoint really declares, so this refetches
   // server-side rather than slicing one client-side page.
   const [context, setContext] = useState<string>("");
+  const [page, setPage] = useState(1);
   const [uploadContext, setUploadContext] = useState<string>(UPLOADABLE_CONTEXTS[0].value);
 
   const assets = useApi(
     useCallback(
       () => mediaAssetApi.listAssets({
-        page: 1, page_size: PAGE_SIZE,
+        page, page_size: PAGE_SIZE,
         ...(context ? { media_context: context } : {}),
       }),
-      [context],
+      [context, page],
     ),
-    [context],
+    [context, page],
   );
   const quota = useApi(() => mediaApi.getQuota(), []);
 
@@ -120,6 +121,11 @@ export default function MediaPage() {
     setUploading(true);
     setUploadError("");
     try {
+      const currentQuota = quota.data as MediaQuota | null;
+      if (currentQuota?.quota_bytes != null && currentQuota.used_bytes + file.size > currentQuota.quota_bytes) {
+        const bytesToFree = currentQuota.used_bytes + file.size - currentQuota.quota_bytes;
+        throw new Error(`Not enough storage. Delete at least ${fmtBytes(bytesToFree)} of media before uploading this file.`);
+      }
       // Business logos are public by design (they appear to customers);
       // documents are private.
       const isPublic = uploadContext === "provider_business_logo";
@@ -137,13 +143,9 @@ export default function MediaPage() {
 
   const q = quota.data as MediaQuota | null;
 
-  // `unlimited` is a real state (home services is quota-exempt), not "zero
-  // allowed" — dividing by a null quota is what rendered NaN in these tiles.
-  const unlimited = !!q?.unlimited || q?.quota_bytes == null;
-  const usedPct = q && !unlimited ? Math.round(q.usage_pct ?? 0) : 0;
-  const freeBytes = q && !unlimited && q.quota_bytes != null
-    ? Math.max(0, q.quota_bytes - q.used_bytes)
-    : null;
+  const usedPct = q ? Math.round(q.usage_pct ?? 0) : 0;
+  const storageFull = !!q && (q.is_full || (q.quota_bytes != null && q.used_bytes >= q.quota_bytes));
+  const freeBytes = q?.bytes_remaining ?? (q?.quota_bytes != null ? Math.max(0, q.quota_bytes - q.used_bytes) : null);
 
   const items = useMemo(() => assets.data?.items ?? [], [assets.data]);
 
@@ -181,7 +183,7 @@ export default function MediaPage() {
                 }}>
                 {UPLOADABLE_CONTEXTS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
-              <Button size="sm" onClick={() => fileInputRef.current?.click()} loading={uploading} leftIcon={<Upload size={14} />}>
+              <Button size="sm" disabled={storageFull} onClick={() => fileInputRef.current?.click()} loading={uploading} leftIcon={<Upload size={14} />}>
                 Upload file
               </Button>
               <input ref={fileInputRef} type="file" style={{ display: "none" }}
@@ -193,6 +195,9 @@ export default function MediaPage() {
         {toast && <Alert tone="success">{toast}</Alert>}
         {uploadError && <Alert tone="danger">{uploadError}</Alert>}
         {assets.error && <Alert tone="danger">We couldn&apos;t load your files. {String(assets.error)}</Alert>}
+        {storageFull && <Alert tone="danger" title="Your 1 GB media storage is full">
+          New uploads are blocked. Delete unused files below to free space; this warning remains until usage is below the limit.
+        </Alert>}
 
         {/* Storage */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
@@ -202,9 +207,9 @@ export default function MediaPage() {
             <StatTile
               label="Storage used"
               value={fmtBytes(q.used_bytes)}
-              sub={unlimited ? "No storage cap on your plan" : `of ${fmtBytes(q.quota_bytes)} included`}
+              sub={`of ${fmtBytes(q.quota_bytes)} included`}
               icon={<HardDrive size={16} />}
-              alert={!unlimited && q.alert}
+              alert={q.alert}
             />
             <StatTile
               label="Files stored"
@@ -213,36 +218,36 @@ export default function MediaPage() {
               icon={<FolderOpen size={16} />}
             />
             <StatTile
-              label={unlimited ? "Plan" : "Free space"}
-              value={unlimited ? "Unlimited" : fmtBytes(freeBytes)}
-              sub={unlimited ? "Home services is not storage-capped" : `${Math.max(0, 100 - usedPct)}% remaining`}
-              icon={unlimited ? <InfinityIcon size={16} /> : <Cloud size={16} />}
-              alert={!unlimited && usedPct > 90}
+              label={(q.bytes_over_limit ?? 0) > 0 ? "Space over limit" : "Free space"}
+              value={(q.bytes_over_limit ?? 0) > 0 ? fmtBytes(q.bytes_over_limit) : fmtBytes(freeBytes)}
+              sub={storageFull ? "Delete files to enable uploads" : `${Math.max(0, 100 - usedPct)}% remaining`}
+              icon={<ShieldAlert size={16} />}
+              alert={storageFull || usedPct >= 85}
             />
           </>}
         </div>
 
-        {/* A usage bar is meaningless without a cap, so it is omitted for an
-            unlimited plan rather than pinned at 0% forever. */}
-        {q && !unlimited && (
+        {q && (
           <Card padding="md">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>Storage usage</span>
               <span style={{
                 fontSize: 12, fontWeight: 700,
-                color: usedPct > 90 ? "var(--danger-text)" : usedPct > 70 ? "var(--warning-text)" : "var(--success-text)",
-              }}>{usedPct}%</span>
+                color: storageFull ? "var(--danger-text)" : usedPct >= 85 ? "var(--warning-text)" : "var(--success-text)",
+              }}>{usedPct}% · {fmtBytes(q.used_bytes)} of {fmtBytes(q.quota_bytes)}</span>
             </div>
             <div style={{ background: "var(--surface-sunken)", borderRadius: 999, height: 8, overflow: "hidden" }}>
               <div style={{
                 height: "100%", width: `${Math.min(100, usedPct)}%`, borderRadius: 999,
-                background: usedPct > 90 ? "var(--danger)" : usedPct > 70 ? "var(--warning)" : "var(--brand)",
+                background: storageFull ? "var(--danger)" : usedPct >= 85 ? "var(--warning)" : "var(--brand)",
                 transition: "width 0.4s ease",
               }} />
             </div>
-            {usedPct > 85 && (
+            {q.alert && (
               <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--text-secondary)" }}>
-                Running low. Upgrade your package for more storage.
+                {storageFull
+                  ? "Storage is full. Delete unused media files below before uploading anything else."
+                  : "Storage is nearly full. Delete unused files now to keep uploads available."}
               </p>
             )}
           </Card>
@@ -251,11 +256,11 @@ export default function MediaPage() {
         {/* Context filter — server-side, so it searches the whole vault rather
             than the current page. */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant={context === "" ? "primary" : "secondary"} size="sm" onClick={() => setContext("")}>
+          <Button variant={context === "" ? "primary" : "secondary"} size="sm" onClick={() => { setContext(""); setPage(1); }}>
             All files
           </Button>
           {contexts.map(([c, n]) => (
-            <Button key={c} variant={context === c ? "primary" : "secondary"} size="sm" onClick={() => setContext(c)}>
+            <Button key={c} variant={context === c ? "primary" : "secondary"} size="sm" onClick={() => { setContext(c); setPage(1); }}>
               {contextLabel(c)} {context === "" ? `(${n})` : ""}
             </Button>
           ))}
@@ -287,25 +292,27 @@ export default function MediaPage() {
                 {context ? "Try another category, or upload a new file." : "Upload your first file using the button above."}
               </p>
               {context
-                ? <Button size="sm" variant="secondary" onClick={() => setContext("")}>Show all files</Button>
-                : <Button size="sm" onClick={() => fileInputRef.current?.click()} loading={uploading} leftIcon={<Upload size={14} />}>Upload file</Button>}
+                ? <Button size="sm" variant="secondary" onClick={() => { setContext(""); setPage(1); }}>Show all files</Button>
+                : <Button size="sm" disabled={storageFull} onClick={() => fileInputRef.current?.click()} loading={uploading} leftIcon={<Upload size={14} />}>Upload file</Button>}
             </div>
           ) : (
             <>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px,1fr))", gap: 12 }}>
                 {items.map((a: MediaAsset) => (
                   <AssetCard key={a.id} asset={a}
-                    onDelete={() => deleteAsset.execute(a.id)}
+                    onDelete={() => {
+                      if (window.confirm(`Delete ${a.file_name_original}? This cannot be undone.`)) deleteAsset.execute(a.id);
+                    }}
                     deleting={deleteAsset.loading}
                     iconFor={iconFor}
                   />
                 ))}
               </div>
-              {(assets.data?.total ?? 0) > items.length && (
-                <p style={{ marginTop: 14, fontSize: 12, color: "var(--text-tertiary)", textAlign: "center" }}>
-                  Showing {items.length} of {assets.data?.total} files.
-                </p>
-              )}
+              {(assets.data?.total ?? 0) > PAGE_SIZE && <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 10, marginTop: 16 }}>
+                <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}>Previous</Button>
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Page {page} of {Math.ceil((assets.data?.total ?? 0) / PAGE_SIZE)}</span>
+                <Button size="sm" variant="secondary" disabled={page * PAGE_SIZE >= (assets.data?.total ?? 0)} onClick={() => setPage(value => value + 1)}>Next</Button>
+              </div>}
             </>
           )}
         </Card>

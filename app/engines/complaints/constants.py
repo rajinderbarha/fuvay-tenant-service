@@ -105,11 +105,24 @@ HOME_SERVICE_PROVIDER_COMPLAINT_TYPES = {
 
 # A Home Services complaint becomes available only once actual service work
 # has started. These states prove that directly without needing event history;
-# the eligibility service additionally checks for a prior service_started event
-# so a job that later moved to quote_required/cancelled remains reportable.
+# the eligibility service additionally checks for a prior inspection/service
+# start event so a job that later moved to quote_required/cancelled remains
+# reportable.
 HOME_SERVICE_WORK_STARTED_STATUSES = {
+    "inspection_started", "inspection_done", "quote_required",
     "in_progress", "service_started", "work_done", "completed",
     "invoice_issued", "payment_collected", "paid",
+}
+
+# Once the job is complete, service-performance recurrence belongs to the
+# warranty workflow. Conduct and property-damage incidents remain reportable
+# because they are not warranty defects and may only be noticed after handover.
+HOME_SERVICE_COMPLETED_STATUSES = {
+    "work_done", "completed", "invoice_issued", "payment_collected", "paid",
+    "issued", "overdue",
+}
+HOME_SERVICE_POST_COMPLETION_COMPLAINT_TYPES = {
+    "technician_behavior", "property_damage",
 }
 
 # ── Requested resolutions ─────────────────────────────────────────────────────

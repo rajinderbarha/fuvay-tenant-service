@@ -29,7 +29,9 @@ def test_provider_can_cancel_any_non_terminal_job():
 
 def test_provider_assignment_deadline_is_thirty_minutes_and_never_changes_provider():
     assert TIMEOUT_MINUTES == 30
-    assert set(ELIGIBLE_STATUSES) == {"pending_assignment", "accepted"}
+    assert set(ELIGIBLE_STATUSES) == {
+        "pending_assignment", "accepted", "assigned", "scheduled",
+    }
 
 
 def test_customer_health_is_driven_mostly_by_payment_reliability():

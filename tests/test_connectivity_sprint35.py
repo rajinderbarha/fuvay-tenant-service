@@ -236,8 +236,8 @@ class TestAuditLogsEndpointFix(unittest.TestCase):
     def test_engine_audit_uses_admin_audit_logs(self):
         self.assertIn('/v1/admin/audit-logs', self.src)
 
-    def test_security_audit_uses_correct_path(self):
-        self.assertIn('/v1/security/audit-log', self.src)
+    def test_platform_audit_does_not_duplicate_the_security_projection(self):
+        self.assertNotIn('/v1/security/audit-log', self.src)
 
     def test_auth_audit_uses_correct_path(self):
         self.assertIn('/v1/admin/audit-logs/login-events', self.src)

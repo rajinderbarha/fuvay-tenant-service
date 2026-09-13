@@ -1223,7 +1223,7 @@ function MonetizationTab() {
               Assignment &amp; customer rescheduling
             </label>
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
-              Keep the confirmed provider and price fixed. After the deadline, assign the least-loaded eligible technician from that provider.
+              Keep the confirmed provider and price fixed. After the deadline, assign the least-loaded eligible technician from that provider. Emergency and same-day bookings use the urgent window.
             </p>
             <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <input type="checkbox" checked={form.assignment_timeout_enabled !== false}
@@ -1238,7 +1238,7 @@ function MonetizationTab() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
               <div><label style={{ fontSize: 11 }}>Assignment timeout (minutes) — normal</label><Input value={String(form.assignment_timeout_minutes ?? 30)} onChange={v => setForm({ ...form, assignment_timeout_minutes: v === "" ? 30 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Urgent assignment window (minutes)</label><Input value={String(form.urgent_assignment_timeout_minutes ?? 10)} onChange={v => setForm({ ...form, urgent_assignment_timeout_minutes: v === "" ? 10 : Number(v) })} /></div>
-              <div><label style={{ fontSize: 11 }}>Urgent when visit starts within (minutes)</label><Input value={String(form.urgent_assignment_threshold_minutes ?? 120)} onChange={v => setForm({ ...form, urgent_assignment_threshold_minutes: v === "" ? 120 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Also urgent when visit starts within (minutes)</label><Input value={String(form.urgent_assignment_threshold_minutes ?? 120)} onChange={v => setForm({ ...form, urgent_assignment_threshold_minutes: v === "" ? 120 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Maximum customer reschedules</label><Input value={String(form.customer_reschedule_limit ?? 3)} onChange={v => setForm({ ...form, customer_reschedule_limit: v === "" ? 3 : Number(v) })} /></div>
             </div>
           </div>

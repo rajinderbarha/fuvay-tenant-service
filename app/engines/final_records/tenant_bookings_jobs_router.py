@@ -276,11 +276,13 @@ async def list_bookings_jobs(
     items = []
     for job, booking in rows:
         has_assignee = job.assigned_staff_id is not None
-        from app.engines.home_service_assignment.assignment_deadlines import for_job
+        from app.engines.home_service_assignment.assignment_deadlines import (
+            TECHNICIAN_ASSIGNMENT_PENDING_STATUSES, for_job,
+        )
         assignment_deadline = for_job(job, operations_policy, now)
         assignment_overdue = bool(
             operations_policy.assignment_timeout_enabled and not has_assignee
-            and job.status in ("pending_assignment", "accepted")
+            and job.status in TECHNICIAN_ASSIGNMENT_PENDING_STATUSES
             and assignment_deadline.overdue
         )
         offer_expired = _offer_expired(
@@ -418,11 +420,13 @@ async def get_bookings_jobs_detail(
         minutes=operations_policy.assignment_timeout_minutes,
         now=datetime.now(timezone.utc),
     )
-    from app.engines.home_service_assignment.assignment_deadlines import for_job
+    from app.engines.home_service_assignment.assignment_deadlines import (
+        TECHNICIAN_ASSIGNMENT_PENDING_STATUSES, for_job,
+    )
     assignment_deadline = for_job(job, operations_policy, datetime.now(timezone.utc))
     assignment_overdue = bool(
         operations_policy.assignment_timeout_enabled and not has_assignee
-        and job.status in ("pending_assignment", "accepted")
+        and job.status in TECHNICIAN_ASSIGNMENT_PENDING_STATUSES
         and assignment_deadline.overdue
     )
     stage_info = map_job_status(job.status, job.assignment_status, has_assignee=has_assignee)

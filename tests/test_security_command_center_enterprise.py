@@ -11,13 +11,24 @@ def source(path: str) -> str:
 
 def test_security_workspace_has_enabled_operational_tabs_and_cursor_paging():
     page = source("frontend/super-admin/app/admin/security/page.tsx")
-    for tab in ("overview", "threats", "sessions", "ip_blocklist", "audit_logs", "policies"):
+    for tab in ("overview", "threats", "sessions", "ip_blocklist", "policies"):
         assert f'"{tab}"' in page
+    assert '{ key: "audit_logs", label: "Audit Logs"' not in page
+    assert '/admin/audit-logs?engine_key=security' in page
     assert '{ key: "api_keys", label: "API Keys"' not in page
     assert "next_cursor" in page
     assert "CursorPager" in page
     assert "limit: pageSize" in page
     assert "cursor: cursor || undefined" in page
+
+
+def test_platform_audit_is_canonical_and_compliance_evidence_stays_scoped():
+    audit = source("frontend/super-admin/app/admin/audit-logs/page.tsx")
+    compliance = source("frontend/super-admin/app/admin/compliance/page.tsx")
+    assert 'label: "Platform Activity"' in audit
+    assert 'label: "Security Audit"' not in audit
+    assert "/v1/security/audit-log" not in audit
+    assert 'tab === "audit" ? "Compliance Audit"' in compliance
 
 
 def test_security_filters_are_dependencies_not_one_time_fetches():

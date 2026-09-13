@@ -44,6 +44,7 @@ from app.engines.messaging_gateway.constants import (
     PICK_PROBLEM,
     PICK_HANDOVER, PICK_PARTS, PICK_PAYMENT, PICK_QUESTION, PICK_QUOTE,
     PICK_RATING, PICK_RESTART, PICK_SKIP, PICK_SLOT, PICK_PHONE, PICK_COMPLAINT,
+    PICK_WARRANTY,
     PICK_TRACK, PICK_ADDON,
     PICKER_SEP, SLOT_EMERGENCY_FLAG,
 )
@@ -139,7 +140,9 @@ NO_BOOKING_OPTIONS = "What would you like to do?"
 NOTHING_OPEN = "You have no booking open right now."
 TRACK_ROW = "Track my booking"
 NEW_BOOKING_ROW = "Book another service"
-COMPLAINT_ROW = "Report or track issue"
+REPORT_ISSUE_ROW = "Report service issue"
+TRACK_COMPLAINT_ROW = "Track complaint"
+WARRANTY_ROW = "Warranty support"
 NO_BOOKINGS = "There is no booking on this number yet."
 CANCEL_ROW = "Cancel booking"
 CANCEL_NOT_ALLOWED = (
@@ -303,6 +306,21 @@ async def advance(
     # the text to the booking address/question flow by mistake.
     typed = (text or "").strip()
     if typed and not reply_id and identity is not None:
+        warranty_state_reader = getattr(identity, "social_warranty_state", None)
+        warranty_state = (
+            await warranty_state_reader(thread) if warranty_state_reader is not None else None
+        )
+        if warranty_state and warranty_state.get("mode") == "new" and warranty_state.get("claim_type"):
+            try:
+                created = await identity.file_social_warranty_claim(thread, typed)
+                return await _warranty_step(
+                    thread, identity, f"case{PICKER_SEP}{created['claim_id']}", channel,
+                    notice="Your warranty claim has been sent to the provider.",
+                )
+            except Exception as exc:
+                detail = getattr(exc, "detail", None) or str(exc)
+                return Turn(str(detail))
+
         complaint_state = await identity.social_complaint_state(thread)
         if complaint_state:
             try:
@@ -352,7 +370,7 @@ async def advance(
         if not thread.zipcode and kind not in {
             PICK_RESTART, PICK_AREA, PICK_AREA_CITY, PICK_TRACK, PICK_CANCEL,
             PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_RATING,
-            PICK_COMPLAINT,
+            PICK_COMPLAINT, PICK_WARRANTY,
         }:
             # Instagram quick replies and buttons on old messages remain
             # tappable. Once a new booking has cleared its area, an old
@@ -361,6 +379,7 @@ async def advance(
         if _is_finished(draft) and kind not in {
             PICK_RESTART, PICK_TRACK, PICK_CANCEL, PICK_PARTS, PICK_QUOTE,
             PICK_HANDOVER, PICK_PAYMENT, PICK_RATING, PICK_COMPLAINT,
+            PICK_WARRANTY,
         }:
             # Old service cards remain tappable after confirmation. Treat a
             # category/service choice as the start of another booking, which
@@ -546,6 +565,11 @@ async def _navigate(db, executor, reply_id: str, draft, thread, channel: str,
         if identity is None:
             return None
         return await _complaint_step(thread, identity, rest, channel)
+
+    if kind == PICK_WARRANTY:
+        if identity is None:
+            return None
+        return await _warranty_step(thread, identity, rest, channel)
 
     if kind == PICK_SKIP and draft:
         await _merge_address(db, draft, {"location_skipped": True})
@@ -1108,15 +1132,39 @@ async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> 
             rows.append({"id": f"{PICK_CANCEL}{PICKER_SEP}", "title": CANCEL_ROW})
 
     if identity is not None:
+        # Complaint tracking and complaint creation are different permissions.
+        # Combining them into "Report or track issue" exposed a report-looking
+        # button immediately after booking whenever the customer happened to
+        # have an older open case. Render each capability independently.
         try:
-            if await identity.complaint_menu_available(thread):
+            cases = await identity.complaint_cases(thread)
+            eligible_services = await identity.complaint_bookings(thread)
+            if cases:
                 rows.append({
-                    "id": f"{PICK_COMPLAINT}{PICKER_SEP}",
-                    "title": COMPLAINT_ROW,
+                    "id": PICKER_SEP.join((PICK_COMPLAINT, "cases")),
+                    "title": TRACK_COMPLAINT_ROW,
+                })
+            if eligible_services:
+                rows.append({
+                    "id": PICKER_SEP.join((PICK_COMPLAINT, "new")),
+                    "title": REPORT_ISSUE_ROW,
                 })
         except Exception as exc:  # a complaint read must not break booking controls
             logger.warning(
                 "messaging_gateway.flow.complaint_menu_failed",
+                thread_id=str(getattr(thread, "id", "-")), error=str(exc),
+            )
+
+        try:
+            warranty_available = getattr(identity, "warranty_menu_available", None)
+            if warranty_available is not None and await warranty_available(thread):
+                rows.append({
+                    "id": f"{PICK_WARRANTY}{PICKER_SEP}",
+                    "title": WARRANTY_ROW,
+                })
+        except Exception as exc:  # warranty reads must not break booking controls
+            logger.warning(
+                "messaging_gateway.flow.warranty_menu_failed",
                 thread_id=str(getattr(thread, "id", "-")), error=str(exc),
             )
 
@@ -1140,9 +1188,12 @@ async def _complaint_step(
         )
 
     action, _, tail = (rest or "").partition(PICKER_SEP)
-    if not action:
+    if not action or action == "cases":
         cases = await identity.complaint_cases(thread)
-        bookings = await identity.complaint_bookings(thread)
+        # The dedicated Track complaint entry must never also advertise a new
+        # report. An empty action is retained for already-delivered legacy
+        # buttons and shows both capabilities with their current permissions.
+        bookings = [] if action == "cases" else await identity.complaint_bookings(thread)
         rows = [
             {
                 "id": PICKER_SEP.join((PICK_COMPLAINT, "case", case["id"])),
@@ -1160,6 +1211,8 @@ async def _complaint_step(
                 "title": "Report a service issue",
                 "description": "Handled directly by the provider",
             })
+        if not rows and action == "cases":
+            return Turn("There is no open complaint to track.")
         if not rows:
             return Turn(
                 "There is no eligible service issue on this account. This option becomes available "
@@ -1213,11 +1266,14 @@ async def _complaint_step(
 
     if action == "type":
         complaint_type = tail
-        if complaint_type not in {key for key, _label in COMPLAINT_TYPES}:
-            return Turn("Please choose one of the complaint types shown.")
         state = await identity.social_complaint_state(thread)
         if not state or state.get("mode") != "new":
             return await _complaint_step(thread, identity, "new", channel)
+        allowed_types = set(state.get("complaint_types") or (
+            key for key, _label in COMPLAINT_TYPES
+        ))
+        if complaint_type not in allowed_types:
+            return Turn("Please choose one of the issue types shown.")
         await identity.begin_social_complaint(thread, state, complaint_type)
         return Turn(
             "Please describe what happened, including the important details. "
@@ -1301,18 +1357,153 @@ async def _complaint_step(
 
 
 def _complaint_type_turn(booking: dict, channel: str) -> Turn:
+    allowed_types = set(booking.get("complaint_types") or (
+        key for key, _label in COMPLAINT_TYPES
+    ))
     rows = [
         {
             "id": PICKER_SEP.join((PICK_COMPLAINT, "type", key)),
             "title": label,
         }
         for key, label in COMPLAINT_TYPES
+        if key in allowed_types
     ]
     picker = pickers._paginate(
         rows,
         f"What went wrong with {booking.get('problem') or booking.get('service') or 'this service'}?",
         channel, 0, kind=PICK_COMPLAINT, list_button="Choose",
         section_title="Problem type",
+    )
+    return Turn(None, picker)
+
+
+WARRANTY_CLAIM_TYPES = (
+    ("problem_returned", "Problem returned"),
+    ("service_not_working", "Service not working"),
+    ("workmanship_issue", "Workmanship issue"),
+)
+
+
+async def _warranty_step(
+    thread, identity, rest: str, channel: str, *, notice: str | None = None,
+) -> Turn:
+    """Submit and track post-completion warranty claims in social chat."""
+    if identity is None or not getattr(thread, "customer_id", None):
+        return Turn("Please link your mobile number before using warranty support.")
+
+    action, _, tail = (rest or "").partition(PICKER_SEP)
+    if not action:
+        cases = await identity.warranty_cases(thread)
+        jobs = await identity.warranty_jobs(thread)
+        rows = [
+            {
+                "id": PICKER_SEP.join((PICK_WARRANTY, "case", case["claim_id"])),
+                "title": f"Warranty {case['status'].replace('_', ' ').title()}",
+                "description": case.get("service") or case.get("job_number") or "Warranty claim",
+            }
+            for case in cases[:8]
+        ]
+        if jobs:
+            rows.append({
+                "id": PICKER_SEP.join((PICK_WARRANTY, "new")),
+                "title": "Make warranty claim",
+                "description": "For completed work still under warranty",
+            })
+        if not rows:
+            return Turn(
+                "There is no completed service currently eligible for warranty support."
+            )
+        picker = pickers._paginate(
+            rows, "Warranty support", channel, 0, kind=PICK_WARRANTY,
+            list_button="Choose", section_title="Warranty",
+        )
+        return Turn(notice, picker)
+
+    if action == "new":
+        jobs = await identity.warranty_jobs(thread)
+        if not jobs:
+            return Turn(
+                "No completed service is currently inside its warranty period, or a claim already exists."
+            )
+        if len(jobs) == 1:
+            await identity.begin_social_warranty(thread, jobs[0])
+            return _warranty_type_turn(jobs[0], channel)
+        rows = [
+            {
+                "id": PICKER_SEP.join((PICK_WARRANTY, "job", job["job_id"])),
+                "title": job.get("problem") or job.get("service") or job["booking_number"],
+                "description": (
+                    f"{job['booking_number']} · warranty until "
+                    f"{str(job.get('warranty_expires_at') or '')[:10]}"
+                ),
+            }
+            for job in jobs[:10]
+        ]
+        picker = pickers._paginate(
+            rows, "Which completed service needs warranty support?", channel, 0,
+            kind=PICK_WARRANTY, list_button="Choose", section_title="Covered services",
+        )
+        return Turn(None, picker)
+
+    if action == "job":
+        job = next((
+            item for item in await identity.warranty_jobs(thread)
+            if item["job_id"] == tail
+        ), None)
+        if job is None:
+            return Turn("That service is no longer eligible for a warranty claim.")
+        await identity.begin_social_warranty(thread, job)
+        return _warranty_type_turn(job, channel)
+
+    if action == "type":
+        state = await identity.social_warranty_state(thread)
+        allowed = {key for key, _label in WARRANTY_CLAIM_TYPES}
+        if not state or state.get("mode") != "new":
+            return await _warranty_step(thread, identity, "new", channel)
+        if tail not in allowed:
+            return Turn("Please choose one of the warranty issue types shown.")
+        await identity.begin_social_warranty(thread, state, tail)
+        return Turn(
+            "Please describe the warranty problem in detail. Your next message "
+            "will create a claim for the provider to resolve."
+        )
+
+    if action == "case":
+        try:
+            case = await identity.warranty_status_view(thread, tail)
+        except Exception as exc:
+            return Turn(getattr(exc, "detail", None) or str(exc))
+        lines = [
+            "Warranty claim",
+            f"Status: {case['status'].replace('_', ' ').title()}",
+            f"Issue: {case['claim_type'].replace('_', ' ').title()}",
+            f"Warranty ends: {str(case.get('warranty_expires_at') or 'Not available')[:10]}",
+        ]
+        if case.get("provider_resolution"):
+            lines.extend(("", "Provider response:", str(case["provider_resolution"])))
+        elif case.get("provider_response_due_at"):
+            lines.append(
+                f"Provider response due: {str(case['provider_response_due_at']).replace('T', ' ')[:16]}"
+            )
+        detail_text = "\n".join(lines)
+        return Turn(f"{notice}\n\n{detail_text}" if notice else detail_text)
+
+    return await _warranty_step(thread, identity, "", channel)
+
+
+def _warranty_type_turn(job: dict, channel: str) -> Turn:
+    rows = [
+        {
+            "id": PICKER_SEP.join((PICK_WARRANTY, "type", key)),
+            "title": label,
+        }
+        for key, label in WARRANTY_CLAIM_TYPES
+    ]
+    picker = pickers._paginate(
+        rows,
+        f"What warranty problem occurred with {job.get('problem') or job.get('service') or 'this service'}?",
+        channel, 0, kind=PICK_WARRANTY, list_button="Choose",
+        section_title="Warranty issue",
     )
     return Turn(None, picker)
 

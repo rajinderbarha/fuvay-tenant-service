@@ -2237,8 +2237,7 @@ export interface MediaFileList {
   next_cursor?: string | null;
 }
 
-/** Quota is package-based per vertical. Home services is exempt, which is what
- *  `unlimited: true` with a null `quota_bytes` means — not "zero allowed". */
+/** Server-authoritative tenant media usage. Home Services has a shared 1 GB cap. */
 export interface MediaQuota {
   tenant_id: string;
   used_bytes: number;
@@ -2248,6 +2247,11 @@ export interface MediaQuota {
   unlimited: boolean;
   usage_pct: number;
   file_count: number;
+  bytes_remaining: number;
+  bytes_over_limit: number;
+  is_full: boolean;
+  can_upload: boolean;
+  action_required: boolean;
   alert: boolean;
 }
 
