@@ -735,7 +735,7 @@ function ActivityTab({ providerId }: { providerId: string }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Card padding={14}>
         <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Documents</h3>
-        <ProviderDocuments documents={documents}/>
+        <ProviderDocuments documents={documents} providerId={providerId} onReviewed={activity.refetch}/>
       </Card>
       <div>
         <h3 style={{ fontSize: 13, fontWeight: 700, margin: "0 0 8px" }}>Audit timeline</h3>

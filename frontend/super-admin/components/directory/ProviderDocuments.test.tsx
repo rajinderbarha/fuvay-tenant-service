@@ -3,12 +3,17 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProviderDocuments } from "./ProviderDocuments";
 const mock = vi.hoisted(() => ({ load: vi.fn() }));
 vi.mock("../../lib/open-admin-media-preview", () => ({ loadAdminDocument: mock.load }));
+const reviewMock = vi.hoisted(() => ({ review: vi.fn() }));
+vi.mock("../../lib/api", () => ({
+  adminOnboardingProvidersApi: { reviewDocument: reviewMock.review },
+}));
 const doc = { id: "doc", doc_type: "gst_certificate", media_asset_id: "asset", status: "pending_review", version: 2, uploaded_at: "2026-09-08T10:00:00Z" };
 beforeEach(() => {
   vi.clearAllMocks();
   URL.createObjectURL = vi.fn(() => "blob:preview");
   URL.revokeObjectURL = vi.fn();
   mock.load.mockResolvedValue(new Blob(["pdf"], { type: "application/pdf" }));
+  reviewMock.review.mockResolvedValue({ status: "verified" });
 });
 afterEach(cleanup);
 it("shows version and status and opens a labelled PDF preview inside a dialog", async () => {
@@ -35,4 +40,12 @@ it("renders image documents and describes unlinked legacy attachments honestly",
   expect(screen.getByText(/No previewable attachment linked/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "View gst certificate" }));
   expect(await screen.findByRole("img", { name: "gst certificate" })).toHaveAttribute("src", "blob:preview");
+});
+
+it("allows an active provider replacement document to be verified separately", async () => {
+  const onReviewed = vi.fn();
+  render(<ProviderDocuments documents={[doc]} providerId="provider" onReviewed={onReviewed}/>);
+  fireEvent.click(screen.getByRole("button", { name: "Verify document" }));
+  await waitFor(() => expect(reviewMock.review).toHaveBeenCalledWith("provider", "doc", "verified", ""));
+  expect(onReviewed).toHaveBeenCalled();
 });

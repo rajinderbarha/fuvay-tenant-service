@@ -130,7 +130,7 @@ class TestSecureProviderDocumentPreview:
 
 
 class TestTheAdminDocumentWorkflowIsGone:
-    """Approving verifies the documents, so reviewing each one is redundant."""
+    """Initial approval is one act; later replacement review is separate."""
 
     def test_the_per_document_verify_button_is_removed(self):
         from pathlib import Path
@@ -153,6 +153,20 @@ class TestTheAdminDocumentWorkflowIsGone:
         src = Path("frontend/super-admin/app/admin/home-services/providers/page.tsx").read_text(
             encoding="utf-8")
         assert "Request changes" in src
+
+    def test_active_provider_replacements_can_be_reviewed(self):
+        from app.engines.provider_portal import admin_router
+
+        src = inspect.getsource(admin_router.review_provider_onboarding_document)
+        assert "_require_submitted_review" not in src
+        assert "terminated_at IS NULL" in src
+
+        from pathlib import Path
+        component = Path("frontend/super-admin/components/directory/ProviderDocuments.tsx").read_text(
+            encoding="utf-8"
+        )
+        assert "Verify document" in component
+        assert "replacement documents uploaded later" in component
 
 
 class TestCreditThresholdsAreEditable:

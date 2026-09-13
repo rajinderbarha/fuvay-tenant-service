@@ -657,8 +657,20 @@ async def review_provider_onboarding_document(
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_permission(P.TENANT_APPROVE)),
 ):
-    """Review one current business document from the Admin onboarding queue."""
-    await _require_submitted_review(db, tenant_id)
+    """Review one current business document.
+
+    Initial provider approval still verifies every pending onboarding document
+    in one act.  This endpoint must also remain available afterwards, though:
+    active providers can replace expired, rejected, or missing legacy files in
+    the permanent Documents workspace, and those new versions require their
+    own admin decision even though the provider is no longer in the onboarding
+    queue.
+    """
+    tenant_exists = (await db.execute(text(
+        "SELECT 1 FROM tenants WHERE id=:tid AND terminated_at IS NULL AND archived_at IS NULL"
+    ), {"tid": str(tenant_id)})).scalar()
+    if not tenant_exists:
+        raise HTTPException(status_code=404, detail="Provider not found")
     decision = str(payload.get("decision") or "").strip().lower()
     reason = str(payload.get("reason") or "").strip()
     if decision not in ("verified", "changes_requested", "rejected"):
