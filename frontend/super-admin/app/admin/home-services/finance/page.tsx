@@ -1374,7 +1374,7 @@ function MonetizationTab() {
                   {publishAction.loading ? "Publishing…" : "Publish Policy"}
                 </Btn>
               ) : (
-                <Btn variant="primary" onClick={() => goToPolicyStep(POLICY_STEPS[policyStepIndex + 1].key)}>Next</Btn>
+                <Btn variant="primary" onClick={() => goToPolicyStep(POLICY_STEPS[policyStepIndex + 1].key)}>Continue</Btn>
               )}
             </div>
           </div>
