@@ -119,6 +119,15 @@ class TestSecureProviderDocumentPreview:
         assert "get_remote_url_for_serve(media_id)" in src
         assert "if asset.public_url" not in src
 
+    def test_production_preserves_local_fallback_files_across_rollouts(self):
+        from pathlib import Path
+
+        compose = Path("docker-compose.prod.yml").read_text(encoding="utf-8")
+        dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+        assert compose.count("media_uploads:/app/uploads") == 2
+        assert "media_uploads:" in compose
+        assert "mkdir -p /app/uploads" in dockerfile
+
 
 class TestTheAdminDocumentWorkflowIsGone:
     """Approving verifies the documents, so reviewing each one is redundant."""

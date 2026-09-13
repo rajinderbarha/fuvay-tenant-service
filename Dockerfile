@@ -38,6 +38,11 @@ ENV PATH="/venv/bin:$PATH"
 # Copy source
 COPY . .
 
+# Named production volumes inherit this directory's ownership on first mount.
+# Creating it in the image keeps the non-root runtime able to write the local
+# storage fallback while the volume preserves files across deployments.
+RUN mkdir -p /app/uploads
+
 # Precompile the large router graph during image creation so every worker does
 # not pay source parsing cost during a deployment rollout.
 RUN python -m compileall -q app

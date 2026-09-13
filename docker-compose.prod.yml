@@ -69,6 +69,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      # Local storage is a supported fallback for private documents. Keep it
+      # outside the container writable layer so an image rollout cannot erase
+      # already-uploaded evidence.
+      - media_uploads:/app/uploads
     healthcheck:
       test: ["CMD", "curl", "-f", "localhost:8000/health"]
       interval: 30s
@@ -105,6 +110,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      # The worker and API must resolve the same local media keys.
+      - media_uploads:/app/uploads
     networks:
       - serviceos_net
 
@@ -248,6 +256,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  media_uploads:
   postgres_backups:
   nginx_logs:
   prometheus_data:

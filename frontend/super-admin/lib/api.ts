@@ -3141,7 +3141,18 @@ export const mediaAdminApi = {
     const token = getToken();
     const target = signedUrl.startsWith("http") ? signedUrl : `${API_BASE}${signedUrl}`;
     const res = await fetch(target, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-    if (!res.ok) throw new ServiceOSError("MEDIA_PREVIEW_FAILED", "The secure media link could not be opened.");
+    if (!res.ok) {
+      let errorCode = "MEDIA_PREVIEW_FAILED";
+      let detail = "The secure media link could not be opened.";
+      try {
+        const problem = await res.json() as { error_code?: string; detail?: string };
+        errorCode = problem.error_code || errorCode;
+        if (problem.error_code === "MEDIA_NOT_FOUND") {
+          detail = "The original uploaded file is no longer available. Ask the provider to upload a replacement document.";
+        }
+      } catch { /* keep the safe generic message for non-JSON failures */ }
+      throw new ServiceOSError(errorCode, detail);
+    }
     return res.blob();
   },
 
