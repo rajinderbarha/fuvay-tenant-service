@@ -126,3 +126,24 @@ def test_pdf_embeds_cloudinary_provider_logo(snapshot, monkeypatch):
     resources = reader.pages[0]["/Resources"]
     xobjects = resources.get("/XObject") or {}
     assert any(obj.get_object().get("/Subtype") == "/Image" for obj in xobjects.values())
+
+
+def test_service_address_reads_in_postal_order_not_jsonb_key_order(snapshot):
+    """JSONB hands the booking's address snapshot back shortest-key-first, so
+    joining its values printed "Kharar, Home, Punjab, India, 140412, 221 Model
+    Town" -- street last, and the address label as if it were a place."""
+    from app.engines.final_records.warranty_certificate import render_certificate_html
+
+    snapshot["service_address"] = {
+        "city": "Kharar", "name": "Home", "phone": "+919876500001", "state": "Punjab",
+        "country": "India", "zipcode": "140412", "landmark": None,
+        "address_line_1": "221 Model Town", "address_line_2": None,
+    }
+    expected = "221 Model Town, Kharar, Punjab, 140412, India"
+
+    _, text = _read_pdf(snapshot)
+    assert expected in " ".join(text.split())
+    assert "Home" not in text.split("SERVICE ADDRESS")[-1].split("WORK COMPLETED")[0]
+    html_document = render_certificate_html(snapshot)
+    assert f"<td>{expected}</td>" in html_document
+    assert "+919876500001" not in html_document

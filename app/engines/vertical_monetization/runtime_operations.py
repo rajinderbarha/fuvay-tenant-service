@@ -21,7 +21,7 @@ class HomeServicesOperationsPolicy:
     urgent_assignment_threshold_minutes: int = 120
     assignment_auto_assign_enabled: bool = True
     customer_reschedule_limit: int = 3
-    arrival_verification_enabled: bool = True
+    arrival_verification_enabled: bool = False
     arrival_radius_meters: int = 250
     arrival_location_max_age_seconds: int = 120
     arrival_max_accuracy_meters: int = 100

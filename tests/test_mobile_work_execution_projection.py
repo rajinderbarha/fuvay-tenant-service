@@ -139,8 +139,9 @@ async def test_work_execution_full_lifecycle_live():
         await db.execute(text(
             "INSERT INTO service_jobs (id, job_number, booking_id, category_id, offering_id, job_type_id, "
             "service_job_workflow_id, tenant_id, customer_id, assigned_staff_id, status, assignment_status, "
-            "created_at, updated_at) "
-            "VALUES (:id, :num, :bid, :cat, :off, :jt, :wf, :tid, :cust, :staff, 'inspection_done', 'assigned', now(), now())"
+            "arrival_verified_at, created_at, updated_at) "
+            # Past reached_site, so arrival was recorded; work start requires it.
+            "VALUES (:id, :num, :bid, :cat, :off, :jt, :wf, :tid, :cust, :staff, 'inspection_done', 'assigned', now(), now(), now())"
         ), {"id": job_id, "num": f"J-{job_id.hex[:8]}", "bid": booking_id, "cat": cat_id, "off": ms_id, "jt": jt_id,
             "wf": workflow_id, "tid": tenant_id, "cust": customer_id, "staff": staff_user_id})
 

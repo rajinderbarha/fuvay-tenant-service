@@ -26,6 +26,27 @@ def _clean(value) -> str:
     return str(value or "").strip()
 
 
+# Postgres JSONB reorders object keys (shortest first), so a stored address
+# snapshot's key order says nothing about how the address reads. Contact
+# fields describe the customer, not the place.
+_SERVICE_ADDRESS_ORDER = (
+    "address_line_1", "address_line1", "line1",
+    "address_line_2", "address_line2", "line2",
+    "landmark", "city", "district", "state", "zipcode", "country",
+)
+_SERVICE_ADDRESS_EXCLUDED = {"name", "label", "phone"}
+
+
+def _service_address(address) -> str:
+    if not isinstance(address, dict):
+        return _clean(address)
+    keys = [key for key in _SERVICE_ADDRESS_ORDER if key in address] + [
+        key for key in address
+        if key not in _SERVICE_ADDRESS_ORDER and key not in _SERVICE_ADDRESS_EXCLUDED
+    ]
+    return ", ".join(filter(None, (_clean(address[key]) for key in keys)))
+
+
 def _address(tenant) -> str:
     return ", ".join(filter(None, [
         _clean(tenant.address_line1), _clean(tenant.address_line2),
@@ -165,9 +186,7 @@ def render_certificate_pdf(snapshot: dict) -> bytes:
             return None
 
     provider = snapshot.get("provider") or {}
-    address = snapshot.get("service_address") or ""
-    if isinstance(address, dict):
-        address = ", ".join(_clean(value) for value in address.values() if value)
+    address = _service_address(snapshot.get("service_address"))
     days = snapshot.get("warranty_days")
     certificate = safe_text(snapshot.get("certificate_number")) or "Not recorded"
     provider_name = safe_text(provider.get("name")) or "Service Provider"
@@ -384,8 +403,7 @@ def render_certificate_html(snapshot: dict) -> str:
     e = lambda value: html.escape(_clean(value))
     provider = snapshot.get("provider") or {}
     terms = "".join(f"<li>{e(term)}</li>" for term in snapshot.get("terms") or [])
-    address = snapshot.get("service_address") or {}
-    service_address = ", ".join(e(v) for v in address.values() if v) if isinstance(address, dict) else e(address)
+    service_address = e(_service_address(snapshot.get("service_address")))
     return f"""<!doctype html><html><head><meta charset=\"utf-8\"><title>Warranty {e(snapshot.get('certificate_number'))}</title>
 <style>body{{font-family:Arial,sans-serif;color:#172033;max-width:820px;margin:36px auto;padding:0 24px;line-height:1.5}}h1{{margin-bottom:4px}}.muted{{color:#60708a}}table{{width:100%;border-collapse:collapse;margin:24px 0}}td{{padding:9px;border-bottom:1px solid #dfe5ee;vertical-align:top}}td:first-child{{width:32%;font-weight:700}}.box{{border:1px solid #cfd8e6;border-radius:12px;padding:18px;margin:18px 0}}li{{margin:8px 0}}@media print{{body{{margin:0}}}}</style></head><body>
 <h1>Provider Warranty Certificate</h1><div class=\"muted\">Immutable service evidence · Terms {e(snapshot.get('terms_version'))}</div>

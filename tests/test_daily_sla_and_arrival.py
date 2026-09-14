@@ -188,3 +188,65 @@ async def test_runtime_reader_uses_published_values_including_disabled_and_zero(
     assert policy.false_arrival_auto_close is False
     assert policy.false_arrival_penalty_amount == Decimal("80.00")
     assert policy.false_arrival_health_weight == Decimal("1.50")
+
+
+@pytest.mark.asyncio
+async def test_disabled_verification_records_arrival_without_address_match(monkeypatch):
+    """Reached Site must never consult the customer's map location when the
+    policy is off, yet it must still stamp arrival: inspection and work start
+    both refuse a job with no recorded arrival."""
+    import uuid
+    from types import SimpleNamespace
+
+    from app.engines.execution import arrival_verification
+    from app.engines.vertical_monetization import runtime_operations
+
+    async def disabled_policy(db):
+        return runtime_operations.HomeServicesOperationsPolicy(
+            arrival_verification_enabled=False,
+        )
+
+    monkeypatch.setattr(
+        runtime_operations, "get_home_services_operations_policy", disabled_policy,
+    )
+
+    statements: list[str] = []
+
+    class Db:
+        async def execute(self, statement, params=None):
+            statements.append(str(statement))
+
+            class Result:
+                def first(self):
+                    return None
+            return Result()
+
+    job = SimpleNamespace(
+        id=uuid.uuid4(), booking_id=uuid.uuid4(), tenant_id=uuid.uuid4(),
+        arrival_verified_at=None, arrival_distance_meters=None,
+    )
+    result = await arrival_verification.verify_arrival(
+        Db(), job=job, staff_member_id=uuid.uuid4(),
+    )
+
+    assert result == {"verified": False, "verification_disabled": True}
+    assert job.arrival_verified_at is not None
+    assert job.arrival_distance_meters is None
+    assert not any("customer_addresses" in sql for sql in statements)
+    assert not any("technician_live_locations" in sql for sql in statements)
+    assert any("arrival_verified_at=now()" in sql for sql in statements)
+
+
+def test_address_matching_is_off_by_default():
+    from pathlib import Path
+
+    from app.engines.vertical_monetization.runtime_operations import (
+        HomeServicesOperationsPolicy,
+    )
+
+    assert HomeServicesOperationsPolicy().arrival_verification_enabled is False
+    migration = Path(
+        "alembic/versions/363_disable_arrival_address_matching.py"
+    ).read_text("utf-8")
+    assert "SET arrival_verification_enabled = false" in migration
+    assert "v.key = 'home_services'" in migration

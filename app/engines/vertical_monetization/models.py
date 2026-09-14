@@ -105,7 +105,7 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     urgent_assignment_threshold_minutes: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
     assignment_auto_assign_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     customer_reschedule_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
-    arrival_verification_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    arrival_verification_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     arrival_radius_meters: Mapped[int] = mapped_column(Integer, default=250, nullable=False)
     arrival_location_max_age_seconds: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
     arrival_max_accuracy_meters: Mapped[int] = mapped_column(Integer, default=100, nullable=False)

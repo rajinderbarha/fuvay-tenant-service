@@ -4,6 +4,10 @@ No GPS, stale GPS, or poor GPS blocks an arrival claim but does not punish the
 provider. A fresh, accurate fix outside the customer geofence is affirmative
 evidence: the job is closed and the requested Rs.150 false-arrival penalty is
 posted exactly once.
+
+When the published policy disables verification, the customer address is never
+matched against a map location. The arrival is still recorded, because
+inspection, work start and customer complaints all require it.
 """
 from __future__ import annotations
 
@@ -40,6 +44,13 @@ async def verify_arrival(db: AsyncSession, *, job, staff_member_id) -> dict:
     )
     policy = await get_home_services_operations_policy(db)
     if not policy.arrival_verification_enabled:
+        now = datetime.now(timezone.utc)
+        await db.execute(text(
+            "UPDATE service_jobs SET arrival_verified_at=now(), arrival_distance_meters=NULL, "
+            "updated_at=now() WHERE id=:jid"
+        ), {"jid": str(job.id)})
+        job.arrival_verified_at = now
+        job.arrival_distance_meters = None
         return {"verified": False, "verification_disabled": True}
 
     destination = (await db.execute(text(
