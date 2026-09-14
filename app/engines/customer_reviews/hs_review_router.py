@@ -26,7 +26,7 @@ from app.exceptions import ServiceOSException, NotFoundException
 
 from app.engines.final_records.models import ServiceJob
 from app.engines.tenant_engine.models import Tenant
-from app.engines.vertical_directory.models import StaffBusinessVertical
+from app.engines.vertical_directory.service import VerticalStaffDirectoryService
 from app.engines.home_service_assignment.staff_model import ProviderTeamMember
 from app.engines.customer_reviews.constants import (
     RECORD_TYPE_SERVICE_JOB, STATUS_APPROVED, STATUS_HIDDEN, STATUS_REJECTED,
@@ -275,18 +275,26 @@ async def staff_review_summary(
     staff_id: uuid.UUID, r: Request, db: AsyncSession = Depends(get_db),
     scope: VerticalScope = Depends(require_vertical_domain_scope("reviews", "view")),
 ):
-    sbv = (await db.execute(select(StaffBusinessVertical).where(
-        StaffBusinessVertical.staff_id == staff_id, StaffBusinessVertical.vertical_id == scope.vertical.id,
+    # Legacy Home Services technicians belong to their provider's vertical
+    # even when the optional StaffBusinessVertical projection was never
+    # created. Use the same membership boundary as the Staff directory.
+    member_tenants = await VerticalStaffDirectoryService()._member_tenant_ids(db, scope)
+    member = (await db.execute(select(ProviderTeamMember).where(
+        ProviderTeamMember.id == staff_id,
+        ProviderTeamMember.tenant_id.in_(member_tenants),
+        ProviderTeamMember.deleted_at.is_(None),
     ))).scalars().first()
-    if not sbv:
+    if not member:
         raise ServiceOSException("CROSS_VERTICAL_ACCESS_DENIED",
                                  f"Staff member is not assigned to vertical '{scope.vertical_key}'.", status_code=403)
     summary = (await db.execute(select(StaffRatingSummary).where(
-        StaffRatingSummary.tenant_id == sbv.tenant_id, StaffRatingSummary.staff_member_id == staff_id,
+        StaffRatingSummary.tenant_id == member.tenant_id, StaffRatingSummary.staff_member_id == staff_id,
     ))).scalars().first()
     recent = (await db.execute(
         select(CustomerReview).where(
-            CustomerReview.staff_member_id == staff_id, CustomerReview.status == STATUS_APPROVED,
+            CustomerReview.staff_member_id == staff_id,
+            CustomerReview.tenant_id == member.tenant_id,
+            CustomerReview.status == STATUS_APPROVED,
         ).order_by(CustomerReview.approved_at.desc()).limit(10)
     )).scalars().all()
     return ok({

@@ -9493,10 +9493,11 @@ export interface DashboardCategoryPerformanceItem {
 
 export interface DashboardHomeServicesSummary {
   home_services_providers: number; bookable_providers: number; not_bookable_providers: number;
+  approved_home_services_providers: number; awaiting_verification_providers: number;
   service_catalog_health: { status: string; active_services: number };
   pricing_rule_health: { status: string; active_rules: number };
   provider_coverage_health: { status: string; active_areas: number; tenants_without_areas: number };
-  provider_bookability_health: { status: string; bookable_providers: number; not_bookable_providers: number };
+  provider_bookability_health: { status: string; bookable_providers: number; not_bookable_providers: number; eligible_providers: number };
   auto_price_options_health: string;
   completed_job_deduction_health: string;
   published_tenant_services: number;

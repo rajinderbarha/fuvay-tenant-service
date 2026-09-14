@@ -95,6 +95,8 @@ _PROVIDER_ATTENTION_CTE = """
         LEFT JOIN complaint_signal cs ON cs.tenant_id = t.id
         LEFT JOIN deduction_signal ds ON ds.tenant_id = t.id
         WHERE t.vertical = 'home_services' AND t.status = 'active'
+          AND t.verification_status IN ('approved', 'verified')
+          AND t.suspended_at IS NULL
           AND t.terminated_at IS NULL AND t.archived_at IS NULL
     )
 """
@@ -245,15 +247,19 @@ class DashboardCommandCenterService:
                 ORDER BY tenant_id, created_at DESC, id DESC
             ) p ON p.tenant_id=t.id
             WHERE t.vertical='home_services' AND t.status='active'
+              AND t.verification_status IN ('approved','verified')
+              AND t.suspended_at IS NULL
               AND t.terminated_at IS NULL AND t.archived_at IS NULL
               AND p.is_bookable=true
         """)
-        active_hs = await _safe_count(self.db, """
+        approved_hs = await _safe_count(self.db, """
             SELECT COUNT(*) FROM tenants
             WHERE vertical='home_services' AND status='active'
+              AND verification_status IN ('approved','verified')
+              AND suspended_at IS NULL
               AND terminated_at IS NULL AND archived_at IS NULL
         """)
-        non_bookable = max(active_hs - bookable, 0)
+        non_bookable = max(approved_hs - bookable, 0)
 
         return {
             "new_tenant_requests": new_requests, "pending_review": pending_review,
@@ -553,6 +559,16 @@ class DashboardCommandCenterService:
             WHERE vertical = 'home_services' AND status = 'active'
               AND terminated_at IS NULL AND archived_at IS NULL
         """)
+        # A legacy active registration can still be unverified and therefore
+        # cannot enter customer matching. Keep it in onboarding, not in the
+        # denominator of the operational bookability/trust gate.
+        approved_providers = await _safe_count(self.db, """
+            SELECT COUNT(*) FROM tenants
+            WHERE vertical = 'home_services' AND status = 'active'
+              AND verification_status IN ('approved', 'verified')
+              AND suspended_at IS NULL
+              AND terminated_at IS NULL AND archived_at IS NULL
+        """)
         bookable = await _safe_count(self.db, """
             SELECT COUNT(*) FROM tenants t
             JOIN (
@@ -562,10 +578,12 @@ class DashboardCommandCenterService:
                 ORDER BY tenant_id, created_at DESC, id DESC
             ) pvs ON pvs.tenant_id = t.id
             WHERE t.vertical = 'home_services' AND t.status = 'active'
+              AND t.verification_status IN ('approved', 'verified')
+              AND t.suspended_at IS NULL
               AND t.terminated_at IS NULL AND t.archived_at IS NULL
               AND pvs.is_bookable = true
         """)
-        not_bookable = max(hs_providers - bookable, 0)
+        not_bookable = max(approved_providers - bookable, 0)
 
         catalog_services = await _safe_count(self.db, """
             SELECT COUNT(*) FROM master_services ms
@@ -605,6 +623,8 @@ class DashboardCommandCenterService:
 
         return {
             "home_services_providers": hs_providers,
+            "approved_home_services_providers": approved_providers,
+            "awaiting_verification_providers": max(hs_providers - approved_providers, 0),
             "bookable_providers": bookable,
             "not_bookable_providers": not_bookable,
             "service_catalog_health": {
@@ -621,9 +641,10 @@ class DashboardCommandCenterService:
                 "tenants_without_areas": tenants_without_areas,
             },
             "provider_bookability_health": {
-                "status": _health(bookable, hs_providers),
+                "status": _health(bookable, approved_providers),
                 "bookable_providers": bookable,
                 "not_bookable_providers": not_bookable,
+                "eligible_providers": approved_providers,
             },
             "auto_price_options_health": "retired",
             "completed_job_deduction_health": "healthy" if monetization_policies > 0 else "not_configured",
