@@ -483,6 +483,14 @@ function MonetizationTab() {
       provider_health_adjustments_json: DEFAULT_HEALTH_ADJUSTMENTS,
       provider_health_score_max_age_days: 30,
       provider_health_max_effective_percentage: "25",
+      sla_breach_hours: 0,
+      sla_penalty_type: "fixed",
+      sla_penalty_amount: 50,
+      sla_close_after_hours: 24,
+      sla_total_penalty_amount: 150,
+      sla_penalty_max_days: 1,
+      sla_auto_cancel: true,
+      sla_notify_provider: true,
       assignment_timeout_enabled: true,
       assignment_timeout_minutes: 30,
       urgent_assignment_timeout_minutes: 10,
@@ -738,8 +746,8 @@ function MonetizationTab() {
               <Btn variant="ghost" onClick={startDraft}>Edit in Draft</Btn>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-              <KV label="SLA penalty" value={current?.sla_breach_hours != null ? `${money(current.sla_penalty_amount ?? 0)} per day` : "Disabled"} />
-              <KV label="SLA final day" value={current?.sla_breach_hours != null ? String(current.sla_penalty_max_days ?? 3) : "—"} />
+              <KV label="Missed-slot penalty" value={current?.sla_breach_hours != null ? money(current.sla_penalty_amount ?? 0) : "Disabled"} />
+              <KV label="Auto-close" value={current?.sla_breach_hours != null ? `${current.sla_close_after_hours ?? 24}h · ${money(current.sla_total_penalty_amount ?? 150)} total` : "—"} />
               <KV label="Assignment timeout" value={current?.assignment_timeout_enabled === false ? "Disabled" : `${current?.assignment_timeout_minutes ?? 30} min (urgent ${current?.urgent_assignment_timeout_minutes ?? 10} min)`} />
               <KV label="Customer reschedules" value={String(current?.customer_reschedule_limit ?? 3)} />
               <KV label="Arrival GPS radius" value={current?.arrival_verification_enabled !== true ? "Disabled" : `${current?.arrival_radius_meters ?? 250} m`} />
@@ -1108,14 +1116,14 @@ function MonetizationTab() {
               Late jobs — SLA breach &amp; penalty
             </label>
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
-              Measured from the scheduled slot, so a job booked well in advance is never
-              late early. Leave the hours blank to disable this entirely.
+              Measured from the end of the scheduled arrival window. The first deduction
+              happens once; if nobody reaches the customer, the job closes automatically.
             </p>
 
             <div style={{ display: "flex", gap: 8 }}>
               <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>Breach after (hours)</label>
-                <Input placeholder="e.g. 24" value={String(form.sla_breach_hours ?? "")}
+                <label style={{ fontSize: 12, fontWeight: 600 }}>First penalty grace (hours)</label>
+                <Input placeholder="0 = at slot end" value={String(form.sla_breach_hours ?? "")}
                   onChange={v => setForm({ ...form, sla_breach_hours: v === "" ? null : Number(v) })} />
               </div>
               <div style={{ flex: 1 }}>
@@ -1160,20 +1168,25 @@ function MonetizationTab() {
 
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>Charge for (days)</label>
-                <Input placeholder="3" value={String(form.sla_penalty_max_days ?? 3)}
-                  onChange={v => setForm({ ...form, sla_penalty_max_days: v === "" ? 3 : Number(v) })} />
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Auto-close after breach (hours)</label>
+                <Input placeholder="24" value={String(form.sla_close_after_hours ?? 24)}
+                  onChange={v => setForm({ ...form, sla_close_after_hours: v === "" ? 24 : Number(v) })} />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>Maximum penalty debt (₹)</label>
-                <Input placeholder="e.g. 500" value={String(form.sla_penalty_debt_cap ?? "")}
-                  onChange={v => setForm({ ...form, sla_penalty_debt_cap: v === "" ? null : Number(v) })} />
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Total penalty at closure (₹)</label>
+                <Input placeholder="150" value={String(form.sla_total_penalty_amount ?? 150)}
+                  onChange={v => setForm({ ...form, sla_total_penalty_amount: v === "" ? 150 : Number(v) })} />
               </div>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Maximum provider penalty debt (₹)</label>
+              <Input placeholder="e.g. 500" value={String(form.sla_penalty_debt_cap ?? "")}
+                onChange={v => setForm({ ...form, sla_penalty_debt_cap: v === "" ? null : Number(v) })} />
             </div>
             <div>
               <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
-                The fixed amount is deducted once every 24 hours. The job closes after
-                the final day. The debt limit still prevents an unlimited negative balance.
+                Example: ₹50 at the missed slot and ₹150 total after 24 hours means the
+                closing deduction is ₹100. Retries never charge the same stage twice.
               </p>
             </div>
 
@@ -1200,7 +1213,7 @@ function MonetizationTab() {
               <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
                 <input type="checkbox" checked={form.sla_auto_cancel !== false}
                   onChange={e => setForm({ ...form, sla_auto_cancel: e.target.checked })} />
-                Close after the final breached day — Cancel the job so the customer can rebook
+                Close after the configured breach window — Cancel the job so the customer can rebook
               </label>
               <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
                 <input type="checkbox" checked={!!form.sla_penalty_to_customer}
@@ -1322,7 +1335,7 @@ function MonetizationTab() {
               {[
                 { step: "provider" as PolicyStep, label: "Provider charge", value: form.provider_model === "PERCENTAGE_COMMISSION" ? `${form.provider_percentage ?? "—"}% commission` : form.provider_model === "COMPLETION_CREDITS" ? `${form.provider_credit_units ?? "—"} credits/job` : form.provider_model === "FIXED_COMPLETION_CHARGE" ? `₹${Number(form.provider_fixed_amount_minor ?? 0) / 100}/job` : "None" },
                 { step: "customer" as PolicyStep, label: "Platform charge", value: form.customer_fee_model === "FIXED" ? `₹${Number(form.customer_fee_fixed_amount_minor ?? 0) / 100}` : form.customer_fee_model?.startsWith("PERCENTAGE") ? `${form.customer_fee_percentage ?? "—"}%` : "None" },
-                { step: "sla" as PolicyStep, label: "SLA penalty", value: form.sla_breach_hours == null ? "Disabled" : `${form.sla_penalty_type === "percentage" ? `${form.sla_penalty_percentage ?? "—"}%` : `₹${form.sla_penalty_amount ?? "—"}`} × ${form.sla_penalty_max_days ?? 3} days` },
+                { step: "sla" as PolicyStep, label: "SLA penalty", value: form.sla_breach_hours == null ? "Disabled" : `${form.sla_penalty_type === "percentage" ? `${form.sla_penalty_percentage ?? "—"}%` : `₹${form.sla_penalty_amount ?? "—"}`} now · ₹${form.sla_total_penalty_amount ?? 150} total after ${form.sla_close_after_hours ?? 24}h` },
                 { step: "operations" as PolicyStep, label: "Assignment window", value: form.assignment_timeout_enabled === false ? "Disabled" : `${form.assignment_timeout_minutes ?? 30} min / urgent ${form.urgent_assignment_timeout_minutes ?? 10} min` },
                 { step: "operations" as PolicyStep, label: "Verified arrival", value: form.arrival_verification_enabled !== true ? "Disabled" : `${form.arrival_radius_meters ?? 250} m radius` },
                 { step: "trust" as PolicyStep, label: "Health suspension", value: form.health_suspension_threshold == null ? "Disabled" : `Below ${form.health_suspension_threshold}` },

@@ -518,6 +518,14 @@ class HomeServiceJobExecutionService:
         from app.engines.execution.arrival_verification import verify_arrival
         arrival = await verify_arrival(db, job=job, staff_member_id=staff_member_id)
         await self._set_status(db, job, JS_REACHED_SITE, EV_REACHED_SITE, user_id, "staff", request_id=request_id)
+        # This SLA measures missed arrival, so a recorded arrival ends it.
+        # Inspection/work-start have their own gates and must not turn a timely
+        # arrival into another no-show deduction.
+        from app.engines.execution.sla_breach_service import stop_sla
+        await stop_sla(db, job.id)
+        job.sla_due_at = None
+        job.sla_next_penalty_at = None
+        job.sla_stopped_at = _now()
         await db.flush()
         return {**job.to_dict(), "arrival_verification": arrival}
 

@@ -15,21 +15,34 @@ import pytest
 
 
 class TestTheClockRunsFromTheScheduledSlot:
-    def test_due_is_measured_from_the_scheduled_day(self):
+    def test_due_is_measured_from_the_end_of_the_actual_slot(self):
         from app.engines.execution.sla_breach_service import compute_due_at
         # Booking creation would breach a job booked well in advance while
         # nothing is actually late. The slot is when service was promised.
-        due = compute_due_at(dt.date(2026, 8, 20), 24)
-        assert due == dt.datetime(2026, 8, 22, tzinfo=dt.timezone.utc)
+        due = compute_due_at(dt.date(2026, 8, 20), "14:00-16:00", 0)
+        assert due == dt.datetime(
+            2026, 8, 20, 16, tzinfo=dt.timezone(dt.timedelta(hours=5, minutes=30)))
 
     def test_no_schedule_means_no_deadline(self):
         from app.engines.execution.sla_breach_service import compute_due_at
-        assert compute_due_at(None, 24) is None
+        assert compute_due_at(None, "14:00-16:00", 0) is None
 
     def test_no_configured_sla_means_no_deadline(self):
         from app.engines.execution.sla_breach_service import compute_due_at
-        assert compute_due_at(dt.date(2026, 8, 20), None) is None
-        assert compute_due_at(dt.date(2026, 8, 20), 0) is None
+        assert compute_due_at(dt.date(2026, 8, 20), "14:00-16:00", None) is None
+
+    def test_zero_grace_charges_at_slot_end(self):
+        from app.engines.execution.sla_breach_service import compute_due_at
+        assert compute_due_at(dt.date(2026, 8, 20), "09:00-11:00", 0).hour == 11
+
+    def test_final_charge_is_only_the_top_up_to_150(self):
+        from app.engines.execution.sla_breach_service import final_penalty_top_up
+        assert final_penalty_top_up(
+            charged_so_far=Decimal("50"), total_penalty=Decimal("150"),
+        ) == Decimal("100")
+        assert final_penalty_top_up(
+            charged_so_far=Decimal("150"), total_penalty=Decimal("150"),
+        ) == Decimal("0")
 
     def test_rescheduling_moves_the_deadline(self):
         from app.engines.home_service_assignment import service
@@ -123,12 +136,30 @@ class TestPolicyIsTheOnlyAuthority:
         from app.engines.vertical_monetization.policy_service import _DRAFT_FIELDS
         for field in ("sla_breach_hours", "sla_penalty_amount", "sla_penalty_to_customer",
                       "sla_penalty_debt_cap", "health_suspension_threshold",
-                      "health_suspension_days", "health_reinstatement_score"):
+                      "health_suspension_days", "health_reinstatement_score",
+                      "sla_close_after_hours", "sla_total_penalty_amount"):
             assert field in _DRAFT_FIELDS, field
 
     def test_a_penalty_without_a_deadline_is_refused(self):
         errs = TestHealthSuspensionCannotTrapAProvider._errors({"sla_penalty_amount": 50})
         assert any("sla_breach_hours is required" in e for e in errs)
+
+    def test_zero_grace_and_one_day_close_are_valid(self):
+        errs = TestHealthSuspensionCannotTrapAProvider._errors({
+            "sla_breach_hours": 0,
+            "sla_penalty_amount": 50,
+            "sla_close_after_hours": 24,
+            "sla_total_penalty_amount": 150,
+        })
+        assert not errs
+
+    def test_final_total_cannot_be_less_than_first_charge(self):
+        errs = TestHealthSuspensionCannotTrapAProvider._errors({
+            "sla_breach_hours": 0,
+            "sla_penalty_amount": 50,
+            "sla_total_penalty_amount": 40,
+        })
+        assert any("cannot be less" in error for error in errs)
 
     def test_an_unset_policy_penalises_nobody(self):
         """Every live policy has these NULL, so the default must be inert."""
@@ -141,12 +172,11 @@ class TestPolicyIsTheOnlyAuthority:
 
 
 class TestTheCustomerIsReleasedFirst:
-    def test_the_job_is_cancelled_before_any_money_moves(self):
+    def test_the_job_is_cancelled_on_the_final_stage(self):
         from app.engines.execution import sla_breach_service
         src = inspect.getsource(sla_breach_service.sweep)
-        cancel = src.index("status = 'cancelled'")
-        penalty = src.index("_charge_penalty")
-        assert cancel < penalty, "the customer must be released before the accounting"
+        assert "if final_day:" in src
+        assert "_close_breached_job" in src
 
     def test_the_customer_is_told_they_can_rebook(self):
         from app.engines.execution import sla_breach_service
@@ -176,6 +206,7 @@ class TestEveryLeverIsAdminControlled:
                       "sla_penalty_debt_cap", "sla_auto_cancel", "sla_notify_provider",
                       "sla_penalty_type", "sla_penalty_percentage", "sla_penalty_min",
                       "sla_penalty_max", "sla_breachable_statuses",
+                      "sla_close_after_hours", "sla_total_penalty_amount",
                       "health_suspension_threshold", "health_suspension_days",
                       "health_reinstatement_score"):
             assert hasattr(P, field), field
@@ -191,7 +222,9 @@ class TestEveryLeverIsAdminControlled:
         from pathlib import Path
         src = Path("frontend/super-admin/app/admin/home-services/finance/page.tsx").read_text(
             encoding="utf-8")
-        for label in ("Breach after (hours)", "Penalty type", "Maximum penalty debt",
+        for label in ("First penalty grace (hours)", "Penalty type",
+                      "Maximum provider penalty debt", "Total penalty at closure",
+                      "Auto-close after breach (hours)",
                       "Cancel the job so the customer can rebook",
                       "Give the penalty to the customer as service credit",
                       "Tell the provider why they were charged",
@@ -278,5 +311,6 @@ class TestAutoCancelIsOptional:
         import inspect
         from app.engines.execution import sla_breach_service
         src = inspect.getsource(sla_breach_service.sweep)
-        idx = src.index("_notify_customer")
-        assert "sla_auto_cancel" in src[max(0, idx - 200):idx]
+        auto_cancel = src.index("if policy.sla_auto_cancel")
+        notify = src.index("_notify_customer")
+        assert auto_cancel < notify

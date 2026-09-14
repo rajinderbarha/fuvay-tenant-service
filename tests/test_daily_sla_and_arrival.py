@@ -23,11 +23,12 @@ def test_daily_penalty_has_job_and_day_idempotency():
     assert "idempotency_key" in source
 
 
-def test_sweep_charges_multiple_days_and_closes_only_final_day():
+def test_sweep_charges_once_then_closes_after_24_hours():
     from app.engines.execution.sla_breach_service import sweep
     source = inspect.getsource(sweep)
     assert "sla_penalty_day_count" in source
-    assert "interval '1 day'" in source
+    assert "sla_close_after_hours" in source
+    assert "final_penalty_top_up" in source
     assert "if final_day:" in source
     assert "_close_breached_job" in source
 
@@ -55,6 +56,8 @@ def test_all_new_operational_rules_are_versioned_admin_policy_fields():
 
     expected = {
         "sla_penalty_max_days",
+        "sla_close_after_hours",
+        "sla_total_penalty_amount",
         "assignment_timeout_enabled",
         "assignment_timeout_minutes",
         "customer_reschedule_limit",

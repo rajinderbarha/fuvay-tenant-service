@@ -39,6 +39,7 @@ _DRAFT_FIELDS = {
     "sla_penalty_debt_cap", "sla_auto_cancel", "sla_notify_provider",
     "sla_penalty_type", "sla_penalty_percentage", "sla_penalty_min",
     "sla_penalty_max", "sla_breachable_statuses", "sla_penalty_max_days",
+    "sla_close_after_hours", "sla_total_penalty_amount",
     # Assignment, rescheduling and verified-arrival enforcement.
     "assignment_timeout_enabled", "assignment_timeout_minutes",
     "urgent_assignment_timeout_minutes", "urgent_assignment_threshold_minutes",
@@ -255,7 +256,7 @@ class VerticalMonetizationPolicyService:
 
         # SLA + health. All optional: an unset policy simply does not penalise
         # or suspend anyone, which is how every existing policy behaves.
-        for name, minimum in (("sla_breach_hours", 1), ("health_suspension_days", 1)):
+        for name, minimum in (("sla_breach_hours", 0), ("health_suspension_days", 1)):
             raw = payload.get(name)
             if raw not in (None, ""):
                 try:
@@ -287,8 +288,23 @@ class VerticalMonetizationPolicyService:
                         "sla_breachable_statuses contains statuses a job never breaches in: "
                         + ", ".join(map(str, unknown))
                     )
-        decimal_field("sla_penalty_amount", minimum=Decimal("0"))
+        first_penalty = decimal_field("sla_penalty_amount", minimum=Decimal("0"))
         decimal_field("sla_penalty_debt_cap", minimum=Decimal("0"))
+        close_hours = payload.get("sla_close_after_hours", 24)
+        if close_hours not in (None, ""):
+            try:
+                numeric_close_hours = Decimal(str(close_hours))
+                if (not numeric_close_hours.is_finite()
+                        or numeric_close_hours != numeric_close_hours.to_integral_value()
+                        or int(numeric_close_hours) < 1
+                        or int(numeric_close_hours) > 168):
+                    raise ValueError
+            except (TypeError, ValueError, ArithmeticError):
+                errors.append("sla_close_after_hours must be a whole number between 1 and 168")
+        total_penalty = decimal_field("sla_total_penalty_amount", minimum=Decimal("0"))
+        if (ptype == "fixed" and total_penalty is not None and first_penalty is not None
+                and total_penalty < first_penalty):
+            errors.append("sla_total_penalty_amount cannot be less than sla_penalty_amount")
         max_days = payload.get("sla_penalty_max_days", 3)
         if max_days not in (None, ""):
             try:
@@ -353,7 +369,8 @@ class VerticalMonetizationPolicyService:
                 "health_suspension_threshold, otherwise a reinstated provider is "
                 "immediately re-suspended and can never recover"
             )
-        if payload.get("sla_penalty_amount") not in (None, "") and not payload.get("sla_breach_hours"):
+        if (payload.get("sla_penalty_amount") not in (None, "")
+                and payload.get("sla_breach_hours") in (None, "")):
             errors.append("sla_breach_hours is required when an SLA penalty is set")
 
         stage = payload.get("collection_stage", "after_estimate_approval")

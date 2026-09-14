@@ -2,9 +2,9 @@
 
 One sweep, one job at a time:
 
-  1. the provider is charged the admin-set amount once per breached day;
-  2. after the configured final day the customer is released and the job is
-     cancelled so they can rebook;
+  1. the provider is charged the admin-set amount when the arrival slot ends;
+  2. after the configured close window the provider is charged only the
+     remainder of the configured cumulative total and the job is cancelled;
   3. if the admin chose to, that same amount is issued to the customer as
      service credit, spendable on their next booking;
   4. health takes the hit, and a provider who falls through the threshold is
@@ -35,8 +35,7 @@ logger = structlog.get_logger("execution.sla_breach")
 #: Statuses a breach can still act on. A job already finished, cancelled or
 #: paid for is nobody's fault any more.
 BREACHABLE_STATUSES = (
-    "pending_assignment", "assigned", "accepted", "scheduled",
-    "on_the_way", "reached_site", "customer_not_available",
+    "pending_assignment", "assigned", "accepted", "scheduled", "on_the_way",
 )
 
 _HS_KEY = "home_services"
@@ -54,7 +53,8 @@ async def _policy(db: AsyncSession):
         "       p.sla_auto_cancel, p.sla_notify_provider, p.sla_penalty_type, "
         "       p.sla_penalty_percentage, p.sla_penalty_min, p.sla_penalty_max, "
         "       p.sla_breachable_statuses, "
-        "       p.sla_penalty_max_days, "
+        "       p.sla_penalty_max_days, p.sla_close_after_hours, "
+        "       p.sla_total_penalty_amount, "
         "       p.health_suspension_threshold, p.health_suspension_days, "
         "       p.health_reinstatement_score "
         "FROM vertical_monetization_policies p "
@@ -64,18 +64,19 @@ async def _policy(db: AsyncSession):
     ), {"k": _HS_KEY})).first()
 
 
-def compute_due_at(scheduled_date: dt.date | None, breach_hours: int | None) -> dt.datetime | None:
-    """When a job scheduled for this date runs out of time.
+def compute_due_at(scheduled_date: dt.date | None, scheduled_time_window: str | None,
+                   breach_hours: int | None) -> dt.datetime | None:
+    """When the first missed-arrival charge is due.
 
-    Measured from the END of the scheduled day, so "1 day late" means a full
-    day after the day the customer was promised -- not from booking creation,
-    which would breach a job booked well in advance while nothing is late.
+    The stored window is local IST wall-clock text.  Reuse the canonical slot
+    parser so dashboards and financial enforcement agree on the exact moment.
+    A zero-hour grace means the charge is due as soon as the slot ends.
     """
-    if scheduled_date is None or not breach_hours or breach_hours <= 0:
+    if scheduled_date is None or breach_hours is None or breach_hours < 0:
         return None
-    end_of_day = dt.datetime.combine(
-        scheduled_date + dt.timedelta(days=1), dt.time.min, tzinfo=dt.timezone.utc)
-    return end_of_day + dt.timedelta(hours=int(breach_hours))
+    from app.engines.weather.slots import slot_end
+    end = slot_end(scheduled_date, scheduled_time_window)
+    return end + dt.timedelta(hours=int(breach_hours)) if end is not None else None
 
 
 async def stamp_due_at(db: AsyncSession, job_id: uuid.UUID) -> dt.datetime | None:
@@ -86,13 +87,15 @@ async def stamp_due_at(db: AsyncSession, job_id: uuid.UUID) -> dt.datetime | Non
     point to start the new daily financial rule.
     """
     policy = await _policy(db)
-    if policy is None or not policy.sla_breach_hours:
+    if policy is None or policy.sla_breach_hours is None:
         return None
     row = (await db.execute(text(
-        "SELECT scheduled_date FROM service_jobs WHERE id = :id"), {"id": str(job_id)})).first()
+        "SELECT scheduled_date, scheduled_time_window FROM service_jobs WHERE id = :id"
+    ), {"id": str(job_id)})).first()
     if row is None:
         return None
-    due = compute_due_at(row.scheduled_date, policy.sla_breach_hours)
+    due = compute_due_at(
+        row.scheduled_date, row.scheduled_time_window, policy.sla_breach_hours)
     if due is not None:
         await db.execute(text(
             "UPDATE service_jobs SET sla_due_at = :due, "
@@ -110,6 +113,12 @@ async def stop_sla(db: AsyncSession, job_id: uuid.UUID) -> None:
         "sla_due_at = NULL, sla_next_penalty_at = NULL, updated_at = now() "
         "WHERE id = :id"
     ), {"id": str(job_id)})
+
+
+def final_penalty_top_up(*, charged_so_far: Decimal,
+                         total_penalty: Decimal) -> Decimal:
+    """Amount still needed to reach the configured cumulative close penalty."""
+    return max(Decimal("0"), Decimal(str(total_penalty)) - Decimal(str(charged_so_far)))
 
 
 def resolve_penalty(policy, *, job_value: Decimal | None,
@@ -208,7 +217,8 @@ async def _charge_penalty(db: AsyncSession, *, tenant_id, job_id, amount: Decima
 
 async def _penalise_and_compensate(db: AsyncSession, *, tenant_id, customer_id,
                                    booking_id, job_id, amount: Decimal,
-                                   day_number: int = 1) -> Decimal:
+                                   day_number: int = 1,
+                                   source: str = "sla_breach") -> Decimal:
     """Take the penalty from the provider AND give it to the customer.
 
     One call, because `issue_provider_funded_customer_credit` already does both
@@ -225,7 +235,8 @@ async def _penalise_and_compensate(db: AsyncSession, *, tenant_id, customer_id,
         tenant_id=tenant_id,
         customer_id=customer_id,
         amount=amount,
-        reference_type=f"sla_breach_day_{day_number}",
+        reference_type=("sla_final_close" if source == "sla_final_close"
+                        else f"sla_breach_day_{day_number}"),
         reference_id=job_id,
         reason=f"Service level breach on job {job_id}",
         actor_id=None,
@@ -350,7 +361,8 @@ async def _revoke_unspent_customer_credit(db: AsyncSession, *, job_id: uuid.UUID
     """Take back only what the customer has not already used."""
     rows = (await db.execute(text(
         "SELECT id, remaining_amount FROM customer_service_credits "
-        "WHERE reference_type LIKE 'sla_breach%' AND reference_id = :j "
+        "WHERE (reference_type LIKE 'sla_breach%' OR reference_type='sla_final_close') "
+        "  AND reference_id = :j "
         "  AND status = 'active' FOR UPDATE"), {"j": str(job_id)})).fetchall()
     revoked = Decimal("0")
     for row in rows:
@@ -364,8 +376,37 @@ async def _revoke_unspent_customer_credit(db: AsyncSession, *, job_id: uuid.UUID
     return revoked
 
 
+async def _reconcile_enforced_deadlines(db: AsyncSession, policy, *, limit: int) -> None:
+    """Move enrolled open jobs from the legacy calendar-day clock to slot time.
+
+    This deliberately touches only jobs already enrolled in enforcement.  It
+    fixes existing breached rows without retroactively charging unrelated old
+    test data.
+    """
+    rows = (await db.execute(text(
+        "SELECT id, scheduled_date, scheduled_time_window, sla_penalty_day_count "
+        "FROM service_jobs "
+        "WHERE sla_enforcement_started_at IS NOT NULL AND sla_stopped_at IS NULL "
+        "  AND arrival_verified_at IS NULL AND status = ANY(:statuses) "
+        "ORDER BY scheduled_date NULLS LAST LIMIT :lim "
+        "FOR UPDATE SKIP LOCKED"
+    ), {"statuses": list(BREACHABLE_STATUSES), "lim": limit})).fetchall()
+    close_hours = max(1, min(168, int(policy.sla_close_after_hours or 24)))
+    for row in rows:
+        first_due = compute_due_at(
+            row.scheduled_date, row.scheduled_time_window, policy.sla_breach_hours)
+        if first_due is None:
+            continue
+        next_due = (first_due if int(row.sla_penalty_day_count or 0) == 0
+                    else first_due + dt.timedelta(hours=close_hours))
+        await db.execute(text(
+            "UPDATE service_jobs SET sla_due_at=:first_due, sla_next_penalty_at=:next_due, "
+            "updated_at=now() WHERE id=:id"
+        ), {"first_due": first_due, "next_due": next_due, "id": str(row.id)})
+
+
 async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
-    """Charge each breached day and close the job after the final charge.
+    """Apply the missed-slot charge, then close after the configured window.
 
     Rows are locked and each ledger movement has a day-specific idempotency
     key, so overlapping schedulers and retries cannot double-charge a day.
@@ -376,10 +417,16 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
                 "suspended": 0, "reinstated": 0, "reason": "no_published_policy"}
 
     cap = Decimal(str(policy.sla_penalty_debt_cap)) if policy.sla_penalty_debt_cap is not None else None
-    max_days = max(1, min(30, int(policy.sla_penalty_max_days or 3)))
     statuses = policy.sla_breachable_statuses or list(BREACHABLE_STATUSES)
     if not isinstance(statuses, list) or not statuses:
         statuses = list(BREACHABLE_STATUSES)
+    # Arrival is the success condition for this SLA.  Never let a stale admin
+    # policy include post-arrival statuses and charge a technician who arrived.
+    statuses = [status for status in statuses if status in BREACHABLE_STATUSES]
+    if not statuses:
+        statuses = list(BREACHABLE_STATUSES)
+
+    await _reconcile_enforced_deadlines(db, policy, limit=limit)
 
     due = (await db.execute(text(
         "SELECT j.id, j.tenant_id, j.booking_id, j.customer_id, j.status, j.job_type_id, "
@@ -390,23 +437,28 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
         "FROM service_jobs j "
         "WHERE j.sla_enforcement_started_at IS NOT NULL AND j.sla_stopped_at IS NULL "
         "  AND j.sla_next_penalty_at IS NOT NULL AND j.sla_next_penalty_at <= now() "
-        "  AND j.sla_penalty_day_count < :max_days AND j.status = ANY(:statuses) "
+        "  AND j.arrival_verified_at IS NULL AND j.status = ANY(:statuses) "
         "ORDER BY j.sla_next_penalty_at LIMIT :lim FOR UPDATE OF j SKIP LOCKED"
-    ), {"statuses": statuses, "max_days": max_days, "lim": limit})).fetchall()
+    ), {"statuses": statuses, "lim": limit})).fetchall()
 
     breached = penalised = compensated = 0
     for job in due:
-        # Final-day closure writes status = 'cancelled'; days one and two stay open.
-        day_number = int(job.sla_penalty_day_count or 0) + 1
-        final_day = day_number >= max_days
+        previous_stage = int(job.sla_penalty_day_count or 0)
+        final_day = previous_stage >= 1
+        day_number = 2 if final_day else 1
         breached += 1
 
         enabled, override = await _job_type_override(
             db, policy_id=policy.id, job_type_id=job.job_type_id)
-        penalty = resolve_penalty(
+        initial_penalty = resolve_penalty(
             policy, job_value=Decimal(str(job.job_value or 0)) or None,
             job_type_override=override,
         ) if enabled else Decimal("0")
+        penalty = (final_penalty_top_up(
+            charged_so_far=Decimal(str(job.charged_so_far or 0)),
+            total_penalty=Decimal(str(policy.sla_total_penalty_amount or 0)),
+        ) if final_day and enabled else initial_penalty)
+        penalty_source = "sla_final_close" if final_day else "sla_breach"
 
         taken = Decimal("0")
         if penalty > 0:
@@ -415,7 +467,7 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
                     taken = await _penalise_and_compensate(
                         db, tenant_id=job.tenant_id, customer_id=job.customer_id,
                         booking_id=job.booking_id, job_id=job.id, amount=penalty,
-                        day_number=day_number)
+                        day_number=day_number, source=penalty_source)
                     if taken > 0:
                         compensated += 1
                 except Exception as exc:  # noqa: BLE001
@@ -423,11 +475,13 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
                                    job_id=str(job.id), error=str(exc))
                     taken = await _charge_penalty(
                         db, tenant_id=job.tenant_id, job_id=job.id,
-                        amount=penalty, cap=cap, day_number=day_number)
+                        amount=penalty, cap=cap, day_number=day_number,
+                        source=penalty_source)
             else:
                 taken = await _charge_penalty(
                     db, tenant_id=job.tenant_id, job_id=job.id,
-                    amount=penalty, cap=cap, day_number=day_number)
+                    amount=penalty, cap=cap, day_number=day_number,
+                    source=penalty_source)
             if taken > 0:
                 penalised += 1
 
@@ -435,11 +489,13 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
             "UPDATE service_jobs SET sla_breached_at=COALESCE(sla_breached_at, now()), "
             "sla_penalty_day_count=:day, sla_penalty_charged=:charged, "
             "sla_next_penalty_at=CASE WHEN :final THEN NULL "
-            "  ELSE sla_next_penalty_at + interval '1 day' END, "
+            "  ELSE sla_due_at + make_interval(hours => :close_hours) END, "
             "sla_stopped_at=CASE WHEN :final THEN now() ELSE sla_stopped_at END, "
             "updated_at=now() WHERE id=:id"
         ), {"day": day_number, "charged": Decimal(str(job.charged_so_far or 0)) + taken,
-            "final": final_day, "id": str(job.id)})
+            "final": final_day,
+            "close_hours": max(1, min(168, int(policy.sla_close_after_hours or 24))),
+            "id": str(job.id)})
 
         if taken > 0 and policy.sla_notify_provider:
             await _notify_provider(db, job=job, amount=taken,
@@ -447,9 +503,16 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
 
         if final_day:
             if policy.sla_auto_cancel:
-                await _close_breached_job(db, job_id=job.id, booking_id=job.booking_id)
+                close_hours = max(1, min(168, int(policy.sla_close_after_hours or 24)))
+                await _close_breached_job(
+                    db, job_id=job.id, booking_id=job.booking_id,
+                    reason=(f"Technician did not arrive within {close_hours} hours "
+                            "of the booked slot"),
+                )
                 await _notify_customer(db, job=job, compensated=bool(
-                    policy.sla_penalty_to_customer and taken > 0), amount=taken)
+                    policy.sla_penalty_to_customer
+                    and (Decimal(str(job.charged_so_far or 0)) + taken) > 0),
+                    amount=Decimal(str(job.charged_so_far or 0)) + taken)
 
         logger.info("sla_breach.actioned", job_id=str(job.id), tenant_id=str(job.tenant_id),
                     penalty_taken=float(taken), day_number=day_number, final_day=final_day,
@@ -462,7 +525,7 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
 
 
 async def _close_breached_job(db: AsyncSession, *, job_id, booking_id,
-                              reason: str = "SLA breached for three consecutive days") -> None:
+                              reason: str = "Technician did not arrive within the SLA window") -> None:
     """Close job, booking and current assignment as one transaction."""
     await db.execute(text(
         "UPDATE service_jobs SET status='cancelled', assignment_status='cancelled', "

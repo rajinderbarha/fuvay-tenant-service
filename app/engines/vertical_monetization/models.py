@@ -95,6 +95,12 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     sla_penalty_max:         Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     sla_breachable_statuses: Mapped[list | None]    = mapped_column(JSONB, nullable=True)
     sla_penalty_max_days:    Mapped[int]            = mapped_column(Integer, default=3, nullable=False)
+    # Two-stage missed-arrival lifecycle. The final amount is cumulative, not
+    # an extra charge (Rs.50 initially + Rs.100 at closure = Rs.150 total).
+    sla_close_after_hours:   Mapped[int]            = mapped_column(Integer, default=24, nullable=False)
+    sla_total_penalty_amount: Mapped[Decimal]       = mapped_column(
+        Numeric(12, 2), default=Decimal("150"), nullable=False,
+    )
 
     # Home Services operational controls. They live on the same versioned,
     # audited policy as SLA enforcement so administrators can change runtime
@@ -188,6 +194,8 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "sla_penalty_max": float(self.sla_penalty_max) if self.sla_penalty_max is not None else None,
             "sla_breachable_statuses": self.sla_breachable_statuses,
             "sla_penalty_max_days": self.sla_penalty_max_days,
+            "sla_close_after_hours": self.sla_close_after_hours,
+            "sla_total_penalty_amount": float(self.sla_total_penalty_amount),
             "assignment_timeout_enabled": self.assignment_timeout_enabled,
             "assignment_timeout_minutes": self.assignment_timeout_minutes,
             "urgent_assignment_timeout_minutes": self.urgent_assignment_timeout_minutes,

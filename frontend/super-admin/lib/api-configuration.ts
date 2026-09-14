@@ -192,6 +192,8 @@ export interface MonetizationPolicy {
   sla_penalty_max?: number | null;
   sla_breachable_statuses?: string[] | null;
   sla_penalty_max_days?: number;
+  sla_close_after_hours?: number;
+  sla_total_penalty_amount?: number;
   assignment_timeout_enabled?: boolean;
   assignment_timeout_minutes?: number;
   urgent_assignment_timeout_minutes?: number;
