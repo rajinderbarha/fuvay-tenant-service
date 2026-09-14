@@ -106,7 +106,7 @@ async def list_bookings_jobs(
     assigned_staff_id: uuid.UUID | None = Query(None),
     job_type_id: uuid.UUID | None = Query(None),
     offering_id: uuid.UUID | None = Query(None, description="Master Service filter"),
-    sla:      str | None = Query(None, description="on_track | at_risk | breached (database-filtered before pagination)"),
+    sla:      str | None = Query(None, description="on_track | at_risk | breached | attention (database-filtered before pagination)"),
     date_from: str | None = Query(None, description="scheduled_date >= (YYYY-MM-DD)"),
     date_to:   str | None = Query(None, description="scheduled_date <= (YYYY-MM-DD)"),
     has_complaint: bool | None = Query(None),

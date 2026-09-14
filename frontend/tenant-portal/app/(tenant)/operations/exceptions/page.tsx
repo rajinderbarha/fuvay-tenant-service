@@ -1,42 +1,35 @@
 "use client";
 import { TableSurface } from "@serviceos/design-system";
 /**
- * Operational Exceptions — real, read-only view of service_jobs that ended
- * abnormally (force_closed by an admin override, or voided). This is
- * deliberately NOT a resolution engine: there is no "resolve"/"retry" action
- * here, only the same real data ServiceJob already stores (status,
- * failure_reason, timestamps), surfaced from the canonical
- * /v1/provider/my-records/jobs endpoint (serviceJobsApi — service_jobs table,
- * not the legacy field_ops pipeline).
- *
- * Scope note: an admin can force-close or void a job via
- * app/engines/execution/home_service_router.py's admin_router
- * (/status-override, /force-close, /void), which sets ServiceJob.status and
- * (per that router) can attach a reason — but ServiceJob has only a single
- * `failure_reason` text column, not a structured escalation/owner/next-step
- * model. So "escalation" here means: show what's known (status + reason +
- * when), not fabricate an assignee or SLA countdown the backend doesn't
- * track. See docs/workflow-rearchitecture/tenant-portal-missing-workflows/backend-tickets.md
- * for the richer model this page would need to grow real escalation actions.
+ * Operational Exceptions combines the dashboard's canonical active action
+ * queue with historical service_jobs that ended abnormally. Active rows drill
+ * into their owning workspace; force-closed and voided records remain below
+ * as read-only closure history.
  */
 import React, { useCallback, useMemo } from "react";
 import { TenantLayout } from "../../../../components/layout/TenantLayout";
-import { JobStatusBadge } from "../../../../components/shared/ui";
-import { serviceJobsApi, getUserRole } from "../../../../lib/api";
+import { Badge, JobStatusBadge } from "../../../../components/shared/ui";
+import {
+  serviceJobsApi, getUserRole, homeServicesDashboardApi,
+  type HomeServicesDashboardAttentionItem,
+} from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
 import type { ServiceJobRecord } from "../../../../lib/api";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowRight, Clock3, RefreshCw } from "lucide-react";
 import ReadOnlyBanner from "../../../../components/shared/ReadOnlyBanner";
-import { PageHeader, Card, Button, Skeleton, EmptyState, StatusBadge as DsStatusBadge, Alert } from "@serviceos/design-system";
+import { PageHeader, Card, Button, Skeleton, EmptyState, Alert } from "@serviceos/design-system";
 
 const shortId = (id?: string | null) => (id ? `${id.slice(0, 8)}…` : "—");
 
 export default function OperationalExceptionsPage() {
+  const dashboard = useApi(useCallback(() => homeServicesDashboardApi.get(), []));
   const forceClosed = useApi(useCallback(() => serviceJobsApi.list({ status: "force_closed", limit: 50 }), []));
   const voided = useApi(useCallback(() => serviceJobsApi.list({ status: "voided", limit: 50 }), []));
 
-  const loading = forceClosed.loading || voided.loading;
-  const error = forceClosed.error || voided.error;
+  const loading = dashboard.loading || forceClosed.loading || voided.loading;
+  const error = dashboard.error || forceClosed.error || voided.error;
+  const activeItems = dashboard.data?.attention_queue ?? [];
+  const activeTotal = activeItems.reduce((total, item) => total + item.count, 0);
 
   const items: (ServiceJobRecord & { exception_kind: "force_closed" | "voided" })[] = useMemo(() => {
     const fc = (forceClosed.data?.items ?? []).map((j) => ({ ...j, exception_kind: "force_closed" as const }));
@@ -45,6 +38,7 @@ export default function OperationalExceptionsPage() {
   }, [forceClosed.data, voided.data]);
 
   const refetchAll = () => {
+    dashboard.refetch();
     forceClosed.refetch();
     voided.refetch();
   };
@@ -55,7 +49,7 @@ export default function OperationalExceptionsPage() {
       <div style={{ marginBottom: 16 }}>
         <PageHeader
           title="Operational Exceptions"
-          description={loading ? "Loading..." : `${items.length} job(s) closed outside the normal completion flow`}
+          description={loading ? "Loading..." : `${activeTotal} active action(s) · ${items.length} unusually closed job(s)`}
           actions={<Button variant="secondary" size="sm" leftIcon={<RefreshCw size={14}/>} onClick={refetchAll}>Refresh</Button>}
         />
       </div>
@@ -63,9 +57,9 @@ export default function OperationalExceptionsPage() {
       <div style={{ marginBottom: 16 }}>
         <Card padding="md" style={{ background: "var(--surface-sunken)" }}>
           <p style={{ fontSize: 12.5, color: "var(--text-secondary)", margin: 0, lineHeight: 1.6 }}>
-            This is a read-only explanation view — it does not resolve exceptions. Force-closed jobs were
-            ended by an admin status override; voided jobs were cancelled without completion. Use the
-            reason shown (when recorded) to decide whether follow-up with the customer or staff is needed.
+            Active exceptions use the same live action queue as your dashboard. Open a queue to resolve
+            its underlying work. The history below separately records jobs force-closed by an admin or
+            voided without normal completion.
           </p>
         </Card>
       </div>
@@ -76,7 +70,13 @@ export default function OperationalExceptionsPage() {
         </div>
       )}
 
-      <Card padding="none">
+      <Card title="Active attention" padding="none" style={{ marginBottom: 16 }}>
+        {dashboard.loading && !dashboard.data ? <div style={{ padding: 16 }}><Skeleton height={92} /></div>
+          : activeItems.length === 0 ? <EmptyState title="No active exceptions" description="No operational actions currently need attention." />
+          : <div style={{ display: "grid" }}>{activeItems.map((item, index) => <AttentionItem key={item.key} item={item} last={index === activeItems.length - 1} />)}</div>}
+      </Card>
+
+      <Card title="Exceptional closure history" padding="none">
         <div style={{ overflowX: "auto" }}>
           <TableSurface style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
@@ -93,11 +93,11 @@ export default function OperationalExceptionsPage() {
                 <tr key={i}><td colSpan={6} style={{ padding: "10px 16px" }}><Skeleton height="1.125rem" /></td></tr>
               )) : items.length === 0 ? (
                 <tr><td colSpan={6} style={{ padding: 0 }}>
-                  <EmptyState title="No operational exceptions"
-                    description="No jobs have been force-closed or voided. This queue only shows jobs that ended outside the normal completion flow." />
+                  <EmptyState title="No exceptional closures"
+                    description="No jobs have been force-closed or voided." />
                 </td></tr>
               ) : items.map((j, i) => (
-                <tr key={j.id} onClick={() => window.location.href = `/jobs/${j.id}`}
+                <tr key={j.id} onClick={() => window.location.href = `/home-services/bookings-jobs?job_id=${j.id}`}
                   style={{ borderBottom: i < items.length - 1 ? "1px solid var(--border)" : "none", cursor: "pointer" }}
                   onMouseEnter={(e) => (e.currentTarget as HTMLTableRowElement).style.background = "var(--surface-sunken)"}
                   onMouseLeave={(e) => (e.currentTarget as HTMLTableRowElement).style.background = "transparent"}>
@@ -130,4 +130,24 @@ export default function OperationalExceptionsPage() {
       </Card>
     </TenantLayout>
   );
+}
+
+function AttentionItem({ item, last }: { item: HomeServicesDashboardAttentionItem; last: boolean }) {
+  const tone = item.severity === "danger" ? "danger" : item.severity === "warning" ? "warning" : "info";
+  return <button type="button" onClick={() => { window.location.href = item.destination; }} style={{
+    display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "14px 16px",
+    border: 0, borderBottom: last ? 0 : "1px solid var(--border)", background: "transparent",
+    color: "var(--text-primary)", cursor: "pointer", textAlign: "left", font: "inherit",
+  }}>
+    <span style={{ display: "grid", placeItems: "center", width: 38, height: 38, flex: "none", borderRadius: 11,
+      background: tone === "danger" ? "var(--danger-bg)" : tone === "warning" ? "var(--warning-bg)" : "var(--info-bg)",
+      color: tone === "danger" ? "var(--danger-text)" : tone === "warning" ? "var(--warning-text)" : "var(--info-text)" }}>
+      {item.key === "SLA_ATTENTION" ? <Clock3 size={17} /> : <AlertTriangle size={17} />}
+    </span>
+    <span style={{ minWidth: 0, flex: 1 }}><strong style={{ display: "block", fontSize: 13 }}>{item.label}</strong>
+      <span style={{ display: "block", marginTop: 3, color: "var(--text-tertiary)", fontSize: 11 }}>
+        {item.oldest_age_hours == null ? "Open the queue for details" : `Oldest item ${item.oldest_age_hours}h`}
+      </span></span>
+    <Badge variant={tone} size="sm">{item.count}</Badge><ArrowRight size={15} color="var(--text-tertiary)" />
+  </button>;
 }

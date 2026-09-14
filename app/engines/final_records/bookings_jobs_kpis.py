@@ -40,10 +40,7 @@ async def compute_bookings_jobs_kpis(db: AsyncSession, tenant_id: uuid.UUID) -> 
     from app.engines.final_records.models import ServiceJob
 
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    risk_condition = (
-        sla_filter_condition(ServiceJob, "AT_RISK") |
-        sla_filter_condition(ServiceJob, "BREACHED")
-    )
+    risk_condition = sla_filter_condition(ServiceJob, "ATTENTION")
     # One indexed tenant scan and one round-trip for the entire KPI strip.
     # Conditional aggregates remain exact at high volume and avoid the six
     # sequential COUNT queries the workspace previously issued per refresh.

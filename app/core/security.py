@@ -268,6 +268,11 @@ async def record_abuse_event(
         from app.engines.security.models import SuspiciousActivityLog
 
         async with get_db_session() as db:
+            event_context = {
+                **(context or {}),
+                "enforcement_result": "blocked",
+                "containment": "automatic",
+            }
             threat = SuspiciousActivityLog(
                 entity_id=opaque_rate_identifier(entity_id),
                 entity_type=entity_type,
@@ -277,7 +282,13 @@ async def record_abuse_event(
                 ip_address=ip_address,
                 detected_value=1,
                 threshold=1,
-                context=context or {},
+                context=event_context,
+                # The abuse guard already denied the request. Recording that
+                # successful containment as "open" made protected traffic
+                # look like an unresolved incident and permanently reduced
+                # platform health. Keep it in the SOC history as contained;
+                # only signals still requiring action belong in the open KPI.
+                status="contained",
                 auto_actioned=True,
                 risk_score=80 if threat_level == "high" else 60,
                 source="abuse_guard",

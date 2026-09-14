@@ -35,12 +35,15 @@ class TestKpiModule:
         assert "TERMINAL_STATUSES" in c
         assert "notin_(TERMINAL_STATUSES)" in c
 
-    def test_at_risk_counts_both_at_risk_and_breached(self):
+    def test_sla_attention_count_uses_the_same_union_as_its_drilldown(self):
         c = _read(KPIS)
-        start = c.index("risk_condition = (")
-        block = c[start:start + 220]
-        assert '"AT_RISK"' in block and '"BREACHED"' in block
+        assert 'risk_condition = sla_filter_condition(ServiceJob, "ATTENTION")' in c
         assert "func.count().filter(risk_condition)" in c
+
+    def test_attention_filter_includes_at_risk_and_breached_windows(self):
+        c = _read(os.path.join(BASE, "app/engines/final_records/sla_summary.py"))
+        assert 'normalized in {"ATTENTION", "NEEDS_ATTENTION"}' in c
+        assert "func.now() >= risk_start" in c
 
 
 class TestRouterEnrichment:

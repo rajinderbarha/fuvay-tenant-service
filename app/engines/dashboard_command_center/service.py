@@ -148,7 +148,7 @@ class DashboardCommandCenterService:
               (SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN ('resolved','closed','cancelled') AND created_at<NOW()-INTERVAL '3 days') AS overdue_complaints,
               (SELECT COUNT(*) FROM provider_signals WHERE risk_level IN ('high','critical')) AS attention_count,
               (SELECT COUNT(*) FROM provider_signals WHERE risk_level='critical') AS critical_attention,
-              (SELECT COUNT(*) FROM suspicious_activity_logs WHERE status='open') AS open_threats,
+              (SELECT COUNT(*) FROM suspicious_activity_logs WHERE status IN ('open','investigating')) AS open_threats,
               (SELECT COUNT(*) FROM service_jobs sj LEFT JOIN usage_credit_ledger ucl ON ucl.job_id=sj.id AND ucl.event_type='completed_job_deduction' WHERE sj.status='completed' AND sj.updated_at>NOW()-INTERVAL '7 days' AND ucl.id IS NULL) AS failed_deductions
         """)
         row = rows[0] if rows else {}
@@ -171,7 +171,7 @@ class DashboardCommandCenterService:
             SELECT
               (SELECT COUNT(*) FROM tenants WHERE status IN ('pending_review','onboarding_pending')) AS pending_tenants,
               (SELECT COUNT(*) FROM service_jobs sj LEFT JOIN usage_credit_ledger ucl ON ucl.job_id=sj.id AND ucl.event_type='completed_job_deduction' WHERE sj.status='completed' AND sj.updated_at>NOW()-INTERVAL '7 days' AND ucl.id IS NULL) AS failed_deductions,
-              (SELECT COUNT(*) FROM suspicious_activity_logs WHERE status='open') AS open_threats,
+              (SELECT COUNT(*) FROM suspicious_activity_logs WHERE status IN ('open','investigating')) AS open_threats,
               (SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN ('resolved','closed','cancelled') AND created_at<NOW()-INTERVAL '3 days') AS overdue_complaints
         """)
         return self._health_payload(rows[0] if rows else {})

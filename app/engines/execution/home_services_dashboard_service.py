@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Presentation-group mapping over the real execution.constants job-status
@@ -88,25 +88,22 @@ async def _attention_queue(
             "destination": "/home-services/direct-payments",
         })
 
-    # SLA at risk: a job assigned to a technician who hasn't accepted it
-    # within a reasonable window. There is no dedicated SLA-deadline field on
-    # service_jobs (unlike customer_complaints, which has real sla_status/
-    # tenant_first_response_due_at columns) -- this reuses the same real
-    # assignment timestamp every other assignment view already reads
-    # (service_jobs.updated_at, set by assign_job() when status becomes
-    # 'assigned') rather than inventing a new per-job deadline column. 2
-    # hours is a conservative, documented policy constant, not a per-tenant
-    # configurable SLA yet.
-    sla_at_risk = (await db.execute(text(
-        "SELECT count(*), min(sj.updated_at) FROM service_jobs sj "
-        "WHERE sj.tenant_id=:tid AND sj.status='assigned' "
-        "AND sj.updated_at < now() - interval '2 hours'"
-    ), {"tid": str(tid)})).fetchone()
-    if sla_at_risk and sla_at_risk[0]:
+    # Use the exact SLA-attention predicate used by the Bookings & Jobs KPI
+    # and list filter.  The former hard-coded "assigned for two hours" rule
+    # counted a different set, so its drill-down could legitimately be empty.
+    from app.engines.final_records.models import ServiceJob
+    from app.engines.final_records.sla_summary import sla_filter_condition
+    sla_attention = (await db.execute(
+        select(func.count(), func.min(ServiceJob.created_at)).where(
+            ServiceJob.tenant_id == tid,
+            sla_filter_condition(ServiceJob, "ATTENTION"),
+        )
+    )).one()
+    if sla_attention and sla_attention[0]:
         items.append({
-            "key": "SLA_AT_RISK", "label": "SLA at risk", "count": int(sla_at_risk[0]),
-            "severity": "danger", "oldest_age_hours": _age_hours(sla_at_risk[1]),
-            "destination": "/home-services/bookings-jobs?sla=AT_RISK",
+            "key": "SLA_ATTENTION", "label": "SLA attention", "count": int(sla_attention[0]),
+            "severity": "danger", "oldest_age_hours": _age_hours(sla_attention[1]),
+            "destination": "/home-services/bookings-jobs?sla=ATTENTION",
         })
 
     open_complaints = (await db.execute(text(

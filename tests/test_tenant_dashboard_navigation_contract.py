@@ -19,6 +19,12 @@ TENANT_REGISTRY = (
 ).read_text(encoding="utf-8")
 ADMIN_LAYOUT_PATH = ROOT / "frontend/super-admin/components/layout/AdminLayout.tsx"
 TENANT_LAYOUT_PATH = ROOT / "frontend/tenant-portal/components/layout/TenantLayout.tsx"
+BOOKINGS_PAGE = (
+    ROOT / "frontend/tenant-portal/app/(tenant)/home-services/bookings-jobs/BookingsJobsPage.tsx"
+).read_text(encoding="utf-8")
+EXCEPTIONS_PAGE = (
+    ROOT / "frontend/tenant-portal/app/(tenant)/operations/exceptions/page.tsx"
+).read_text(encoding="utf-8")
 
 
 def _sidebar_hrefs(layout_path: Path) -> set[str]:
@@ -74,6 +80,20 @@ def test_attention_links_use_supported_bookings_filters():
     assert "bookings-jobs?stage=new&assignment=unassigned" in DASHBOARD_SERVICE
     assert "bookings-jobs?stage=estimate_approval" in DASHBOARD_SERVICE
     assert "bookings-jobs?status=" not in DASHBOARD_SERVICE
+
+
+def test_sla_attention_count_and_drilldown_share_one_filter():
+    assert 'sla_filter_condition(ServiceJob, "ATTENTION")' in DASHBOARD_SERVICE
+    assert '"destination": "/home-services/bookings-jobs?sla=ATTENTION"' in DASHBOARD_SERVICE
+    assert 'updateFilter("sla", "ATTENTION")' in BOOKINGS_PAGE
+    assert '<option value="ATTENTION">Needs attention</option>' in BOOKINGS_PAGE
+
+
+def test_operational_exceptions_renders_the_dashboard_action_queue():
+    assert "homeServicesDashboardApi.get()" in EXCEPTIONS_PAGE
+    assert "dashboard.data?.attention_queue" in EXCEPTIONS_PAGE
+    assert "item.destination" in EXCEPTIONS_PAGE
+    assert "/home-services/bookings-jobs?job_id=${j.id}" in EXCEPTIONS_PAGE
 
 
 def test_admin_tenants_has_registered_breadcrumb_metadata():

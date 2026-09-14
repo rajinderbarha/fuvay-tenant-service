@@ -61,6 +61,11 @@ def sla_filter_condition(job_model, status: str):
     risk_start = job_model.created_at + (minutes * 0.8) * one_minute
     open_job = job_model.status.notin_(TERMINAL_STATUSES)
     normalized = status.upper()
+    if normalized in {"ATTENTION", "NEEDS_ATTENTION"}:
+        # Operational queues include work approaching its deadline and work
+        # that has already crossed it.  Exposing the union as one predicate
+        # keeps KPI counts and their drill-down results identical.
+        return and_(open_job, func.now() >= risk_start)
     if normalized == "BREACHED":
         return and_(open_job, func.now() > deadline)
     if normalized == "AT_RISK":
