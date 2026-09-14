@@ -289,9 +289,12 @@ def _serviceable_issue_rows_query(serviceable_ms_ids):
         .join(MasterService, MasterService.id == ServiceIssueMapping.master_service_id)
         .where(
             MasterIssueType.is_active == True,  # noqa: E712
+            MasterIssueType.status == "active",
+            MasterIssueType.customer_visible == True,  # noqa: E712
             MasterService.id.in_(serviceable_ms_ids),
             MasterService.is_active == True,  # noqa: E712
             ServiceIssueMapping.status == "active",
+            ServiceIssueMapping.deleted_at.is_(None),
             ServiceIssueMapping.customer_visible == True,  # noqa: E712
         )
         .order_by(MasterService.display_order, MasterIssueType.display_order, MasterIssueType.name)

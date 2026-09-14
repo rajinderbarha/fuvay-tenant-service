@@ -932,6 +932,13 @@ async def test_a_typed_number_selects_from_the_list_that_was_actually_sent():
         last_options = None      # last turn offered nothing to choose from
     assert await resolve(Closed(), "2") is None
 
+    class Instagram(Thread):
+        channel = CHANNEL_INSTAGRAM
+
+    # Instagram catalog/type/brand choices are card-only. A typed number is
+    # ordinary text and the flow re-shows the cards instead of selecting one.
+    assert await resolve(Instagram(), "2") is None
+
 
 @pytest.mark.asyncio
 async def test_free_text_cannot_advance_a_selection_only_step(monkeypatch):
@@ -1045,6 +1052,7 @@ async def test_a_booking_confirms_the_phone_number_before_it_can_be_placed():
     # Once the address is retained, the next thing owed is the phone number.
     ready = {"id": "d-1", "status": "provider_matched", "job_type_id": "j-1",
              "selected_tenant_id": "t-1", "preferred_date": "2026-09-02",
+             "preferred_time_window": "09:00-11:00",
              "zipcode": "140412",
              "address_snapshot": {"address_line_1": "House 4", "latitude": 30.7}}
 
@@ -1229,6 +1237,7 @@ async def test_explicit_staging_bypass_collects_phone_without_otp(monkeypatch):
     ready = {
         "id": "d-1", "status": "provider_matched", "job_type_id": "j-1",
         "selected_tenant_id": "t-1", "preferred_date": "2026-09-02",
+        "preferred_time_window": "09:00-11:00",
         "zipcode": "140412",
         "address_snapshot": {"address_line_1": "House 4", "latitude": 30.7},
     }
@@ -1308,6 +1317,7 @@ async def test_instagram_test_phone_is_saved_without_sending_otp(monkeypatch):
     )
     draft = {
         "id": str(uuid.uuid4()), "preferred_date": "2026-09-13",
+        "preferred_time_window": "09:00-11:00",
         "customer_phone": None,
         "address_snapshot": {"address_line_1": "House 4, Main Road"},
     }
@@ -1694,6 +1704,7 @@ async def test_the_number_and_the_code_are_read_at_the_right_moment():
     # included — so nothing typed here can still be an address or a pincode.
     booked = {"id": "d-1", "selected_tenant_id": "t-1",
               "preferred_date": "2026-09-02",
+              "preferred_time_window": "09:00-11:00",
               "address_snapshot": {"address_line_1": "House 4", "latitude": 30.7}}
     thread = Thread()
     identity = Identity()
@@ -2734,6 +2745,7 @@ async def test_a_new_number_does_not_resend_otp_until_confirmed():
             return "verified"
 
     booked = {"id": "d-1", "selected_tenant_id": "t-1", "preferred_date": "2026-09-02",
+              "preferred_time_window": "09:00-11:00",
               "address_snapshot": {"address_line_1": "House 4", "latitude": 30.7}}
     identity = Identity()
 
@@ -4255,15 +4267,19 @@ async def test_type_is_asked_before_brand_and_both_before_the_problem():
 
     turn = await flow._dimension_step(_DimensionDB(), draft, CHANNEL_INSTAGRAM, 0)
     assert _dimension_rows(turn) == [
-        {"id": "dim|type|t-1", "title": "Window AC"},
-        {"id": "dim|type|t-2", "title": "Split AC"},
+        {"id": "dim|type|t-1", "title": "Window AC", "button_title": "Window AC"},
+        {"id": "dim|type|t-2", "title": "Split AC", "button_title": "Split AC"},
     ]
+    assert turn.picker["presentation"] == "carousel"
 
     # Type answered -> brand is next, NOT the problem. Every picker carries a
     # trailing "Start over" row, so compare only the dimension's own options.
     draft["offering_type_id"] = "t-2"
     turn = await flow._dimension_step(_DimensionDB(), draft, CHANNEL_INSTAGRAM, 0)
-    assert _dimension_rows(turn) == [{"id": "dim|brand|b-1", "title": "Voltas"}]
+    assert _dimension_rows(turn) == [{
+        "id": "dim|brand|b-1", "title": "Voltas", "button_title": "Voltas",
+    }]
+    assert turn.picker["presentation"] == "carousel"
 
     # Both answered -> nothing outstanding, so the flow moves on to the problem.
     draft["brand_id"] = "b-1"
@@ -4291,6 +4307,75 @@ async def test_instagram_type_and_brand_dimensions_use_uploaded_images():
 
 
 @pytest.mark.asyncio
+async def test_instagram_type_brand_catalog_question_is_an_image_carousel(monkeypatch):
+    """Legacy blueprints express Brand as a catalog question. It must get the
+    same card-only treatment as a first-class brand dimension."""
+    from app.engines.messaging_gateway import pickers
+    import app.engines.home_service_booking.question_flow_service as qf
+
+    class Questions:
+        async def get_current_question(self, *_args, **_kwargs):
+            return {"current_question": {
+                "question_id": "00000000-0000-0000-0000-000000000001",
+                "question_key": "brand",
+                "question_type": "single_select",
+                "text": "Choose your brand",
+                "options": [{
+                    "id": "00000000-0000-0000-0000-000000000002",
+                    "label": "Voltas",
+                }],
+            }}
+
+    monkeypatch.setattr(qf, "QuestionFlowService", lambda _db: Questions())
+    monkeypatch.setattr(
+        pickers, "_instagram_library_artwork",
+        AsyncMock(return_value={
+            "00000000-0000-0000-0000-000000000002": "https://cdn.example/voltas-card.png",
+        }),
+    )
+    picker = await pickers._question_picker(
+        object(), uuid.uuid4(), None, CHANNEL_INSTAGRAM, 0,
+    )
+
+    assert picker["presentation"] == "carousel"
+    assert picker["rows"] == [{
+        "id": "qf|00000000-0000-0000-0000-000000000001|00000000-0000-0000-0000-000000000002",
+        "title": "Voltas",
+        "button_title": "Voltas",
+        "image_url": "https://cdn.example/voltas-card.png",
+    }]
+
+
+@pytest.mark.asyncio
+async def test_partial_saved_date_does_not_hide_the_slot_picker(monkeypatch):
+    """A date without a time is incomplete; customers must still see slots."""
+    from app.engines.messaging_gateway import pickers
+    import app.engines.home_service_booking.service as booking
+
+    class Service:
+        async def list_available_slots(self, **_kwargs):
+            return {"slots": [{
+                "date": "2026-09-15", "time_window": "09:00-11:00",
+                "available_slots": 1,
+            }]}
+
+    monkeypatch.setattr(booking, "HomeServiceChatbotBookingService", lambda _db: Service())
+    monkeypatch.setattr(pickers, "_emergency_allowed", AsyncMock(return_value=False))
+    picker = await pickers._slot_picker(
+        None,
+        {
+            "selected_tenant_id": "tenant-1",
+            "preferred_date": "2026-09-15",
+            "preferred_time_window": None,
+            "required_fields": ["preferred_date", "preferred_time_window"],
+        },
+        uuid.uuid4(), None, CHANNEL_INSTAGRAM, 0,
+    )
+    assert picker is not None
+    assert picker["rows"][0]["id"] == "sl|2026-09-15|09:00-11:00"
+
+
+@pytest.mark.asyncio
 async def test_a_required_dimension_with_no_values_does_not_dead_end_the_booking():
     """A dimension nobody configured values for is skipped, not asked empty."""
     from app.engines.messaging_gateway import flow
@@ -4299,7 +4384,9 @@ async def test_a_required_dimension_with_no_values_does_not_dead_end_the_booking
     turn = await flow._dimension_step(db, {"id": "d-1", "offering_id": "svc-1"},
                                       CHANNEL_INSTAGRAM, 0)
     # Falls through to brand rather than rendering a question with no answers.
-    assert _dimension_rows(turn) == [{"id": "dim|brand|b-1", "title": "Voltas"}]
+    assert _dimension_rows(turn) == [{
+        "id": "dim|brand|b-1", "title": "Voltas", "button_title": "Voltas",
+    }]
 
 
 @pytest.mark.asyncio

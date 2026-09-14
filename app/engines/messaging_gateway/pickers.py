@@ -30,7 +30,8 @@ import uuid
 import structlog
 
 from app.engines.messaging_gateway.constants import (
-    CHANNEL_INSTAGRAM, MAX_IG_STACKED_OPTIONS, MAX_WA_LIST_ROWS,
+    CHANNEL_INSTAGRAM, MAX_IG_GENERIC_ELEMENTS, MAX_IG_STACKED_OPTIONS,
+    MAX_WA_LIST_ROWS,
     PICK_MORE, PICK_QUESTION, PICK_RESTART, PICK_SLOT,
     PICKER_PREFIXES, PICKER_SEP, SLOT_EMERGENCY_FLAG,
 )
@@ -162,8 +163,70 @@ async def _question_picker(
     body = str(question.get("text") or "Please choose:")
     if question.get("help_text"):
         body = f"{body}\n{question['help_text']}"
+    presentation = "quick_replies"
+    capacity_override = None
+    if channel == CHANNEL_INSTAGRAM:
+        # Some older catalog blueprints model Type/Brand as ordinary
+        # questions rather than service_job_dimensions. They must render the
+        # same native image cards as the dimension path, never a numbered text
+        # list that encourages customers to type 1/2.
+        from app.engines.admin_catalog.question_service import library_for_question_key
+
+        library = library_for_question_key(question.get("question_key"))
+        if library in {"service_types", "brands"}:
+            artwork = await _instagram_library_artwork(
+                db, library, [str(o.get("id")) for o in options if o.get("id")],
+            )
+            for row, option in zip(rows, [o for o in options if o.get("id")]):
+                row["button_title"] = row["title"]
+                image_url = artwork.get(str(option.get("id")))
+                if image_url:
+                    row["image_url"] = image_url
+            presentation = "carousel"
+            capacity_override = MAX_IG_GENERIC_ELEMENTS
     return _paginate(rows, body, channel, page, kind=PICK_QUESTION,
-                     list_button="Choose", section_title=body)
+                     list_button="Choose", section_title=body,
+                     presentation=presentation,
+                     capacity_override=capacity_override)
+
+
+async def _instagram_library_artwork(
+    db, library: str, option_ids: list[str],
+) -> dict[str, str]:
+    """Public Instagram artwork keyed by a Type/Brand option id.
+
+    The normal question-flow response intentionally exposes only app icons.
+    Social artwork is resolved here, inside the Instagram adapter, so it does
+    not leak into customer-app APIs. The app icon remains the fallback.
+    """
+    if not option_ids:
+        return {}
+    from sqlalchemy import select
+    from app.engines.admin_catalog.models import Brand, ServiceType
+
+    try:
+        ids = [uuid.UUID(value) for value in option_ids]
+    except (TypeError, ValueError):
+        return {}
+    if library == "brands":
+        result = await db.execute(
+            select(Brand.id, Brand.image_url, Brand.logo_url).where(Brand.id.in_(ids))
+        )
+    else:
+        result = await db.execute(
+            select(ServiceType.id, ServiceType.image_url, ServiceType.icon_url).where(
+                ServiceType.id.in_(ids)
+            )
+        )
+    artwork: dict[str, str] = {}
+    for row in result.all():
+        public = next((
+            value for value in (str(row[1] or "").strip(), str(row[2] or "").strip())
+            if value.startswith("https://")
+        ), None)
+        if public:
+            artwork[str(row[0])] = public
+    return artwork
 
 
 async def _slot_picker(
@@ -180,7 +243,8 @@ async def _slot_picker(
     only ones that carry the surcharge, and they say so on the row: an
     emergency must never be a surprise line on the final bill.
     """
-    if draft.get("preferred_date") and not emergency:
+    if (draft.get("preferred_date") and draft.get("preferred_time_window")
+            and not emergency):
         return None  # already chosen; nothing to pick
     if 'required_fields' in draft and 'preferred_date' not in draft['required_fields']:
         return None  # The saved workflow does not ask for a scheduled slot.

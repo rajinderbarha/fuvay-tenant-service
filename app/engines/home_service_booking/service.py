@@ -190,6 +190,7 @@ class HomeServiceChatbotBookingService:
             select(ServiceIssueMapping.id).where(
                 ServiceIssueMapping.master_service_id == offering.id,
                 ServiceIssueMapping.status == "active",
+                ServiceIssueMapping.deleted_at.is_(None),
             ).limit(1)
         )).scalars().first()
         if not has_problems:

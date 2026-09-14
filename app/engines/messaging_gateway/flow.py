@@ -295,9 +295,10 @@ async def advance(
         return await _next_step(db, thread, executor, draft, channel, 0, identity)
 
     if not reply_id:
-        # On Instagram the options are a numbered list, so "3" IS a tap. It is
-        # resolved against the ids actually sent, so a number means the same
-        # thing a tap would have.
+        # WhatsApp's text fallback may still be answered by number. Instagram
+        # catalog choices are card-only: accepting a typed ``1``/``2`` there
+        # made customers accidentally select a type, brand or problem instead
+        # of tapping the card they could actually see.
         reply_id = await _resolve_numbered_choice(thread, text)
 
     # Complaint descriptions and case updates are the two intentional free-text
@@ -440,6 +441,8 @@ async def _resolve_numbered_choice(thread, text: str) -> str | None:
     through an earlier choice, so a rebuild silently resolves the number
     against the wrong list.
     """
+    if str(getattr(thread, "channel", "") or "").lower() == CHANNEL_INSTAGRAM:
+        return None
     stripped = (text or "").strip()
     # A pincode is six digits and is answered at a step that offers no
     # options, so a number is only a choice when a list is actually open.
@@ -1003,9 +1006,10 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
         and thread.channel != "whatsapp"
         and draft
         and (not thread.customer_id or instagram_phone_bypass_enabled(thread.channel))
-        and (draft.get("preferred_date") or (
+        and ((draft.get("preferred_date") and draft.get("preferred_time_window")) or (
             draft.get('selected_tenant_id') and 'required_fields' in draft
-            and 'preferred_date' not in draft['required_fields']))
+            and 'preferred_date' not in draft['required_fields']
+            and 'preferred_time_window' not in draft['required_fields']))
     ):
         # Ordered to mirror `_next_step`: the number is asked for only once
         # the booking is otherwise complete, so nothing typed here can still
@@ -1972,7 +1976,14 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     if not draft.get("selected_tenant_id"):
         return await _match_step(db, thread, executor, draft, channel, page)
 
-    if not draft.get("preferred_date") and ('required_fields' not in draft or 'preferred_date' in draft['required_fields']):
+    if (
+        not (draft.get("preferred_date") and draft.get("preferred_time_window"))
+        and (
+            "required_fields" not in draft
+            or "preferred_date" in draft["required_fields"]
+            or "preferred_time_window" in draft["required_fields"]
+        )
+    ):
         # A provider is matched but has no bookable capacity in the horizon.
         return Turn(NO_SLOTS)
 
@@ -2104,7 +2115,10 @@ async def _serviceable_categories(db, zipcode: str) -> list:
             _publisher_filter(zipcode),
             MasterService.id.in_(
                 select(ServiceIssueMapping.master_service_id)
-                .where(ServiceIssueMapping.status == "active")
+                .where(
+                    ServiceIssueMapping.status == "active",
+                    ServiceIssueMapping.deleted_at.is_(None),
+                )
             ),
         )
     )
@@ -2217,7 +2231,7 @@ async def _offering_step(db, executor, category_slug: str, channel: str, page: i
 #: platform would let a customer pick one nobody services.
 _DIMENSION_VALUE_SQL = {
     "type": """
-        SELECT st.id, st.name, COALESCE(st.image_url, st.icon_url) AS image_url
+        SELECT st.id, st.name, st.image_url, st.icon_url
           FROM master_service_types mst
           JOIN service_types st ON st.id = mst.service_type_id
          WHERE mst.master_service_id = :service
@@ -2228,7 +2242,7 @@ _DIMENSION_VALUE_SQL = {
          ORDER BY st.display_order, st.name
     """,
     "brand": """
-        SELECT b.id, b.name, COALESCE(b.image_url, b.logo_url) AS image_url
+        SELECT b.id, b.name, b.image_url, b.logo_url
           FROM master_service_brands msb
           JOIN brands b ON b.id = msb.brand_id
          WHERE msb.master_service_id = :service
@@ -2304,15 +2318,26 @@ async def _dimension_step(db, draft: dict, channel: str, page: int) -> Turn | No
     normalized = []
     for value in values:
         value_id, name = value[0], value[1]
-        image_url = value[2] if len(value) > 2 else None
-        image_url = str(image_url or "").strip()
-        normalized.append((value_id, name, image_url if image_url.startswith("https://") else None))
-    cards = channel == CHANNEL_INSTAGRAM and any(image_url for _, _, image_url in normalized)
+        # The Instagram artwork is the first choice; the compact app icon is
+        # a valid fallback.  Do not use SQL COALESCE here: an empty or non-
+        # public image_url used to mask a perfectly valid HTTPS icon_url.
+        image_url = next((
+            candidate for candidate in (
+                str(raw or "").strip() for raw in value[2:]
+            ) if candidate.startswith("https://")
+        ), None)
+        normalized.append((value_id, name, image_url))
+    # Type and brand are always native cards on Instagram. A temporarily
+    # missing image must not downgrade the entire step to a numbered text
+    # list; uploaded artwork appears automatically as soon as it is present.
+    cards = channel == CHANNEL_INSTAGRAM
     options = []
     for value_id, name, image_url in normalized:
         row = {"id": _join(PICK_DIMENSION, key, str(value_id)), "title": str(name)}
         if cards:
-            row.update({"image_url": image_url, "button_title": str(name)})
+            row.update({"button_title": str(name)})
+            if image_url:
+                row["image_url"] = image_url
         options.append(row)
     picker = pickers._paginate(
         options, ASK_DIMENSION.format(label=str(label).lower()), channel, page,
@@ -2386,10 +2411,20 @@ async def _match_step(db, thread, executor, draft: dict, channel: str, page: int
             return Turn(NO_COVERAGE.format(zipcode=draft.get("zipcode") or "that pincode"))
 
     price = await executor._tool_get_home_service_price_estimate(draft_id=str(draft["id"]))
+    if price.get("error"):
+        # Do not relabel a provider/pricing failure as "no slots". The matcher
+        # itself already hard-gates every candidate on live slot capacity, so
+        # a failure here needs its real actionable reason.
+        return Turn(str(price["error"]))
     draft = await _draft(db, thread)
     if not draft:
         return Turn(NOTHING_HERE)
-    if draft.get('selected_tenant_id') and 'required_fields' in draft and 'preferred_date' not in draft['required_fields']:
+    if (
+        draft.get("selected_tenant_id")
+        and "required_fields" in draft
+        and "preferred_date" not in draft["required_fields"]
+        and "preferred_time_window" not in draft["required_fields"]
+    ):
         return await _next_step(db, thread, executor, draft, channel, 0)
 
     price_block = _price_block(price)

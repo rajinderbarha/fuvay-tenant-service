@@ -25,7 +25,7 @@ import React, {
 } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  Eye, Plus, Save, Search, ArrowRight, RefreshCw, Trash2,
+  Eye, Plus, Save, Search, RefreshCw, Trash2,
 } from "lucide-react";
 import {
   PageHeader, PageShell, Card, StatusBadge, Skeleton, Alert, Button, Input, Modal,
@@ -199,7 +199,6 @@ function ServicesPricingPageContent() {
           description="Repairs are quoted after inspection — you set the inspection charge. Service and installation use your fixed price."
           actions={<>
             <Button variant="secondary" size="sm" leftIcon={<Eye size={14} />} onClick={() => setPreviewOpen(true)}>Preview customer view</Button>
-            <Button variant="secondary" size="sm" leftIcon={<ArrowRight size={14} />} onClick={() => router.push("/tenant/home-services/setup/services-pricing?return_to=%2Fhome-services%2Fservices")}>Guided setup</Button>
             <Button variant="primary" size="sm" leftIcon={<Plus size={14} />} onClick={() => setAddOpen(true)}>Add services</Button>
           </>}
         />
@@ -317,6 +316,7 @@ function ServicesPricingPageContent() {
             onAdded={(service) => {
               setAddOpen(false);
               workspace.refetch();
+              setupCatalog.refetch();
               openService(service.tenant_service_id);
             }}
           />
@@ -381,7 +381,6 @@ function CustomerCatalogPreview({ open, onClose, groups }: {
 function AddServicesModal({ onClose, onAdded }: {
   onClose: () => void; onAdded: (service: TenantEnabledService) => void;
 }) {
-  const router = useRouter();
   const available = useApi(() => homeServicesSetupApi.listAvailable(), []);
   const enabled = useApi(() => homeServicesSetupApi.listEnabled(), []);
   const [addingId, setAddingId] = useState<string | null>(null);
@@ -430,7 +429,7 @@ function AddServicesModal({ onClose, onAdded }: {
       footer={<Button variant="secondary" size="sm" onClick={onClose}>Close</Button>}>
       <div style={{ minWidth: "min(38rem, 82vw)" }}>
         <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--text-tertiary)" }}>
-          Add a service from the same Admin-approved catalog used during setup. It will start as a private draft.
+          Add another service from the platform catalog. Configure its coverage and price here, then publish it when ready. Your approved business profile stays approved.
         </p>
         <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           <label style={{ position: "relative", flex: "1 1 230px" }}>
@@ -438,10 +437,6 @@ function AddServicesModal({ onClose, onAdded }: {
             <input aria-label="Search services to add" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search service, group or job type"
               style={{ width: "100%", height: 36, boxSizing: "border-box", padding: "0 10px 0 32px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-sunken)", color: "var(--text-primary)" }} />
           </label>
-          <Button variant="secondary" size="sm" leftIcon={<ArrowRight size={13} />}
-            onClick={() => { onClose(); router.push("/tenant/home-services/setup/services-pricing?return_to=%2Fhome-services%2Fservices"); }}>
-            Open guided setup
-          </Button>
         </div>
         {addError && <Alert tone="danger">{addError}</Alert>}
         {available.loading || enabled.loading ? <Skeleton height={220} /> : available.error || enabled.error ? (

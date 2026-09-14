@@ -539,8 +539,11 @@ class BackendToolExecutor:
                 .where(
                     ServiceIssueMapping.master_service_id == draft.offering_id,
                     ServiceIssueMapping.status == "active",
+                    ServiceIssueMapping.deleted_at.is_(None),
                     ServiceIssueMapping.customer_visible == True,  # noqa: E712
                     MasterIssueType.is_active == True,  # noqa: E712
+                    MasterIssueType.status == "active",
+                    MasterIssueType.customer_visible == True,  # noqa: E712
                 )
                 .order_by(ServiceIssueMapping.display_order)
             )).all()
@@ -713,7 +716,17 @@ class BackendToolExecutor:
             }
         except Exception as exc:
             logger.warning("backend_tools.price_estimate_failed", error=str(exc))
-            return {"error": "Unable to estimate price.", "display_price": None}
+            # ServiceOSException messages are customer-safe domain outcomes
+            # (no provider, no exact price, no live capacity). Preserve that
+            # reason so the social flow does not misreport every failure as
+            # "no slots available".
+            detail = getattr(exc, "detail", None)
+            return {
+                "error": detail
+                or "Unable to find an available provider and price right now.",
+                "error_code": getattr(exc, "error_code", None),
+                "display_price": None,
+            }
 
     async def _tool_get_available_home_service_slots(self, draft_id: str, emergency: bool = False) -> dict:
         """List real capacity-checked slots for a matched booking draft."""

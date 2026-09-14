@@ -88,6 +88,7 @@ class QuestionFlowService:
             select(ServiceIssueMapping.id).where(
                 ServiceIssueMapping.master_service_id == draft.offering_id,
                 ServiceIssueMapping.status == "active",
+                ServiceIssueMapping.deleted_at.is_(None),
             ).limit(1)
         )).scalars().first()
         if not has_publisher or not has_problems:
