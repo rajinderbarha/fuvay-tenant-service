@@ -20,7 +20,7 @@ from app.engines.invoice_payment.constants import (
 from app.engines.invoice_payment.models import (
     ServiceInvoice, SvcCommissionRecord, FinancialEvent,
 )
-from app.engines.invoice_payment.invoice_service import ServiceInvoiceService
+from app.engines.invoice_payment.invoice_service import ServiceInvoiceService, approved_parts_amount
 from app.engines.platform_commerce.ledger import debit_wallet, credit_wallet
 from app.engines.platform_commerce.models import TenantWallet
 from app.exceptions import ServiceOSException
@@ -193,8 +193,12 @@ class ServiceCommissionService:
         # NOT customer_payable_amount — the latter now includes the platform's own
         # customer charge, and the provider must not pay commission on that fee.
         # For invoices with no platform fee the two are equal, so this is a no-op
-        # for existing data.
-        base = inv.total_amount
+        # for existing data. Customer-approved parts are billed at exactly the
+        # approved price and are not commissionable either.
+        base = max(
+            Decimal("0"),
+            Decimal(str(inv.total_amount)) - await approved_parts_amount(db, inv.id),
+        )
         amount = (base * rate / Decimal("100")).quantize(Decimal("0.01"))
         now = _utcnow()
 

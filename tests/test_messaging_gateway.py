@@ -2492,21 +2492,19 @@ async def test_type_and_brand_answers_bridge_by_dimension_not_by_question_name()
     from app.engines.home_service_booking.question_flow_service import QuestionFlowService
 
     class Result:
-        def __init__(self, value):
-            self.value = value
-
-        def scalars(self):
-            return self
+        def __init__(self, row):
+            self.row = row
 
         def first(self):
-            return self.value
+            return self.row
 
     class DB:
-        def __init__(self, dimension_source):
-            self.dimension_source = dimension_source
+        """One question row: (answer_source, input_type, dimension legacy_source)."""
+        def __init__(self, dimension_source, answer_source="dimension", input_type="single_select"):
+            self.row = (answer_source, input_type, dimension_source)
 
         async def execute(self, *args, **kwargs):
-            return Result(self.dimension_source)
+            return Result(self.row)
 
     class Draft:
         offering_id = uuid.uuid4()
@@ -2522,8 +2520,16 @@ async def test_type_and_brand_answers_bridge_by_dimension_not_by_question_name()
 
     # No dimension: the two legacy names still bridge, everything else is
     # simply an answer and must not touch a structured column.
-    service.db = DB(None)
+    service.db = DB(None, answer_source="static")
     assert await service._answer_target(Draft(), "ac_type") == "service_types"
+    assert await service._answer_target(Draft(), "brand") == "brands"
+    assert await service._answer_target(Draft(), "issue_duration") is None
+
+    # A `free` choice question with no dimension takes its options from the
+    # type/brand library by key (the catalog seed creates `tv_type`/`brand`
+    # this way), so its answer bridges to the same column.
+    service.db = DB(None, answer_source="free")
+    assert await service._answer_target(Draft(), "tv_type") == "service_types"
     assert await service._answer_target(Draft(), "brand") == "brands"
     assert await service._answer_target(Draft(), "issue_duration") is None
 

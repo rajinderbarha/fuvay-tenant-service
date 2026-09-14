@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.execution.constants import (
     JOB_TRANSITIONS,
     EV_JOB_ACCEPTED, EV_JOB_REJECTED, EV_JOB_SCHEDULED, EV_CUSTOMER_CONTACTED,
+    EV_CUSTOMER_CALL_DIALED,
     EV_ON_THE_WAY, EV_REACHED_SITE,
     EV_INSPECTION_STARTED, EV_INSPECTION_COMPLETED,
     EV_SERVICE_STARTED, EV_DIAGNOSIS_ADDED,
@@ -79,6 +80,18 @@ async def customer_already_contacted(db: AsyncSession, job_id) -> bool:
         "WHERE job_id=:jid AND event_type=:et LIMIT 1"
     ), {"jid": str(job_id), "et": EV_CUSTOMER_CONTACTED})).fetchone()
     return row is not None
+
+
+
+async def customer_call_times(db: AsyncSession, job_id, limit: int = 10) -> tuple[int, list[str]]:
+    """How many times the technician tapped Call on this job, and the most
+    recent tap times (newest first, ISO 8601)."""
+    rows = (await db.execute(_sa_text(
+        "SELECT created_at, count(*) OVER () AS total FROM service_job_execution_events "
+        "WHERE job_id=:jid AND event_type=:et ORDER BY created_at DESC LIMIT :lim"
+    ), {"jid": str(job_id), "et": EV_CUSTOMER_CALL_DIALED, "lim": limit})).fetchall()
+    total = int(rows[0].total) if rows else 0
+    return total, [row.created_at.isoformat() for row in rows]
 
 
 class HomeServiceJobExecutionService:
@@ -514,6 +527,57 @@ class HomeServiceJobExecutionService:
             ))
             await db.flush()
         return {**job.to_dict(), "customer_contacted": True}
+
+    async def record_customer_call(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
+        """The technician tapped Call customer: record the tap and hand back the
+        number to dial.
+
+        The number is released only here, so the phone dialer cannot open
+        without the tap being recorded. It is the number the customer gave for
+        this booking (the Instagram chat collects it), read at call time and
+        never copied into the event.
+
+        Dialing does not prove the customer answered, so this does not satisfy
+        the contact-first task. `customer-contacted` still does that.
+        """
+        job = await self._get_job(db, job_id, tenant_id)
+        self._assert_staff_owns_job(job, staff_member_id)
+        from app.engines.masked_calling import constants as calling
+        from app.engines.masked_calling.service import _customer_number
+
+        if str(job.status) in calling.NON_CALLABLE_JOB_STATUSES:
+            raise ServiceOSException(
+                calling.ERR_JOB_NOT_CALLABLE,
+                "This job is closed, so the customer cannot be called from it.",
+                status_code=409,
+            )
+        phone = await _customer_number(
+            db, {"booking_id": job.booking_id, "customer_id": job.customer_id},
+        )
+        if not phone:
+            raise ServiceOSException(
+                calling.ERR_NO_CUSTOMER_NUMBER,
+                "There is no contact number for this customer.",
+                status_code=422,
+            )
+        db.add(ServiceJobExecutionEvent(
+            booking_id=job.booking_id, job_id=job.id, tenant_id=job.tenant_id,
+            staff_member_id=staff_member_id, actor_user_id=user_id, actor_role="staff",
+            event_type=EV_CUSTOMER_CALL_DIALED,
+            old_status=job.status, new_status=job.status,
+            notes="Technician tapped Call customer.",
+            event_metadata={"via": "phone_dialer"},
+            request_id=request_id,
+        ))
+        await db.flush()
+        call_count, recent = await customer_call_times(db, job.id)
+        return {
+            "job_id": str(job.id),
+            "customer_phone": phone,
+            "called_at": recent[0],
+            "call_count": call_count,
+            "recent_call_times": recent,
+        }
 
     async def mark_reached_site(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
@@ -1563,8 +1627,15 @@ class HomeServiceJobExecutionService:
                 ServiceInvoice.status != "cancelled",
             ).order_by(ServiceInvoice.created_at.desc()).limit(1)
         )).scalars().first()
+        # Customer-approved parts are billed at exactly the approved price;
+        # the provider's charge is on the service value without them.
+        from app.engines.invoice_payment.invoice_service import approved_parts_amount
         service_charge_basis = (
-            Decimal(str(invoice.total_amount)) if invoice is not None
+            max(
+                Decimal("0"),
+                Decimal(str(invoice.total_amount)) - await approved_parts_amount(db, invoice.id),
+            )
+            if invoice is not None
             else Decimal(str(collected_amount))
         )
         platform_fee_snapshot = (
@@ -1591,7 +1662,10 @@ class HomeServiceJobExecutionService:
         job.completion_data = {
             **job.completion_data,
             "provider_charge_basis": float(service_charge_basis),
-            "provider_charge_basis_source": "service_invoice.total_amount" if invoice else "collected_amount_fallback",
+            "provider_charge_basis_source": (
+                "service_invoice.total_amount_excluding_approved_parts"
+                if invoice else "collected_amount_fallback"
+            ),
             "platform_fee_snapshot": float(platform_fee_snapshot) if platform_fee_snapshot is not None else None,
             "warranty_days": warranty_days,
             "warranty_expires_at": job.warranty_expires_at.isoformat(),

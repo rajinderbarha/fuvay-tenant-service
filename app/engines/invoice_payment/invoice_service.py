@@ -4,8 +4,10 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.engines.execution.constants import PARTS_APPROVED_STATUSES, PARTS_STATUS_INSTALLED
 
 from app.engines.invoice_payment.constants import (
     INV_DRAFT, INV_ISSUED, INV_PAYMENT_COLLECTED, INV_PAID, INV_CANCELLED,
@@ -25,8 +27,29 @@ from app.engines.final_records.models import ServiceJob, ServiceBooking
 from app.engines.quote_checklist.models import ServiceJobQuote, ServiceJobQuoteItem
 
 
+#: Parts a job actually got approval for. Pending, rejected and cancelled
+#: requests are never billed.
+PARTS_BILLABLE_STATUSES = frozenset(PARTS_APPROVED_STATUSES | {PARTS_STATUS_INSTALLED})
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+async def approved_parts_amount(db: AsyncSession, invoice_id) -> Decimal:
+    """What an invoice bills for approved parts.
+
+    Those lines are charged at exactly their approved price, so
+    the platform fee and the provider's commission are both computed on the
+    invoice total WITHOUT them.
+    """
+    total = (await db.execute(
+        select(func.coalesce(func.sum(ServiceInvoiceItem.line_total), 0)).where(
+            ServiceInvoiceItem.invoice_id == invoice_id,
+            ServiceInvoiceItem.source_parts_request_id.isnot(None),
+        )
+    )).scalar_one()
+    return Decimal(str(total or 0))
 
 
 def _invoice_number() -> str:
@@ -200,6 +223,8 @@ class ServiceInvoiceService:
             await self._copy_from_quote(db, inv, quote_id, quote=quote)
         elif source == INV_SRC_BOOKING_BASE:
             await self._copy_from_booking(db, inv, str(job.booking_id))
+        await self._add_approved_parts(db, inv)
+        await db.flush()
 
         # Recalculate totals
         await self._refresh_totals(db, inv)
@@ -240,6 +265,12 @@ class ServiceInvoiceService:
         )).scalars().first()
         if inv is not None:
             if inv.status == INV_DRAFT:
+                # A draft made before a part was approved must still bill it.
+                # An issued invoice is an immutable snapshot and is left alone.
+                if await self._add_approved_parts(db, inv):
+                    await db.flush()
+                    await self._refresh_totals(db, inv)
+                    await db.refresh(inv)
                 now = _utcnow()
                 inv.status = INV_ISSUED
                 inv.issued_at = now
@@ -281,6 +312,7 @@ class ServiceInvoiceService:
             await self._copy_from_quote(db, inv, str(quote.id), quote=quote)
         else:
             await self._copy_from_booking(db, inv, str(job.booking_id))
+        await self._add_approved_parts(db, inv)
         await db.flush()
         await self._refresh_totals(db, inv)
         await db.refresh(inv)
@@ -382,6 +414,44 @@ class ServiceInvoiceService:
             )
             db.add(item)
 
+    async def _add_approved_parts(self, db: AsyncSession, inv: ServiceInvoice) -> int:
+        """Bill each approved part as its own `part` line, once.
+
+        The line carries the approved price and request id and is never
+        re-priced. Returns how many lines were added.
+        """
+        from app.engines.execution.models import PartsRequest
+
+        billed = set((await db.execute(
+            select(ServiceInvoiceItem.source_parts_request_id).where(
+                ServiceInvoiceItem.invoice_id == inv.id,
+                ServiceInvoiceItem.source_parts_request_id.isnot(None),
+            )
+        )).scalars().all())
+        parts = (await db.execute(
+            select(PartsRequest).where(
+                PartsRequest.job_id == inv.job_id,
+                PartsRequest.tenant_id == inv.tenant_id,
+                PartsRequest.status.in_(PARTS_BILLABLE_STATUSES),
+            ).order_by(PartsRequest.created_at)
+        )).scalars().all()
+        added = 0
+        for pr in parts:
+            if pr.id in billed:
+                continue
+            quantity = Decimal(str(pr.quantity))
+            unit_price = Decimal(str(pr.estimated_cost))
+            db.add(ServiceInvoiceItem(
+                id=uuid.uuid4(), invoice_id=inv.id,
+                booking_id=inv.booking_id, job_id=inv.job_id, tenant_id=inv.tenant_id,
+                item_type="part", item_name=pr.part_name, item_description=pr.reason,
+                quantity=quantity, unit_price=unit_price,
+                line_total=(quantity * unit_price).quantize(Decimal("0.01")),
+                source_parts_request_id=pr.id, is_customer_visible=True,
+            ))
+            added += 1
+        return added
+
     async def _refresh_totals(self, db: AsyncSession, inv: ServiceInvoice) -> None:
         res = await db.execute(
             select(ServiceInvoiceItem).where(ServiceInvoiceItem.invoice_id == inv.id)
@@ -389,10 +459,20 @@ class ServiceInvoiceService:
         items = list(res.scalars().all())
         totals = self._recalculate(items)
         # Apply the business vertical's published customer platform fee.
-        # total_amount stays the SERVICE value (the provider-commission base); the
-        # platform fee is added ON TOP so the customer is billed the inclusive
-        # amount. The provider is never charged commission on the platform's fee.
-        service_value = Decimal(str(totals["total_amount"]))
+        # total_amount is the invoice value; the platform fee is added ON TOP so
+        # the customer is billed the inclusive amount. The fee (like the
+        # provider's commission) is computed on the SERVICE value: the total
+        # without approved parts, which are billed at exactly their approved
+        # price.
+        invoice_total = Decimal(str(totals["total_amount"]))
+        service_value = max(
+            Decimal("0"),
+            invoice_total - sum(
+                (Decimal(str(item.line_total)) for item in items
+                 if getattr(item, "source_parts_request_id", None)),
+                Decimal("0"),
+            ),
+        )
         platform_fee = None
         if inv.invoice_source == INV_SRC_BOOKING_BASE:
             booking = await db.get(ServiceBooking, inv.booking_id)
@@ -404,7 +484,7 @@ class ServiceInvoiceService:
                 db, inv.category_id, inv.job_id, service_value,
             )
         totals["platform_fee_amount"] = platform_fee
-        totals["customer_payable_amount"] = service_value + platform_fee
+        totals["customer_payable_amount"] = invoice_total + platform_fee
         await db.execute(
             update(ServiceInvoice)
             .where(ServiceInvoice.id == inv.id)
@@ -507,6 +587,13 @@ class ServiceInvoiceService:
         if inv.status == INV_ISSUED:
             raise ValueError(ERR_INVOICE_ALREADY_ISSUED)
         self._assert_transition(inv, INV_ISSUED)
+        # Parts can be approved after a draft is created. Materialize those
+        # lines immediately before issuance so every issuance path snapshots
+        # the same final payable amount as ensure_issued_for_job().
+        if await self._add_approved_parts(db, inv):
+            await db.flush()
+            await self._refresh_totals(db, inv)
+            await db.refresh(inv)
         now = _utcnow()
         old_status = inv.status
         await db.execute(

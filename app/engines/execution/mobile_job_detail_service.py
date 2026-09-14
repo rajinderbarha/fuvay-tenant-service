@@ -41,6 +41,10 @@ Deliberately NOT fabricated (disclosed in the Phase J report, not hidden):
   - Relay call: no telephony/relay engine exists anywhere in this repo
     (audited) -- `call_relay_available` is always false with reason
     CONTACT_RELAY_UNAVAILABLE, never a fake working button.
+  - Phone call: the technician calls from their own phone dialer.
+    `phone_call_available` says whether POST .../customer-call can return a
+    number, and every recorded tap is listed (`last_called_at`,
+    `recent_call_times`). The number itself is never in this projection.
 """
 from __future__ import annotations
 
@@ -85,10 +89,11 @@ class TechnicianJobDetailService:
     async def get_detail(self, db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID, job_id: uuid.UUID) -> dict:
         from app.engines.final_records.models import ServiceJob, ServiceBooking
         from app.engines.execution.home_service_service import (
-            HomeServiceJobExecutionService, customer_already_contacted,
+            HomeServiceJobExecutionService, customer_already_contacted, customer_call_times,
         )
         from app.engines.home_service_assignment.service import _next_required_action
         from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+        from app.engines.masked_calling.service import _customer_number
 
         staff_id = await self._resolve_staff_member_id(db, user_id)
 
@@ -127,6 +132,12 @@ class TechnicianJobDetailService:
             }
 
         is_terminal = job.status in _TERMINAL_STATUSES
+        # The number itself is released only by POST .../customer-call, which
+        # records the tap; this projection says whether that call can succeed.
+        has_customer_number = await _customer_number(
+            db, {"booking_id": job.booking_id, "customer_id": job.customer_id},
+        ) is not None
+        call_count, recent_call_times = await customer_call_times(db, job.id)
 
         return {
             "job": {
@@ -151,6 +162,15 @@ class TechnicianJobDetailService:
                 "call_relay_reason": "CONTACT_RELAY_UNAVAILABLE",
                 "message_relay_available": False,
                 "message_relay_reason": "CONTACT_RELAY_UNAVAILABLE",
+                "phone_call_available": has_customer_number and not is_terminal,
+                "phone_call_reason": (
+                    "MASKED_CALLING_JOB_NOT_CALLABLE" if is_terminal
+                    else None if has_customer_number
+                    else "MASKED_CALLING_NO_CUSTOMER_NUMBER"
+                ),
+                "call_count": call_count,
+                "last_called_at": recent_call_times[0] if recent_call_times else None,
+                "recent_call_times": recent_call_times,
             },
             "workflow": {"stages": workflow_stages},
             "next_required_action": {

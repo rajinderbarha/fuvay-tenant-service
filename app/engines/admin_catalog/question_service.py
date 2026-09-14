@@ -28,6 +28,26 @@ CONDITION_TYPES = {"job_type", "problem", "dimension_enabled", "answer_equals"}
 EDITABLE_FIELDS = {"label", "input_type", "answer_source", "dimension_id", "required",
                    "customer_visible", "tenant_setup_visible", "deepseek_enabled",
                    "validation", "help_text", "display_order", "is_active"}
+CHOICE_INPUT_TYPES = {"single_select", "multi_select"}
+TYPE_QUESTION_KEYS = frozenset({"ac_type", "service_type", "offering_type", "equipment_type"})
+
+
+def library_for_question_key(question_key: str | None) -> str | None:
+    """"service_types" or "brands" when a question's key names a type or brand.
+
+    Used only for choice questions that carry no dimension and no static
+    answers. The catalog seed (`scripts/seed_home_services_and_computer_
+    catalog.py`) creates `ac_type`, `tv_type`, `brand`... exactly that way,
+    as `free` single-selects. Their options came back empty, and the chat
+    silently skips a question with nothing to tap, so the booking stopped
+    asking for the AC type and brand.
+    """
+    key = (question_key or "").strip().lower()
+    if key == "brand" or key.endswith("_brand"):
+        return "brands"
+    if key in TYPE_QUESTION_KEYS or key.endswith("_type"):
+        return "service_types"
+    return None
 
 
 class CatalogQuestionService:
@@ -233,41 +253,8 @@ class CatalogQuestionService:
                 select(CatalogDimension).where(CatalogDimension.id == qn.dimension_id))).scalar_one_or_none()
             if not dim:
                 return []
-            if dim.legacy_source == "service_types":
-                rows = (await self.db.execute(
-                    select(ServiceType.id, ServiceType.slug, ServiceType.name,
-                           ServiceType.icon_url)
-                    .join(ServiceTypeMapping, ServiceTypeMapping.type_id == ServiceType.id)
-                    .where(
-                        ServiceTypeMapping.service_id == qn.master_service_id,
-                        ServiceTypeMapping.status == "active",
-                        ServiceTypeMapping.customer_visible.is_(True),
-                        ServiceType.is_active.is_(True),
-                        ServiceType.deleted_at.is_(None),
-                    )
-                    .order_by(ServiceTypeMapping.display_order, ServiceType.display_order, ServiceType.name)
-                )).all()
-                # Customer/app APIs receive only the compact app icon. The
-                # Instagram image is read exclusively by the webhook renderer.
-                return [{"id": str(i), "code": slug, "label": name,
-                         "icon_url": icon_url}
-                        for i, slug, name, icon_url in rows]
-            if dim.legacy_source == "brands":
-                rows = (await self.db.execute(
-                    select(Brand.id, Brand.slug, Brand.name, Brand.logo_url)
-                    .join(BrandMapping, BrandMapping.brand_id == Brand.id)
-                    .where(
-                        BrandMapping.service_id == qn.master_service_id,
-                        BrandMapping.status == "active",
-                        BrandMapping.customer_visible.is_(True),
-                        Brand.is_active.is_(True),
-                        Brand.deleted_at.is_(None),
-                    )
-                    .order_by(BrandMapping.display_order, Brand.display_order, Brand.name)
-                )).all()
-                return [{"id": str(i), "code": slug, "label": name,
-                         "icon_url": logo_url}
-                        for i, slug, name, logo_url in rows]
+            if dim.legacy_source in ("service_types", "brands"):
+                return await self._library_options(qn.master_service_id, dim.legacy_source)
             from app.engines.admin_catalog.models import CatalogDimensionValue
             rows = (await self.db.execute(
                 select(CatalogDimensionValue).where(
@@ -275,7 +262,50 @@ class CatalogQuestionService:
                     CatalogDimensionValue.is_active == True).order_by(  # noqa: E712
                     CatalogDimensionValue.display_order))).scalars().all()
             return [{"id": str(v.id), "code": v.code, "label": v.label} for v in rows]
+        # A type/brand choice question with no dimension still offers this
+        # service's mapped types or brands -- see library_for_question_key.
+        library = (library_for_question_key(qn.question_key)
+                   if qn.input_type in CHOICE_INPUT_TYPES else None)
+        if library:
+            return await self._library_options(qn.master_service_id, library)
         return []
+
+    async def _library_options(self, master_service_id: uuid.UUID, library: str) -> list[dict]:
+        """The active, customer-visible types or brands mapped to one service."""
+        if library == "service_types":
+            rows = (await self.db.execute(
+                select(ServiceType.id, ServiceType.slug, ServiceType.name,
+                       ServiceType.icon_url)
+                .join(ServiceTypeMapping, ServiceTypeMapping.type_id == ServiceType.id)
+                .where(
+                    ServiceTypeMapping.service_id == master_service_id,
+                    ServiceTypeMapping.status == "active",
+                    ServiceTypeMapping.customer_visible.is_(True),
+                    ServiceType.is_active.is_(True),
+                    ServiceType.deleted_at.is_(None),
+                )
+                .order_by(ServiceTypeMapping.display_order, ServiceType.display_order, ServiceType.name)
+            )).all()
+            # Customer/app APIs receive only the compact app icon. The
+            # Instagram image is read exclusively by the webhook renderer.
+            return [{"id": str(i), "code": slug, "label": name,
+                     "icon_url": icon_url}
+                    for i, slug, name, icon_url in rows]
+        rows = (await self.db.execute(
+            select(Brand.id, Brand.slug, Brand.name, Brand.logo_url)
+            .join(BrandMapping, BrandMapping.brand_id == Brand.id)
+            .where(
+                BrandMapping.service_id == master_service_id,
+                BrandMapping.status == "active",
+                BrandMapping.customer_visible.is_(True),
+                Brand.is_active.is_(True),
+                Brand.deleted_at.is_(None),
+            )
+            .order_by(BrandMapping.display_order, Brand.display_order, Brand.name)
+        )).all()
+        return [{"id": str(i), "code": slug, "label": name,
+                 "icon_url": logo_url}
+                for i, slug, name, logo_url in rows]
 
     # ── Helpers ───────────────────────────────────────────────────────────────
     async def _options(self, question_id: uuid.UUID) -> list[dict]:

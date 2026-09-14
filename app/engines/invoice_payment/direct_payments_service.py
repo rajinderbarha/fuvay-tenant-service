@@ -156,6 +156,19 @@ class DirectPaymentsService:
             .order_by(ServiceJobQuote.version_number.desc())
         )).scalars().first()
 
+    async def _approved_parts_total(self, job_id) -> Decimal:
+        """Billable approved parts at their snapshotted unit prices."""
+        from app.engines.execution.models import PartsRequest
+        from app.engines.invoice_payment.invoice_service import PARTS_BILLABLE_STATUSES
+        rows = (await self.db.execute(
+            select(PartsRequest.estimated_cost, PartsRequest.quantity).where(
+                PartsRequest.job_id == job_id,
+                PartsRequest.tenant_id == self.tenant_id,
+                PartsRequest.status.in_(PARTS_BILLABLE_STATUSES),
+            )
+        )).all()
+        return sum((_d(cost) * _d(quantity) for cost, quantity in rows), Decimal("0"))
+
     async def _workflow(self, job):
         from app.engines.admin_catalog.models import ServiceJobWorkflow
         wid = getattr(job, "service_job_workflow_id", None)
@@ -278,6 +291,14 @@ class DirectPaymentsService:
             if expected is None:
                 unresolved_reason = ERR_DP_EXPECTED_UNRESOLVED
 
+        # The invoice snapshot already bills approved parts as their own lines.
+        # Before it exists, add them to the work amount at the approved price,
+        # which is what the invoice will charge (no platform fee on parts).
+        parts_amount = Decimal("0")
+        if source != "invoice_snapshot" and expected is not None:
+            parts_amount = await self._approved_parts_total(job.id)
+            expected += parts_amount
+
         return {
             "expected_amount":      str(expected) if expected is not None else None,
             "expected_amount_source": source,
@@ -287,6 +308,7 @@ class DirectPaymentsService:
             "approved_estimate":    approved_estimate,
             "visit_fee":            str(visit_fee),
             "visit_fee_adjustment": str(visit_fee_adjustment),
+            "approved_parts_amount": str(parts_amount),
             "requires_direct_payment_record": bool(
                 getattr(wf, "requires_direct_payment_record", False)) if wf else False,
         }

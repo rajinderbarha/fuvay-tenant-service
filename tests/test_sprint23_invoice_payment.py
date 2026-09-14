@@ -244,11 +244,12 @@ class TestInvoiceService:
         job = _mock_job()
 
         # Only the duplicate-check execute call reaches db.execute;
-        # _get_job, _refresh_totals, _log_event are patched
+        # _get_job, _add_approved_parts, _refresh_totals, _log_event are patched
         db = _mock_db(_scalars_result([]))  # no duplicate found
         db.refresh = AsyncMock()
 
         with patch.object(svc, '_get_job', AsyncMock(return_value=job)), \
+             patch.object(svc, '_add_approved_parts', AsyncMock(return_value=0)), \
              patch.object(svc, '_refresh_totals', AsyncMock()), \
              patch.object(svc, '_log_event', AsyncMock()):
             result = await svc.create_invoice(
@@ -318,7 +319,8 @@ class TestInvoiceService:
             MagicMock(),              # update invoice status
             MagicMock(),              # update job status
         )
-        with patch.object(svc, '_log_event', AsyncMock()):
+        with patch.object(svc, '_add_approved_parts', AsyncMock(return_value=0)), \
+             patch.object(svc, '_log_event', AsyncMock()):
             result = await svc.issue_invoice(db, str(INVOICE_ID), str(TENANT_ID), str(USER_ID), None)
         assert result["status"] in ("draft", "issued")  # mock returns draft; real returns issued
 
@@ -468,7 +470,9 @@ class TestCommissionService:
             _scalars_result([]),      # tenant vertical lookup -> not Home Services
             _scalars_result([]),      # category lookup -> None (legacy default 10%)
         )
-        with patch.object(svc, '_log_event', AsyncMock()):
+        with patch.object(svc, '_log_event', AsyncMock()), \
+             patch("app.engines.invoice_payment.commission_service.approved_parts_amount",
+                   AsyncMock(return_value=Decimal("0"))):
             result = await svc.calculate_commission(db, str(INVOICE_ID))
         assert result["status"] == "calculated"
         # 10% of 1000 = 100
@@ -486,7 +490,9 @@ class TestCommissionService:
             _scalars_result([]),      # tenant vertical lookup -> not Home Services
             _scalars_result([]),      # category lookup -> None (legacy default 10%)
         )
-        with patch.object(svc, '_log_event', AsyncMock()):
+        with patch.object(svc, '_log_event', AsyncMock()), \
+             patch("app.engines.invoice_payment.commission_service.approved_parts_amount",
+                   AsyncMock(return_value=Decimal("0"))):
             result = await svc.calculate_commission(db, str(INVOICE_ID))
         # 10% of 2000 = 200
         assert result["commission_amount"] == "200.00"

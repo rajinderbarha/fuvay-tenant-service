@@ -72,6 +72,9 @@ EV_JOB_ACCEPTED         = "job_accepted"
 # a new job status so the existing JOB_TRANSITIONS graph stays untouched -- the
 # job is legitimately `accepted` throughout, it just has one action to do first.
 EV_CUSTOMER_CONTACTED   = "customer_contacted"
+# Each tap on "Call customer" in the technician app. Dialing does not prove
+# the customer answered, so it never satisfies EV_CUSTOMER_CONTACTED.
+EV_CUSTOMER_CALL_DIALED = "customer_call_dialed"
 EV_JOB_REJECTED         = "job_rejected"
 EV_JOB_SCHEDULED        = "job_scheduled"
 EV_ON_THE_WAY           = "technician_on_the_way"

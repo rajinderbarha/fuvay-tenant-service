@@ -132,6 +132,9 @@ class ServiceInvoiceItem(ServiceOSBase):
     unit_price:           Mapped[Decimal]         = mapped_column(Numeric(14,2), nullable=False, default=0)
     line_total:           Mapped[Decimal]         = mapped_column(Numeric(14,2), nullable=False, default=0)
     source_quote_item_id: Mapped[uuid.UUID|None]  = mapped_column(UUID(as_uuid=True), nullable=True)
+    # A part the customer approved (migration 366). Billed at exactly the
+    # approved price: no platform fee or commission is computed on it.
+    source_parts_request_id: Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
     is_customer_visible:  Mapped[bool]            = mapped_column(Boolean, nullable=False, default=True)
 
     def to_dict(self) -> dict:
@@ -144,6 +147,7 @@ class ServiceInvoiceItem(ServiceOSBase):
             "quantity":           str(self.quantity),
             "unit_price":         str(self.unit_price),
             "line_total":         str(self.line_total),
+            "source_parts_request_id": str(self.source_parts_request_id) if self.source_parts_request_id else None,
             "is_customer_visible":self.is_customer_visible,
             "created_at":         self.created_at.isoformat() if self.created_at else None,
         }

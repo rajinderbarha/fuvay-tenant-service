@@ -124,7 +124,9 @@ class TestInvoiceQuoteServiceJobCustomerLinkage:
         quote = MagicMock(tenant_id=tenant_id, job_id=job.id, customer_id=job.customer_id,
                            status="customer_approved")
         no_items = MagicMock(); no_items.scalars.return_value.all.return_value = []
-        db = _db_returning(job, None, quote, no_items, no_items, None)
+        # get_job, duplicate check, quote, quote items, approved-parts lookups
+        # (already billed, billable parts), then the totals refresh.
+        db = _db_returning(job, None, quote, no_items, no_items, no_items, no_items, None)
         result = await svc.create_invoice(
             db, job_id=str(job.id), tenant_id=str(tenant_id),
             source="approved_quote", quote_id=str(uuid.uuid4()), notes=None,

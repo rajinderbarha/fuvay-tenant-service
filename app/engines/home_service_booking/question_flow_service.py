@@ -217,24 +217,33 @@ class QuestionFlowService:
         """"brands", "service_types", or None when the answer is just an answer.
 
         Read from the question's own dimension so a renamed or newly added
-        question bridges correctly without this module being edited. The two
-        legacy key names are kept as a fallback for static-option questions
-        that carry no dimension at all.
+        question bridges correctly without this module being edited. A choice
+        question with no dimension and no static answers draws its options
+        from the type/brand library by key, so it bridges by the same rule.
+        The legacy key names stay a fallback for static-option questions.
         """
         from app.engines.admin_catalog.models import CatalogDimension, CatalogQuestion
+        from app.engines.admin_catalog.question_service import (
+            CHOICE_INPUT_TYPES, library_for_question_key,
+        )
 
-        legacy_source = (await self.db.execute(
-            select(CatalogDimension.legacy_source)
-            .join(CatalogQuestion, CatalogQuestion.dimension_id == CatalogDimension.id)
+        row = (await self.db.execute(
+            select(CatalogQuestion.answer_source, CatalogQuestion.input_type,
+                   CatalogDimension.legacy_source)
+            .outerjoin(CatalogDimension, CatalogQuestion.dimension_id == CatalogDimension.id)
             .where(
                 CatalogQuestion.master_service_id == draft.offering_id,
                 CatalogQuestion.question_key == question_key,
                 CatalogQuestion.is_active.is_(True),
             )
             .limit(1)
-        )).scalars().first()
-        if legacy_source in ("brands", "service_types"):
-            return legacy_source
+        )).first()
+        if row is not None:
+            answer_source, input_type, legacy_source = row
+            if legacy_source in ("brands", "service_types"):
+                return legacy_source
+            if answer_source not in ("static", "dimension") and input_type in CHOICE_INPUT_TYPES:
+                return library_for_question_key(question_key)
         if question_key == "brand":
             return "brands"
         if question_key in ("ac_type", "service_type", "offering_type"):

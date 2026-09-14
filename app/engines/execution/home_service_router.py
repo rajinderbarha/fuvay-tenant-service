@@ -241,6 +241,28 @@ async def staff_customer_contacted(job_id: uuid.UUID, r: Request, body: dict | N
     return ok(result, rid, "staff-exec-customer-contacted")
 
 
+@staff_router.post(
+    "/{job_id}/customer-call",
+    summary="Record a tap on Call customer and return the number to dial",
+    description=(
+        "The technician app opens the phone dialer with the returned number. "
+        "Every call records a timestamped `customer_call_dialed` event, so the "
+        "number is never handed out without the tap being logged. Dialing does "
+        "not satisfy the 'Call Customer & Confirm Requirements' task; "
+        "`customer-contacted` does."
+    ),
+)
+async def staff_customer_call(job_id: uuid.UUID, r: Request,
+                              user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
+    rid = getattr(r.state, "request_id", "—")
+    result = await _svc.record_customer_call(
+        db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)),
+        uuid.UUID(str(user.user_id)), request_id=rid,
+    )
+    await db.commit()
+    return ok(result, rid, "staff-exec-customer-call")
+
+
 @staff_router.post("/{job_id}/on-the-way")
 async def staff_on_the_way(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")

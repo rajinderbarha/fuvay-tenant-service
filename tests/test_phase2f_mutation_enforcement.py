@@ -241,7 +241,7 @@ class TestMutationRouteInventoryScript:
             f"decorator removal, found: {sorted(overlaps.keys())}"
         )
 
-    def test_execution_router_has_24_reachable_mutation_routes(self):
+    def test_execution_router_has_25_reachable_mutation_routes(self):
         """Phase 2A Slice 2F-3B regression guard: execution.home_service_router
         must have exactly 22 mutation routes (23 mounted - 2 shadowed
         accept/reject decorators = 21, plus the auto-acceptance flow's
@@ -249,10 +249,11 @@ class TestMutationRouteInventoryScript:
         first task -- calling the customer to confirm requirements -- and is
         guarded by require_staff_or_above_mutation like its siblings).
 
-        Raised 22 -> 24: the count was already stale at 23 on main, plus
+        Raised 22 -> 25: the count was already stale at 23 on main, plus
         `POST /{job_id}/parts-requests/{parts_request_id}/cancel`, which lets
-        a technician cancel an undecided part request and is guarded by
-        require_staff_or_above_mutation.
+        a technician cancel an undecided part request, and
+        `POST /{job_id}/customer-call`, which records a tap on Call customer.
+        Both are guarded by require_staff_or_above_mutation.
 
         The count is deliberately exact: it is what makes an unguarded route
         added later impossible to slip in unnoticed."""
@@ -260,7 +261,7 @@ class TestMutationRouteInventoryScript:
         from app.main import app
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] == "app.engines.execution.home_service_router"]
-        assert len(routes) == 24, f"expected 24 mutation routes, found {len(routes)}"
+        assert len(routes) == 25, f"expected 25 mutation routes, found {len(routes)}"
 
     def test_all_three_execution_assignment_modules_have_zero_unverified_routes(self):
         """Phase 2A Slice 2F-3B closure guard: every reachable mutation route
@@ -275,8 +276,9 @@ class TestMutationRouteInventoryScript:
         Count raised 27 -> 29. This was ALREADY stale at 28 before the
         auto-acceptance work (a route was added earlier without updating this
         guard, so it was failing on arrival); 29 is that real 28 plus
-        `POST /{job_id}/customer-contacted`. Raised 29 -> 31: stale at 30 on
-        main, plus `POST /{job_id}/parts-requests/{parts_request_id}/cancel`.
+        `POST /{job_id}/customer-contacted`. Raised 29 -> 32: stale at 30 on
+        main, plus `POST /{job_id}/parts-requests/{parts_request_id}/cancel`
+        and `POST /{job_id}/customer-call`.
         The `unverified == []` assertion
         below is the one that actually enforces safety -- it is what proves the
         new route carries require_staff_or_above_mutation like its siblings."""
@@ -289,7 +291,7 @@ class TestMutationRouteInventoryScript:
         }
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] in modules]
-        assert len(routes) == 31, f"expected 31 total reachable mutation routes, found {len(routes)}"
+        assert len(routes) == 32, f"expected 32 total reachable mutation routes, found {len(routes)}"
         exempt = mod.CONFIRMED_FALSE_POSITIVE_ROUTES | mod.CONFIRMED_PLATFORM_ADMIN_PERMISSION_ROUTES
         unverified = [
             r for r in routes
