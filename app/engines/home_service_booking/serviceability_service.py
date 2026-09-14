@@ -15,6 +15,7 @@ from app.engines.home_service_booking.constants import (
     ERR_NO_PROVIDER_IN_ZIPCODE, ERR_NO_PROVIDER_IN_CITY,
     ERR_CATEGORY_INVALID, ERR_OFFERING_INVALID,
 )
+from app.engines.provider_portal.bookability_query import latest_provider_bookable
 
 logger = structlog.get_logger("home_service.serviceability")
 
@@ -102,9 +103,16 @@ class HomeServiceServiceabilityService:
         # being booked — the same source of truth the provider-first
         # matching engine's eligibility gate already uses, so a
         # "serviceable" result here is guaranteed to be matchable in Step 4.
+        # Bookability comes from the canonical projection, never from the raw
+        # `tenants.status` lifecycle field. That field was a second,
+        # independently-derived readiness signal: a real provider that is
+        # approved, published and canonically bookable still sits at
+        # `onboarding_pending`, so this clause matched no tenant at all and
+        # every address answered "not available in your area" -- for a pincode
+        # the bot's own area picker had just offered.
         base_filters = [
             TenantServiceArea.is_active.is_(True),
-            Tenant.status == "active",
+            latest_provider_bookable(Tenant.id),
             TenantServiceAreaService.service_id == offering_id,
             TenantServiceAreaService.is_available.is_(True),
         ]
