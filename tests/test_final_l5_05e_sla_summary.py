@@ -16,6 +16,11 @@ def _job(status: str, created_minutes_ago: int, city: str | None = None, zipcode
     j.id = uuid.uuid4()
     j.status = status
     j.created_at = datetime.now(timezone.utc) - timedelta(minutes=created_minutes_ago)
+    j.sla_due_at = j.created_at + timedelta(minutes=60)
+    j.arrival_verified_at = None
+    j.sla_stopped_at = None
+    j.scheduled_date = None
+    j.scheduled_time_window = None
     j.city = city
     j.zipcode = zipcode
     return j
@@ -32,6 +37,7 @@ class TestComputeSla:
     def test_recent_job_is_on_track(self):
         from app.engines.final_records.sla_summary import compute_sla
         job = _job("assigned", 5)
+        job.sla_due_at = datetime.now(timezone.utc) + timedelta(hours=2)
         result = compute_sla(job, 60)
         assert result["sla_status"] == "ON_TRACK"
         assert result["minutes_remaining"] is not None
@@ -40,12 +46,13 @@ class TestComputeSla:
     def test_job_near_deadline_is_at_risk(self):
         from app.engines.final_records.sla_summary import compute_sla
         job = _job("assigned", 55)  # 5 min left of a 60-min window = within 20% threshold
+        job.sla_due_at = datetime.now(timezone.utc) + timedelta(minutes=5)
         result = compute_sla(job, 60)
         assert result["sla_status"] == "AT_RISK"
 
     def test_overdue_job_is_breached(self):
         from app.engines.final_records.sla_summary import compute_sla
-        job = _job("in_progress", 120)
+        job = _job("assigned", 120)
         result = compute_sla(job, 60)
         assert result["sla_status"] == "BREACHED"
         assert result["minutes_overdue"] is not None
@@ -56,6 +63,20 @@ class TestComputeSla:
         for status in ("force_closed", "voided", "cancelled", "failed"):
             job = _job(status, 500)
             assert compute_sla(job, 60)["sla_status"] == "NOT_APPLICABLE"
+
+    def test_arrived_or_in_progress_job_is_not_a_no_show_breach(self):
+        from app.engines.final_records.sla_summary import compute_sla
+        for status in ("reached_site", "inspection_started", "in_progress", "service_started"):
+            job = _job(status, 500)
+            assert compute_sla(job)["sla_status"] == "NOT_APPLICABLE"
+
+    def test_future_slot_is_not_labelled_overdue_from_booking_age(self):
+        from app.engines.final_records.sla_summary import compute_sla
+        job = _job("assigned", 500)
+        job.sla_due_at = datetime.now(timezone.utc) + timedelta(days=1)
+        result = compute_sla(job)
+        assert result["sla_status"] == "ON_TRACK"
+        assert result["minutes_overdue"] is None
 
 
 class TestResolveSlaMinutesForJobs:

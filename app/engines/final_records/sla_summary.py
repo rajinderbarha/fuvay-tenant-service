@@ -1,65 +1,39 @@
-"""FINAL-L5-05E — Canonical SLA + operational summary for service_jobs.
+"""Canonical missed-arrival SLA summary for ``service_jobs``.
 
-SLA input inventory (grounded in real, existing config, not invented):
-  AVAILABLE / CONFIGURED: PricingTier.default_sla_minutes, resolved per job
-    via TierLocation (zipcode overrides city) -- this is a real, admin-
-    editable SLA source already used elsewhere in pricing.
-  MISSING: service_jobs has no explicit deadline column; MasterWorkflowTemplate
-    .max_sla_hours exists but isn't reliably joinable to a specific job
-    without a service/category resolution chain not built here -- documented
-    limitation, not used.
-  DERIVED: sla deadline = job.created_at + resolved_sla_minutes.
-
-Batch-resolves SLA for a page of jobs with a fixed, small number of queries
-(no per-row query), per the mission's explicit N+1 requirement.
+The financial worker and every operational queue read the same slot-based
+``sla_due_at``. A former creation-time calculation could label tomorrow's job
+overdue today even though financial enforcement correctly waited for its slot.
 """
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from datetime import datetime, timezone
 
 from sqlalchemy import select, func, or_, and_, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 
 DEFAULT_SLA_MINUTES = 60
+AT_RISK_MINUTES = 60
 TERMINAL_STATUSES = {
     "completed", "cancelled", "failed", "closed_estimate_declined",
     "force_closed", "voided",
 }
+ARRIVAL_SATISFIED_STATUSES = {
+    "reached_site", "customer_not_available", "inspection_started",
+    "inspection_done", "service_started", "in_progress", "work_done",
+    "awaiting_estimate_approval", "awaiting_payment", "payment_pending",
+}
 
 
 def sla_filter_condition(job_model, status: str):
-    """Build the same SLA rule as ``attach_sla`` as a SQL predicate.
-
-    This lets list/count queries apply SLA before pagination. Postcode tier
-    wins, then city tier, then the documented 60 minute default.
-    """
-    from app.engines.admin_catalog.models import PricingTier, TierLocation
-
-    zip_minutes = (
-        select(PricingTier.default_sla_minutes)
-        .join(TierLocation, TierLocation.tier_id == PricingTier.id)
-        .where(
-            TierLocation.is_active.is_(True), PricingTier.is_active.is_(True),
-            TierLocation.zipcode == job_model.zipcode,
-        )
-        .order_by(TierLocation.priority.asc()).limit(1)
-        .correlate(job_model).scalar_subquery()
-    )
-    city_minutes = (
-        select(PricingTier.default_sla_minutes)
-        .join(TierLocation, TierLocation.tier_id == PricingTier.id)
-        .where(
-            TierLocation.is_active.is_(True), PricingTier.is_active.is_(True),
-            TierLocation.city == job_model.city,
-        )
-        .order_by(TierLocation.priority.asc()).limit(1)
-        .correlate(job_model).scalar_subquery()
-    )
-    minutes = func.coalesce(zip_minutes, city_minutes, DEFAULT_SLA_MINUTES)
+    """Build the same stamped-slot SLA rule as ``attach_sla``."""
     one_minute = literal_column("INTERVAL '1 minute'")
-    deadline = job_model.created_at + minutes * one_minute
-    risk_start = job_model.created_at + (minutes * 0.8) * one_minute
-    open_job = job_model.status.notin_(TERMINAL_STATUSES)
+    deadline = job_model.sla_due_at
+    risk_start = deadline - AT_RISK_MINUTES * one_minute
+    open_job = and_(
+        job_model.status.notin_(TERMINAL_STATUSES | ARRIVAL_SATISFIED_STATUSES),
+        job_model.arrival_verified_at.is_(None),
+        job_model.sla_stopped_at.is_(None),
+        deadline.is_not(None),
+    )
     normalized = status.upper()
     if normalized in {"ATTENTION", "NEEDS_ATTENTION"}:
         # Operational queues include work approaching its deadline and work
@@ -124,39 +98,50 @@ async def resolve_sla_minutes_for_jobs(db: AsyncSession, jobs: list) -> dict[str
     return result
 
 
-def compute_sla(job, sla_minutes: int) -> dict:
-    if job.status in TERMINAL_STATUSES:
+def compute_sla(job, sla_minutes: int = DEFAULT_SLA_MINUTES) -> dict:
+    """Project the missed-arrival deadline stamped from the booked slot.
+
+    ``sla_minutes`` remains in the signature for older callers, but pricing
+    tiers no longer decide whether a technician arrived on time.
+    """
+    source = "missed_arrival_slot"
+    status = str(job.status or "").lower()
+    if (status in TERMINAL_STATUSES | ARRIVAL_SATISFIED_STATUSES
+            or getattr(job, "arrival_verified_at", None)
+            or getattr(job, "sla_stopped_at", None)):
         return {"sla_status": "NOT_APPLICABLE", "next_deadline": None,
                 "minutes_remaining": None, "minutes_overdue": None,
-                "breach_stage": None, "source_policy": f"tier_default_{sla_minutes}min"}
+                "breach_stage": None, "source_policy": source}
 
-    created = job.created_at
-    if created is None:
+    deadline = getattr(job, "sla_due_at", None)
+    if deadline is None:
+        from app.engines.weather.slots import slot_end
+        deadline = slot_end(
+            getattr(job, "scheduled_date", None),
+            getattr(job, "scheduled_time_window", None),
+        )
+    if deadline is None:
         return {"sla_status": "NOT_APPLICABLE", "next_deadline": None,
                 "minutes_remaining": None, "minutes_overdue": None,
                 "breach_stage": None, "source_policy": None}
-    if created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
-
-    deadline = created + timedelta(minutes=sla_minutes)
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
     now = _now()
     delta_minutes = (deadline - now).total_seconds() / 60
 
     if delta_minutes < 0:
         return {"sla_status": "BREACHED", "next_deadline": deadline.isoformat(),
                 "minutes_remaining": None, "minutes_overdue": round(-delta_minutes),
-                "breach_stage": "OVERDUE", "source_policy": f"tier_default_{sla_minutes}min"}
-    at_risk_threshold = sla_minutes * 0.2
-    status = "AT_RISK" if delta_minutes <= at_risk_threshold else "ON_TRACK"
-    return {"sla_status": status, "next_deadline": deadline.isoformat(),
+                "breach_stage": "OVERDUE", "source_policy": source}
+    sla_status = "AT_RISK" if delta_minutes <= AT_RISK_MINUTES else "ON_TRACK"
+    return {"sla_status": sla_status, "next_deadline": deadline.isoformat(),
             "minutes_remaining": round(delta_minutes), "minutes_overdue": None,
-            "breach_stage": None, "source_policy": f"tier_default_{sla_minutes}min"}
+            "breach_stage": None, "source_policy": source}
 
 
 async def attach_sla(db: AsyncSession, jobs: list) -> dict[str, dict]:
     """Returns {job_id_str: sla_dict} for a batch of jobs."""
-    minutes_by_job = await resolve_sla_minutes_for_jobs(db, jobs)
-    return {str(j.id): compute_sla(j, minutes_by_job[str(j.id)]) for j in jobs}
+    return {str(job.id): compute_sla(job) for job in jobs}
 
 
 async def compute_summary(db: AsyncSession, *, tenant_id=None, status: str | None = None,
