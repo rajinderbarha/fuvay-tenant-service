@@ -1064,8 +1064,15 @@ function ProblemsSubTab({ masterServiceId, jobTypeId, canWrite, notify, onChange
     [masterServiceId, jobTypeId],
   );
   const removeAction = useAction(catalogWorkspaceApi.removeServiceIssue);
+  const updateArtworkAction = useAction((issueTypeId: string, data: { icon_url: string | null; image_url: string | null }) =>
+    catalogWorkspaceApi.updateIssueType(issueTypeId, data));
   const issues = issuesApi.data?.issues ?? [];
   const [showAdd, setShowAdd] = useState(false);
+  const [artworkEditor, setArtworkEditor] = useState<{
+    issueTypeId: string; name: string; iconUrl: string | null; instagramImageUrl: string | null;
+  } | null>(null);
+
+  useEffect(() => setArtworkEditor(null), [masterServiceId, jobTypeId]);
 
   async function handleRemove(m: CatalogIssueTypeMapping) {
     if (!canWrite) return;
@@ -1076,6 +1083,22 @@ function ProblemsSubTab({ masterServiceId, jobTypeId, canWrite, notify, onChange
     } else {
       notify("Couldn't remove this problem.", "error");
     }
+  }
+
+  async function saveArtwork() {
+    if (!artworkEditor || !canWrite) return;
+    const updated = await updateArtworkAction.execute(artworkEditor.issueTypeId, {
+      icon_url: artworkEditor.iconUrl,
+      image_url: artworkEditor.instagramImageUrl,
+    });
+    if (!updated) {
+      notify("Couldn't save the problem images.", "error");
+      return;
+    }
+    notify(`${artworkEditor.name} images saved.`);
+    setArtworkEditor(null);
+    issuesApi.refetch();
+    onChanged();
   }
 
   if (issuesApi.error) return <SectionError title="Couldn't load problems" error={issuesApi.error} requestId={issuesApi.requestId} onRetry={issuesApi.refetch}/>;
@@ -1103,24 +1126,82 @@ function ProblemsSubTab({ masterServiceId, jobTypeId, canWrite, notify, onChange
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {issues.map(i => (
-            <div key={i.mapping_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {i.issue_type?.icon_url && (
-                  <img src={i.issue_type.icon_url} alt="" style={{ width: 32, height: 32, borderRadius: 8, objectFit: "cover", border: "1px solid var(--border)" }}/>
+            <div key={i.mapping_id} style={{ padding: "9px 12px", background: "var(--surface-sunken)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                  <ProblemArtworkThumb label="App" url={i.issue_type?.icon_url}/>
+                  <ProblemArtworkThumb label="Instagram" url={i.issue_type?.image_url}/>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 650 }}>{i.name}</span>
+                      {i.is_common && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "var(--brand)", color: "white" }}>Common</span>}
+                      {i.is_default && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "var(--surface)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>Default</span>}
+                    </div>
+                    <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "3px 0 0" }}>
+                      App uses the compact icon. Instagram uses its card image, with the app icon as fallback.
+                    </p>
+                  </div>
+                </div>
+                {canWrite && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                    <button onClick={() => setArtworkEditor({
+                      issueTypeId: i.issue_type_id, name: i.name,
+                      iconUrl: i.issue_type?.icon_url ?? null,
+                      instagramImageUrl: i.issue_type?.image_url ?? null,
+                    })} style={{ fontSize: 11, fontWeight: 650, color: "var(--brand)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", cursor: "pointer" }}>
+                      Manage images
+                    </button>
+                    <button onClick={() => handleRemove(i)} style={{ fontSize: 11, fontWeight: 600, color: "var(--danger-text)", background: "none", border: "none", cursor: "pointer" }}>
+                      Remove
+                    </button>
+                  </div>
                 )}
-                <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{i.name}</span>
-                {i.is_common && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "var(--brand)", color: "white" }}>Common</span>}
-                {i.is_default && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "var(--surface)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>Default</span>}
               </div>
-              {canWrite && (
-                <button onClick={() => handleRemove(i)} style={{ fontSize: 11, fontWeight: 600, color: "var(--danger-text)", background: "none", border: "none", cursor: "pointer" }}>
-                  Remove
-                </button>
+              {artworkEditor?.issueTypeId === i.issue_type_id && (
+                <div style={{ marginTop: 10, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 10px" }}>Images for {artworkEditor.name}</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 14 }}>
+                    <div>
+                      <IconPicker label="Fuvay app icon" noun="problem app icon" context="issue_type_image"
+                        value={artworkEditor.iconUrl}
+                        onChange={iconUrl => setArtworkEditor(current => current ? { ...current, iconUrl } : current)}/>
+                      <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "5px 0 0" }}>Square icon used in the app and internal problem lists.</p>
+                    </div>
+                    <div>
+                      <IconPicker label="Instagram card image" noun="Instagram problem image" context="instagram_card_image" maxMb={5}
+                        value={artworkEditor.instagramImageUrl}
+                        onChange={instagramImageUrl => setArtworkEditor(current => current ? { ...current, instagramImageUrl } : current)}/>
+                      <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "5px 0 0" }}>Public Cloudinary artwork used only on Instagram. Falls back to the app icon when empty.</p>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 7, justifyContent: "flex-end", marginTop: 12 }}>
+                    <button onClick={() => setArtworkEditor(null)} disabled={updateArtworkAction.loading}
+                      style={{ fontSize: 12, padding: "6px 11px", borderRadius: 7, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-secondary)", cursor: "pointer" }}>Cancel</button>
+                    <button onClick={saveArtwork} disabled={updateArtworkAction.loading}
+                      style={{ fontSize: 12, fontWeight: 650, padding: "6px 11px", borderRadius: 7, border: "1px solid var(--brand)", background: "var(--brand)", color: "white", cursor: "pointer" }}>
+                      {updateArtworkAction.loading ? "Saving…" : "Save images"}
+                    </button>
+                  </div>
+                  {updateArtworkAction.error && <p style={{ fontSize: 11, color: "var(--danger-text)", margin: "7px 0 0" }}>{updateArtworkAction.error}</p>}
+                </div>
               )}
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ProblemArtworkThumb({ label, url }: { label: string; url?: string | null }) {
+  return (
+    <div title={`${label} image${url ? "" : " not added"}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 }}>
+      <div style={{ width: 38, height: 38, borderRadius: 9, overflow: "hidden", border: "1px solid var(--border)", background: "var(--surface)", display: "grid", placeItems: "center" }}>
+        {url
+          ? <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>
+          : <span style={{ color: "var(--text-tertiary)", fontSize: 15 }}>+</span>}
+      </div>
+      <span style={{ fontSize: 8, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</span>
     </div>
   );
 }
