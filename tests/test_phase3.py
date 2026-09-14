@@ -131,7 +131,7 @@ def test_customer_score_clamps_to_zero():
     clamped = min(100.0, max(0.0, score))
     assert clamped == 0.0
 
-def test_no_show_signal_degrades_score():
+def test_no_show_does_not_affect_payment_and_behavior_only_score():
     good_signals = dict(CUSTOMER_DEFAULT_SIGNALS)
     good_score = sum(good_signals.get(k, 80.0) * w for k, w in CUSTOMER_SIGNAL_WEIGHTS.items())
 
@@ -139,7 +139,7 @@ def test_no_show_signal_degrades_score():
     bad_signals["no_show_rate"] = 0.0
     bad_score = sum(bad_signals.get(k, 80.0) * w for k, w in CUSTOMER_SIGNAL_WEIGHTS.items())
 
-    assert bad_score < good_score
+    assert bad_score == good_score
 
 def test_zero_all_signals_gives_blocked_band():
     signals = {k: 0.0 for k in CUSTOMER_SIGNAL_WEIGHTS}

@@ -139,6 +139,24 @@ class CustomerHealthScore(ServiceOSBase):
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
+class CustomerBehaviorAssessment(ServiceOSBase):
+    """Private, one-per-completed-job staff observation; never a public review."""
+    __tablename__ = "customer_behavior_assessments"
+    __table_args__ = (
+        UniqueConstraint("job_id", name="uq_customer_behavior_job"),
+        Index("ix_customer_behavior_tenant_customer", "tenant_id", "customer_id"),
+        CheckConstraint("behavior_code IN ('respectful','neutral','difficult','unsafe')", name="ck_customer_behavior_code"),
+    )
+
+    job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    staff_member_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    behavior_code: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
 class CustomerCreditBalance(ServiceOSBase):
     """Per customer per tenant credit balance."""
     __tablename__ = "customer_credit_balances"

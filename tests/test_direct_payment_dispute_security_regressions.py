@@ -41,9 +41,11 @@ async def test_direct_payment_dispute_requires_actual_reason_and_never_fabricate
 @pytest.mark.asyncio
 async def test_provider_dispute_creates_one_atomic_provider_attributed_complaint():
     from app.engines.complaints.complaint_service import ComplaintService
+    from app.engines.platform_commerce.service import CommerceService
 
     db = MagicMock()
     db.commit = AsyncMock()
+    db.flush = AsyncMock()
     pay = _payment()
     actor_id, complaint_id = uuid.uuid4(), uuid.uuid4()
     svc = DirectPaymentsService(db, pay.tenant_id)
@@ -53,7 +55,8 @@ async def test_provider_dispute_creates_one_atomic_provider_attributed_complaint
     svc._log = AsyncMock()
     svc.get_detail = AsyncMock(return_value={"record": {"status": "disputed"}})
     reason = "The customer showed a different UPI transfer reference."
-    with patch.object(ComplaintService, "create_complaint", new_callable=AsyncMock) as create:
+    with patch.object(ComplaintService, "create_complaint", new_callable=AsyncMock) as create, \
+         patch.object(CommerceService, "recompute_customer_health", new_callable=AsyncMock):
         create.return_value = SimpleNamespace(id=complaint_id, complaint_number="CMP-1")
         with patch("app.engines.complaints.notifications.notify_customer_complaint_channel",
                    new_callable=AsyncMock) as notify:
@@ -75,9 +78,11 @@ async def test_provider_dispute_creates_one_atomic_provider_attributed_complaint
 @pytest.mark.asyncio
 async def test_customer_dispute_is_attributed_to_customer():
     from app.engines.complaints.complaint_service import ComplaintService
+    from app.engines.platform_commerce.service import CommerceService
 
     db = MagicMock()
     db.commit = AsyncMock()
+    db.flush = AsyncMock()
     pay = _payment()
     svc = DirectPaymentsService(db, pay.tenant_id)
     svc._get_record = AsyncMock(return_value=pay)
@@ -85,7 +90,8 @@ async def test_customer_dispute_is_attributed_to_customer():
         category_id=uuid.uuid4(), offering_id=uuid.uuid4(), job_number="JOB-2"))
     svc._log = AsyncMock()
     svc.get_detail = AsyncMock(return_value={})
-    with patch.object(ComplaintService, "create_complaint", new_callable=AsyncMock) as create:
+    with patch.object(ComplaintService, "create_complaint", new_callable=AsyncMock) as create, \
+         patch.object(CommerceService, "recompute_customer_health", new_callable=AsyncMock):
         create.return_value = SimpleNamespace(id=uuid.uuid4())
         await svc.open_dispute(payment_id=pay.id, actor_user_id=str(pay.customer_id),
                                actor_type="customer", description="I paid a different amount.")

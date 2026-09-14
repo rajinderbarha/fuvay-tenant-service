@@ -37,22 +37,22 @@ CUSTOMER_ADVANCE_REQUIRED_PCT: dict[str, Decimal] = {
 
 # ── Customer health signal weights ─────────────────────────────────────────
 CUSTOMER_SIGNAL_WEIGHTS: dict[str, float] = {
-    # Payment is the primary trust signal. Behavioural signals (avoidable
-    # cancellations/no-shows) matter next; tenure is context, not character.
-    "booking_completion_rate": 0.15,
-    "payment_reliability":     0.55,
-    "cancellation_rate":       0.10,
-    "no_show_rate":            0.15,
-    "platform_tenure":         0.05,
+    # Only verified payment outcomes and private, completed-job staff reports
+    # affect customer health. Subjective behavior has deliberately low weight.
+    "payment_reliability": 0.80,
+    "customer_behavior":  0.20,
 }
 
 # Default signals for new customers
 CUSTOMER_DEFAULT_SIGNALS: dict[str, float] = {
-    "booking_completion_rate": 100.0,
-    "payment_reliability":     100.0,
-    "cancellation_rate":       100.0,
-    "no_show_rate":            100.0,
-    "platform_tenure":         50.0,  # new = lower tenure score
+    "payment_reliability": 80.0,
+    "customer_behavior":  80.0,
+}
+
+# Older event writers still emit these names. They remain accepted as
+# historical information, but cannot change the new two-factor health score.
+CUSTOMER_LEGACY_SIGNAL_NAMES = {
+    "booking_completion_rate", "cancellation_rate", "no_show_rate", "platform_tenure",
 }
 
 # ── Reservation TTL ────────────────────────────────────────────────────────

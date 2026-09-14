@@ -10,3 +10,7 @@ export function completedJobReviewUrl(status: string | null | undefined, jobNumb
   if (String(status ?? "").toLowerCase() !== "completed" || !jobNumber) return null;
   return `/home-services/reviews?search=${encodeURIComponent(jobNumber)}`;
 }
+
+export function providerJobWorkspaceUrl(jobId: string): string {
+  return `/home-services/bookings-jobs?job_id=${encodeURIComponent(jobId)}`;
+}

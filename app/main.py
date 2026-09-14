@@ -669,6 +669,9 @@ def _mount_routers(app: FastAPI, prefix: str) -> None:
     from app.engines.execution.mobile_direct_payment_router import router as exec_mobile_direct_payment_router
     app.include_router(exec_mobile_direct_payment_router)
 
+    from app.engines.execution.mobile_customer_assessment_router import router as exec_mobile_customer_assessment_router
+    app.include_router(exec_mobile_customer_assessment_router)
+
     # Checklist Catalog Engine — canonical, job-type-mapped checklists
     # (consolidates quote_checklist/field_ops/admin_catalog checklist
     # systems onto one reusable-template + exact-Job-Type-mapping model).

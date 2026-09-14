@@ -139,6 +139,9 @@ class TechnicianJobDetailService:
         ) is not None
         call_count, recent_call_times = await customer_call_times(db, job.id)
 
+        from app.engines.execution.mobile_customer_assessment_service import MobileCustomerAssessmentService
+        customer_assessment = await MobileCustomerAssessmentService().get_status(db, user_id, tenant_id, job_id)
+
         return {
             "job": {
                 "job_id": str(job.id),
@@ -172,6 +175,7 @@ class TechnicianJobDetailService:
                 "last_called_at": recent_call_times[0] if recent_call_times else None,
                 "recent_call_times": recent_call_times,
             },
+            "customer_assessment": customer_assessment,
             "workflow": {"stages": workflow_stages},
             "next_required_action": {
                 "key": next_action.get("action_type"), "label": next_action.get("action_label"),

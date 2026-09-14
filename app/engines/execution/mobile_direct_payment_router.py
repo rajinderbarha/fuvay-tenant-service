@@ -11,6 +11,7 @@ from app.dependencies.db import get_db
 from app.schemas.base import ok
 from app.exceptions import ServiceOSException
 from app.engines.execution.mobile_direct_payment_service import MobileDirectPaymentService
+from app.engines.execution.mobile_customer_assessment_service import MobileCustomerAssessmentService
 from app.engines.messaging_gateway.rating_request import send_rating_request
 
 router = APIRouter(prefix="/v1/staff/service-jobs", tags=["Technician Mobile Direct Payment"])
@@ -56,6 +57,9 @@ async def remind_mobile_direct_payment(job_id: uuid.UUID, request: Request, user
 async def finalize_mobile_direct_payment(job_id: uuid.UUID, request: Request, background_tasks: BackgroundTasks, user: UserContext = Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db)):
     _require_tenant(user)
     data = await _svc.finalize_job(db, uuid.UUID(user.user_id), uuid.UUID(user.tenant_id), job_id, _rid(request))
+    data["customer_assessment"] = await MobileCustomerAssessmentService().get_status(
+        db, uuid.UUID(user.user_id), uuid.UUID(user.tenant_id), job_id,
+    )
     # After the response, never inline: the Instagram send can take as long as
     # the staff app's own timeout, and a completed job must not look failed.
     background_tasks.add_task(send_rating_request, job_id)

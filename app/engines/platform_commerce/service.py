@@ -18,7 +18,7 @@ from app.integrations import razorpay_client
 from app.engines.platform_commerce.constants import (
     COMMISSION_BASE_RATE, COMMISSION_HEALTH_ADJUSTMENT,
     CUSTOMER_HEALTH_BANDS, CUSTOMER_ADVANCE_REQUIRED_PCT,
-    CUSTOMER_SIGNAL_WEIGHTS, CUSTOMER_DEFAULT_SIGNALS, RESERVATION_TTL_HOURS,
+    CUSTOMER_SIGNAL_WEIGHTS, CUSTOMER_DEFAULT_SIGNALS, CUSTOMER_LEGACY_SIGNAL_NAMES, RESERVATION_TTL_HOURS,
     TxnType, BADGE_THRESHOLDS,
     REDIS_COMMISSION_RATE, REDIS_CUSTOMER_HEALTH,
 )
@@ -38,6 +38,24 @@ from app.schemas.base import encode_cursor, decode_cursor
 
 logger = structlog.get_logger("commerce.service")
 utcnow = lambda: datetime.now(timezone.utc)
+
+
+def customer_payment_score(paid: int, unpaid: int) -> float:
+    """Pending provider claims and unresolved disputes are not customer faults."""
+    if paid + unpaid == 0:
+        return CUSTOMER_DEFAULT_SIGNALS["payment_reliability"]
+    # Two neutral prior outcomes prevent one disputed record from blocking a customer.
+    return round((paid * 100.0 + 2 * 80.0) / (paid + unpaid + 2), 2)
+
+
+def customer_behavior_score(counts: dict[str, int]) -> float:
+    values = {"respectful": 100.0, "neutral": 80.0, "difficult": 40.0, "unsafe": 0.0}
+    total = sum(max(0, counts.get(code, 0)) for code in values)
+    if not total:
+        return CUSTOMER_DEFAULT_SIGNALS["customer_behavior"]
+    # Subjective feedback is smoothed and never alone determines booking access.
+    weighted = sum(max(0, counts.get(code, 0)) * value for code, value in values.items())
+    return round((weighted + 3 * 80.0) / (total + 3), 2)
 
 
 class CommerceService:
@@ -484,6 +502,8 @@ class CommerceService:
         return {"customer_id": str(cid), "tenant_id": str(tid), "history": []}
 
     async def update_customer_signal(self, cid, tid, signal, value, event_ref, event_type=None):
+        if signal in CUSTOMER_LEGACY_SIGNAL_NAMES:
+            return {"signal": signal, "ignored_for_health": True}
         if signal not in CUSTOMER_SIGNAL_WEIGHTS:
             raise ServiceOSException("VALIDATION_ERROR", f"Unknown signal: {signal}")
         idem = f"serviceos:cust_signal:{event_ref}"
@@ -510,64 +530,30 @@ class CommerceService:
         return {"signal": signal, "new_score": score, "new_band": band}
 
     async def recompute_customer_health(self, cid, tid):
-        """Rebuild health from finalized jobs and direct-payment evidence.
-
-        Only customer-attributable outcomes are used. Provider cancellations
-        and provider complaints never reduce the customer score.
-        """
+        """Rebuild from reconciled payment outcomes and private staff behavior only."""
         from sqlalchemy import text
-
-        row = (await self.db.execute(text("""
-            SELECT
-              count(DISTINCT sj.id) FILTER (WHERE sj.status='completed') AS completed,
-              count(DISTINCT ae.job_id) FILTER (
-                WHERE ae.event_type='customer_cancelled_booking'
-              ) AS customer_cancelled,
-              count(DISTINCT sj.id) FILTER (
-                WHERE sj.status='customer_not_available'
-              ) AS no_show,
-              min(sj.created_at) AS first_job_at
-            FROM service_jobs sj
-            LEFT JOIN service_job_assignment_events ae
-              ON ae.job_id=sj.id AND ae.tenant_id=sj.tenant_id
-            WHERE sj.customer_id=:cid AND sj.tenant_id=:tid
-        """), {"cid": str(cid), "tid": str(tid)})).mappings().first() or {}
-
         payments = (await self.db.execute(text("""
             SELECT
-              count(*) FILTER (WHERE payment_status IN ('paid','verified','collected')) AS paid,
+              count(*) FILTER (
+                WHERE reconciliation_status='confirmed' OR payment_status='verified'
+              ) AS paid,
               count(*) FILTER (
                 WHERE payment_status IN ('failed','unpaid')
-                   OR (payment_status='pending' AND created_at < now() - interval '24 hours')
-              ) AS unpaid,
-              count(*) FILTER (
-                WHERE reminder_count > 0
-                   OR reconciliation_status IN ('needs_review','mismatch','disputed')
-              ) AS delayed
+              ) AS unpaid
             FROM service_payment_records
             WHERE customer_id=:cid AND tenant_id=:tid
         """), {"cid": str(cid), "tid": str(tid)})).mappings().first() or {}
-
-        completed = int(row.get("completed") or 0)
-        cancelled = int(row.get("customer_cancelled") or 0)
-        no_show = int(row.get("no_show") or 0)
+        behavior = (await self.db.execute(text("""
+            SELECT behavior_code, count(*) AS total
+            FROM customer_behavior_assessments
+            WHERE customer_id=:cid AND tenant_id=:tid
+            GROUP BY behavior_code
+        """), {"cid": str(cid), "tid": str(tid)})).mappings().all()
         paid = int(payments.get("paid") or 0)
         unpaid = int(payments.get("unpaid") or 0)
-        delayed = int(payments.get("delayed") or 0)
-        prior = 4
-        payment_evidence = paid + unpaid + delayed
-        payment_reliability = (
-            100.0 if payment_evidence == 0
-            else round((paid * 100.0 + delayed * 50.0) / payment_evidence, 2)
-        )
-        first_job_at = row.get("first_job_at")
-        tenure_days = max(0, (utcnow() - first_job_at).days) if first_job_at else 0
         signals = {
-            "booking_completion_rate": round(100.0 * (completed + prior) / (completed + cancelled + no_show + prior), 2),
-            "payment_reliability": payment_reliability,
-            "cancellation_rate": round(100.0 * (completed + prior) / (completed + cancelled + prior), 2),
-            "no_show_rate": round(100.0 * (completed + prior) / (completed + no_show + prior), 2),
-            "platform_tenure": round(50.0 + min(50.0, tenure_days / 180.0 * 50.0), 2),
+            "payment_reliability": customer_payment_score(paid, unpaid),
+            "customer_behavior": customer_behavior_score({r["behavior_code"]: int(r["total"]) for r in behavior}),
         }
         score = round(sum(signals[k] * w for k, w in CUSTOMER_SIGNAL_WEIGHTS.items()), 2)
         band = next(

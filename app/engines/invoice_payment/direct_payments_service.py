@@ -1176,6 +1176,13 @@ class DirectPaymentsService:
         pay.payment_status = "disputed"
         pay.reconciliation_status = RS_DISPUTED
         pay.updated_at = _utcnow()
+        # recompute_customer_health reads service_payment_records with raw SQL
+        # and the session runs autoflush=False, so the status set just above is
+        # still pending -- without this flush the score is rebuilt from the row
+        # as it was BEFORE this dispute.
+        from app.engines.platform_commerce.service import CommerceService
+        await self.db.flush()
+        await CommerceService(self.db).recompute_customer_health(pay.customer_id, pay.tenant_id)
         await self._log(pay, FEV_DP_DISPUTE_OPENED, actor_type, actor_user_id,
                         new_value={"complaint_id": str(complaint_id),
                                    "resolution_center": "Complaints & Resolution Center",
@@ -1237,6 +1244,12 @@ class DirectPaymentsService:
             "payout_created": False, "settlement_created": False,
             "wallet_credit_posted": False,
         })
+        # Flush first: the session is autoflush=False and recompute reads the
+        # record with raw SQL, so RS_CONFIRMED above must reach the DB or the
+        # confirmation that triggered this rebuild would not be counted.
+        from app.engines.platform_commerce.service import CommerceService
+        await self.db.flush()
+        await CommerceService(self.db).recompute_customer_health(pay.customer_id, pay.tenant_id)
         await self.db.commit()
         await self._notify_provider(pay, EVT_DP_CONFIRMED_BY_CUSTOMER)
         return {"payment_id": str(pay.id), "status": RS_CONFIRMED,
@@ -1282,6 +1295,10 @@ class DirectPaymentsService:
                                 if pay.customer_reported_amount is not None else None),
             "reported_method": pay.customer_reported_method,
         }, reason=note)
+        # Same autoflush=False reason as the confirm path above.
+        from app.engines.platform_commerce.service import CommerceService
+        await self.db.flush()
+        await CommerceService(self.db).recompute_customer_health(pay.customer_id, pay.tenant_id)
         await self.db.commit()
         await self._notify_provider(pay, EVT_DP_MISMATCH_REPORTED)
         return {"payment_id": str(pay.id), "status": pay.reconciliation_status,

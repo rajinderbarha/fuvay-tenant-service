@@ -26,6 +26,7 @@ import {
   hsReviewsApi, ServiceOSError,
   type HsReviewListItem, type HsReviewDetail, type HsReviewsListResponse,
 } from "../../../../lib/api";
+import { providerJobWorkspaceUrl } from "../../../../lib/home-service-job-navigation";
 import { Skeleton, Btn, Badge, KpiGrid, SummaryCard, Pagination } from "../../../../components/shared/ui";
 
 const MODERATION_REASONS = [
@@ -656,7 +657,7 @@ function ReviewDetailPanel({ reviewId, onClose, onChanged }: { reviewId: string;
             <DetailField label="Invoice" value={detail.invoice ? `${detail.invoice.invoice_number}${detail.invoice.payment_status ? ` (${detail.invoice.payment_status})` : ""}` : "Not invoiced"}/>
           </div>
 
-          <LinkRow icon={<ExternalLink size={13} color="var(--text-tertiary)"/>} onClick={() => router.push(`/jobs/${detail.job.job_id}`)}>
+          <LinkRow icon={<ExternalLink size={13} color="var(--text-tertiary)"/>} onClick={() => router.push(providerJobWorkspaceUrl(detail.job.job_id))}>
             <span style={{ fontSize: 12, color: "var(--text-primary)" }}>Open job {detail.job.job_number}</span>
           </LinkRow>
 
