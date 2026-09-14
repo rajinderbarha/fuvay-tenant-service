@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Alert, Button, Card, Skeleton, StatusBadge } from "@serviceos/design-system";
 import type { BJDetail } from "../../lib/api";
+import { canManageJobInDispatch } from "../../lib/home-service-job-navigation";
 
 interface AvailabilityJobDrawerProps {
   jobId: string;
@@ -78,6 +79,7 @@ export function AvailabilityJobDrawer({
   const serviceAmount = invoice?.total_amount ?? quote?.total_amount;
   const photoCount = Array.isArray(booking.customer_photo_urls) ? booking.customer_photo_urls.length : 0;
   const resolvedTechnician = detail?.technician?.full_name ?? technicianName ?? "Unassigned";
+  const canDispatch = detail ? canManageJobInDispatch(detail.job.status, detail.stage.is_terminal) : false;
 
   return (
     <>
@@ -175,9 +177,9 @@ export function AvailabilityJobDrawer({
                 )}
               </Card>
 
-              <div style={{ display: "grid", gridTemplateColumns: detail.stage.is_terminal ? "1fr" : "1fr 1fr", gap: 9 }}>
+              <div style={{ display: "grid", gridTemplateColumns: canDispatch ? "1fr 1fr" : "1fr", gap: 9 }}>
                 <Button variant="secondary" size="sm" onClick={onOpenDetails} rightIcon={<ChevronRight size={14} />}>Full job details</Button>
-                {!detail.stage.is_terminal && <Button variant="primary" size="sm" onClick={onOpenDispatch} rightIcon={<ChevronRight size={14} />}>Manage in dispatch</Button>}
+                {canDispatch && <Button variant="primary" size="sm" onClick={onOpenDispatch} rightIcon={<ChevronRight size={14} />}>Manage in dispatch</Button>}
               </div>
             </>
           )}

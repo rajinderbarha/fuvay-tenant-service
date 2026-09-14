@@ -68,6 +68,13 @@ describe("AvailabilityJobDrawer", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("keeps a completed job out of Dispatch even if its stage flag is stale", () => {
+    render(<AvailabilityJobDrawer jobId="job-1" technicianName={null}
+      detail={{ ...detail, stage: { ...detail.stage, is_terminal: false } }}
+      loading={false} error={null} onClose={vi.fn()} onOpenDetails={vi.fn()} onOpenDispatch={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Manage in dispatch" })).not.toBeInTheDocument();
+  });
+
   it("allows an active scheduled job to be managed in Dispatch", () => {
     const onOpenDispatch = vi.fn();
     const activeDetail = {

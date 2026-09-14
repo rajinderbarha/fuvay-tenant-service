@@ -16,6 +16,7 @@ import {
 } from "../../../../lib/api";
 import { useAction, useApi } from "../../../../hooks/useApi";
 import { BookingsLifecycleBoard } from "../../../../components/bookings/BookingsLifecycleBoard";
+import { canManageJobInDispatch, completedJobReviewUrl } from "../../../../lib/home-service-job-navigation";
 
 const PAGE_PATH = "/home-services/bookings-jobs";
 const PAGE_SIZES = [25, 50, 100];
@@ -225,8 +226,10 @@ function JobPreview({ jobId, detail, loading, error, onClose, onChanged }: { job
   async function revealAddress() { setAddressLoading(true); setAddressError(null); try { setAddress(await bookingsJobsApi.address(jobId)); } catch (e) { setAddressError(e instanceof Error ? e.message : "Could not load the service address."); } finally { setAddressLoading(false); } }
   const nextAction = detail?.stage.next_action; const providerOwnsAction = nextAction ? PROVIDER_ACTIONS.has(nextAction.action_key) : false; const resolvedId = String(detail?.job.id ?? jobId);
   const dispatchUrl = `/home-services/dispatch?${new URLSearchParams({ ...(detail?.job.scheduled_date ? { date: detail.job.scheduled_date } : {}), job_id: resolvedId }).toString()}`;
+  const canDispatch = detail ? canManageJobInDispatch(detail.job.status, detail.stage.is_terminal) : false;
+  const reviewUrl = detail ? completedJobReviewUrl(detail.job.status ?? detail.stage.stage, detail.job.job_number) : null;
   function actionButton() {
-    if (!detail || detail.offer_expired || !nextAction || !providerOwnsAction) return null;
+    if (!detail || !canDispatch || detail.offer_expired || !nextAction || !providerOwnsAction) return null;
     if (nextAction.action_key === "assign_technician") return <Button variant="primary" size="sm" leftIcon={<Truck size={14} />} onClick={() => router.push(dispatchUrl)}>Assign in dispatch</Button>;
     if (["create_estimate", "send_estimate"].includes(nextAction.action_key)) return <Button variant="primary" size="sm" rightIcon={<ExternalLink size={13} />} onClick={() => router.push(`/service-jobs/${resolvedId}/quotes`)}>Open estimate</Button>;
     if (nextAction.action_key === "confirm_payment") return detail.invoice ? <Button variant="primary" size="sm" onClick={() => setConfirmOpen(true)}>Confirm direct payment</Button> : <Alert tone="warning">The technician must submit the completion amount before payment can be confirmed.</Alert>;
@@ -241,9 +244,11 @@ function JobPreview({ jobId, detail, loading, error, onClose, onChanged }: { job
       <Card padding="sm"><PanelTitle title={detail.workflow_stages.length ? "Workflow" : "Lifecycle"} />{detail.workflow_stages.length ? <Workflow stages={detail.workflow_stages} /> : <Lifecycle current={detail.stage.stage} />}</Card>
       <Card padding="sm" style={{ background: "var(--accent-muted)" }}><div style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700 }}>Next required action</div><div style={{ margin: "5px 0 11px", fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>{nextAction?.label ?? "No action · workflow complete"}</div>{nextAction && !providerOwnsAction && <div style={{ marginBottom: 10, fontSize: 12, color: "var(--text-secondary)" }}>This step belongs to the assigned technician in the native staff app. Monitor it here; the provider workspace does not duplicate field execution controls.</div>}{actionButton()}</Card>
       {detail.open_complaint_count > 0 && <button type="button" onClick={() => router.push(`/home-services/complaints?q=${encodeURIComponent(String(detail.job.job_number))}`)} style={{ ...toolbarButtonStyle, width: "100%", justifyContent: "space-between", borderColor: "var(--danger-border)", color: "var(--danger-text)" }}><span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><AlertTriangle size={15} />{detail.open_complaint_count} open complaint{detail.open_complaint_count === 1 ? "" : "s"}</span><ChevronRight size={15} /></button>}
-      <div style={{ fontSize: 11, lineHeight: 1.55, color: "var(--text-tertiary)" }}>{detail.direct_payment_notice}</div><Button variant="secondary" size="sm" rightIcon={<ChevronRight size={13} />} onClick={() => router.push(dispatchUrl)} style={{ width: "100%" }}>Manage in dispatch</Button>
-      {detail.assignment_overdue && <Alert tone="warning">Technician assignment is overdue. Assign now; the job and customer price remain with your business.</Alert>}
-      {!detail.stage.is_terminal && <Button variant="destructive" size="sm" leftIcon={<AlertTriangle size={13} />} onClick={() => setCancelOpen(true)} style={{ width: "100%" }}>Cancel job</Button>}
+      <div style={{ fontSize: 11, lineHeight: 1.55, color: "var(--text-tertiary)" }}>{detail.direct_payment_notice}</div>
+      {canDispatch && <Button variant="secondary" size="sm" rightIcon={<ChevronRight size={13} />} onClick={() => router.push(dispatchUrl)} style={{ width: "100%" }}>Manage in dispatch</Button>}
+      {reviewUrl && <Button variant="secondary" size="sm" rightIcon={<ChevronRight size={13} />} onClick={() => router.push(reviewUrl)} style={{ width: "100%" }}>Check customer rating</Button>}
+      {canDispatch && detail.assignment_overdue && <Alert tone="warning">Technician assignment is overdue. Assign now; the job and customer price remain with your business.</Alert>}
+      {canDispatch && <Button variant="destructive" size="sm" leftIcon={<AlertTriangle size={13} />} onClick={() => setCancelOpen(true)} style={{ width: "100%" }}>Cancel job</Button>}
       {confirmOpen && <ConfirmPaymentModal jobId={jobId} invoiceAmount={detail.invoice?.customer_payable_amount} onClose={() => setConfirmOpen(false)} onSaved={() => { setConfirmOpen(false); onChanged(); }} />}
       {cancelOpen && <CancelJobModal jobId={jobId} onClose={() => setCancelOpen(false)} onSaved={() => { setCancelOpen(false); onChanged(); }} />}
     </>}</div>
