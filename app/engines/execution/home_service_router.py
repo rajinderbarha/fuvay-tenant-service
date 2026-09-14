@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, HTTPException
 from pydantic import BaseModel, Field
 
 from sqlalchemy import select
@@ -158,13 +158,13 @@ class CancelBody(BaseModel):
 
 # HS8B — real parts request workflow
 class PartsRequestBody(BaseModel):
-    part_name: str
+    # The part comes from the provider's inventory, which supplies its name and
+    # customer price. Optional only so a missing pick gets a readable 422.
+    inventory_item_id: Optional[uuid.UUID] = None
     quantity: int
-    estimated_cost: float
     reason: str
     photo_ids: Optional[list] = None
     technician_note: Optional[str] = None
-    customer_approval_required: bool = False
 
 
 class PartsRejectBody(BaseModel):
@@ -351,6 +351,20 @@ async def staff_get_timeline(job_id: uuid.UUID, r: Request, user=Depends(get_cur
     return ok(result, rid, "staff-exec-timeline")
 
 
+@staff_router.get("/{job_id}/parts-catalog")
+async def staff_parts_catalog(job_id: uuid.UUID, r: Request,
+                              search: Optional[str] = Query(None, max_length=100),
+                              user=Depends(require_staff_or_above), db=Depends(get_db)):
+    """The provider inventory a technician picks parts from (customer price and stock, no cost)."""
+    if not user.tenant_id:
+        raise ServiceOSException("PARTS_TENANT_REQUIRED", "A provider-scoped staff account is required.", status_code=403)
+    rid = getattr(r.state, "request_id", "—")
+    result = await _svc.list_parts_catalog(
+        db, job_id, uuid.UUID(str(user.tenant_id)), await _staff_member_id(user, db), search=search,
+    )
+    return ok(result, rid, "staff-exec-parts-catalog")
+
+
 # HS8B — real parts request creation
 @staff_router.post("/{job_id}/parts-requests")
 async def staff_create_parts_request(job_id: uuid.UUID, body: PartsRequestBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
@@ -358,11 +372,13 @@ async def staff_create_parts_request(job_id: uuid.UUID, body: PartsRequestBody, 
     staff_id = await _staff_member_id(user, db)
     result = await _svc.create_parts_request(
         db, job_id, uuid.UUID(str(user.tenant_id)), staff_id, uuid.UUID(str(user.user_id)),
-        part_name=body.part_name, quantity=body.quantity, estimated_cost=body.estimated_cost,
+        inventory_item_id=body.inventory_item_id, quantity=body.quantity,
         reason=body.reason, photo_ids=body.photo_ids, technician_note=body.technician_note,
-        customer_approval_required=body.customer_approval_required, request_id=rid,
+        request_id=rid,
     )
     await db.commit()
+    # Only after the commit: the customer's Approve/Decline tap looks it up.
+    await _svc.notify_customer_parts_pending(result)
     return ok(result, rid, "staff-exec-parts-create")
 
 
@@ -371,6 +387,19 @@ async def staff_list_parts_requests(job_id: uuid.UUID, r: Request, user=Depends(
     rid = getattr(r.state, "request_id", "—")
     result = await _svc.list_parts_requests(db, job_id, uuid.UUID(str(user.tenant_id)))
     return ok({"job_id": str(job_id), "parts_requests": result}, rid, "staff-exec-parts-list")
+
+
+@staff_router.post("/{job_id}/parts-requests/{parts_request_id}/cancel")
+async def staff_cancel_parts_request(job_id: uuid.UUID, parts_request_id: uuid.UUID, r: Request,
+                                       user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
+    """Cancel a part request nobody has decided on, so an unanswered one never blocks the job."""
+    rid = getattr(r.state, "request_id", "—")
+    result = await _svc.cancel_parts_request(
+        db, job_id, parts_request_id, uuid.UUID(str(user.tenant_id)),
+        await _staff_member_id(user, db), uuid.UUID(str(user.user_id)), request_id=rid,
+    )
+    await db.commit()
+    return ok(result, rid, "staff-exec-parts-cancel")
 
 
 # HS8B — single validated completion action
@@ -447,6 +476,8 @@ async def provider_approve_parts_request(job_id: uuid.UUID, parts_request_id: uu
         request_id=rid,
     )
     await db.commit()
+    # A no-op unless the approval left the part waiting on the customer.
+    await _svc.notify_customer_parts_pending(result)
     return ok(result, rid, "provider-exec-parts-approve")
 
 

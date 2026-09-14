@@ -53,13 +53,9 @@ export default function StaffHomeServiceJobDetailPage() {
     { onSuccess: () => { setRejectReason(""); job.refetch(); } },
   );
 
-  const [partsForm, setPartsForm] = useState({ part_name: "", quantity: "1", estimated_cost: "", reason: "" });
-  const partsAction = useAction(
-    useCallback(() => homeServiceStaffJobsApi.createPartsRequest(jobId, {
-      part_name: partsForm.part_name, quantity: Number(partsForm.quantity),
-      estimated_cost: Number(partsForm.estimated_cost), reason: partsForm.reason,
-    }), [jobId, partsForm]),
-    { onSuccess: () => { setPartsForm({ part_name: "", quantity: "1", estimated_cost: "", reason: "" }); parts.refetch(); job.refetch(); } },
+  const cancelPartAction = useAction(
+    useCallback((partsRequestId: string) => homeServiceStaffJobsApi.cancelPartsRequest(jobId, partsRequestId), [jobId]),
+    { onSuccess: () => { parts.refetch(); job.refetch(); } },
   );
 
   const [completeForm, setCompleteForm] = useState({ work_summary: "", collected_amount: "", technician_note: "" });
@@ -170,35 +166,7 @@ export default function StaffHomeServiceJobDetailPage() {
               {['inspection_done', 'quote_required'].includes(j.status) && <CatalogAddons jobId={jobId} />}
 
               {canRequestParts && (
-                <Card>
-                  <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Request Parts</h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <input placeholder="Part name" value={partsForm.part_name}
-                      onChange={e => setPartsForm(f => ({ ...f, part_name: e.target.value }))}
-                      style={inputStyle}/>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <input placeholder="Quantity" type="number" min={1} value={partsForm.quantity}
-                        onChange={e => setPartsForm(f => ({ ...f, quantity: e.target.value }))}
-                        style={{ ...inputStyle, flex: 1 }}/>
-                      <input placeholder="Estimated cost (₹)" type="number" min={0} value={partsForm.estimated_cost}
-                        onChange={e => setPartsForm(f => ({ ...f, estimated_cost: e.target.value }))}
-                        style={{ ...inputStyle, flex: 1 }}/>
-                    </div>
-                    <textarea placeholder="Reason" value={partsForm.reason}
-                      onChange={e => setPartsForm(f => ({ ...f, reason: e.target.value }))}
-                      style={{ ...inputStyle, minHeight: 60 }}/>
-                    <Btn variant="secondary" loading={partsAction.loading}
-                      disabled={!partsForm.part_name || !partsForm.estimated_cost || !partsForm.reason}
-                      onClick={() => partsAction.execute()}>
-                      Submit Parts Request
-                    </Btn>
-                    {partsAction.error && (
-                      <p style={{ fontSize: 12, color: "var(--danger-text)" }}>
-                        {partsAction.error}{partsAction.requestId && ` — Request ID: ${partsAction.requestId}`}
-                      </p>
-                    )}
-                  </div>
-                </Card>
+                <RequestPartsCard jobId={jobId} onRequested={() => { parts.refetch(); job.refetch(); }} />
               )}
 
               {parts.data && parts.data.parts_requests.length > 0 && (
@@ -211,8 +179,18 @@ export default function StaffHomeServiceJobDetailPage() {
                         <Badge variant={pr.status.includes("rejected") ? "danger" : pr.status === "installed" ? "success" : "info"} size="sm">{pr.status}</Badge>
                       </div>
                       <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "2px 0 0" }}>₹{pr.estimated_cost} — {pr.reason}</p>
+                      {["requested", "customer_approval_pending"].includes(pr.status) && (
+                        <Btn size="xs" variant="secondary" loading={cancelPartAction.loading}
+                          onClick={() => { if (window.confirm("Cancel this part request? The customer will no longer be asked to approve it.")) cancelPartAction.execute(pr.parts_request_id); }}
+                          style={{ marginTop: 6 }}>
+                          Cancel request
+                        </Btn>
+                      )}
                     </div>
                   ))}
+                  {cancelPartAction.error && (
+                    <p style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 6 }}>{cancelPartAction.error}</p>
+                  )}
                 </Card>
               )}
 
@@ -285,6 +263,69 @@ function Row({ label, value }: { label: string; value?: string | null }) {
       <div style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
       <div>{value || "—"}</div>
     </div>
+  );
+}
+
+// Parts come from the provider's inventory, never typed in: the catalogue sets
+// the name and customer price, and the request goes straight to the
+// customer's chat for approval.
+function RequestPartsCard({ jobId, onRequested }: { jobId: string; onRequested: () => void }) {
+  const catalog = useApi(useCallback(() => homeServiceStaffJobsApi.listPartsCatalog(jobId), [jobId]), [jobId]);
+  const [itemId, setItemId] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [reason, setReason] = useState("");
+  const item = catalog.data?.items.find(i => i.item_id === itemId);
+  const request = useAction(
+    useCallback(() => homeServiceStaffJobsApi.createPartsRequest(jobId, { inventory_item_id: itemId, quantity, reason: reason.trim() }), [jobId, itemId, quantity, reason]),
+    { onSuccess: () => { setItemId(""); setQuantity(1); setReason(""); catalog.refetch(); onRequested(); } },
+  );
+  const validQuantity = !!item && Number.isInteger(quantity) && quantity >= 1 && quantity <= item.max_request_qty;
+
+  return (
+    <Card>
+      <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>Request Parts</h3>
+      <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
+        Pick a part from your provider&apos;s inventory. The customer approves it in their chat before you fit it.
+      </p>
+      {catalog.loading ? <Skeleton height={80}/> : catalog.error ? (
+        <p style={{ fontSize: 12, color: "var(--danger-text)" }}>{catalog.error}</p>
+      ) : !catalog.data?.items.length ? (
+        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>No parts in your provider&apos;s inventory yet. Ask your provider to add them.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <select aria-label="Inventory part" value={itemId} onChange={e => { setItemId(e.target.value); setQuantity(1); }} style={inputStyle}>
+            <option value="">Select a part</option>
+            {catalog.data.items.map(i => (
+              <option key={i.item_id} value={i.item_id} disabled={i.max_request_qty <= 0}>
+                {i.name} ({i.sku}) — ₹{i.unit_price.toLocaleString("en-IN")} · {i.max_request_qty > 0 ? `${i.available_qty} in stock` : "out of stock"}
+              </option>
+            ))}
+          </select>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input aria-label="Part quantity" type="number" min={1} max={item?.max_request_qty} step={1} value={quantity}
+              onChange={e => setQuantity(Number(e.target.value))} style={{ ...inputStyle, flex: 1 }}/>
+            {item && (
+              <span style={{ flex: 1, fontSize: 13 }}>Customer pays ₹{(item.unit_price * (validQuantity ? quantity : 0)).toLocaleString("en-IN")}</span>
+            )}
+          </div>
+          {item && !validQuantity && (
+            <p style={{ fontSize: 12, color: "var(--danger-text)", margin: 0 }}>Choose between 1 and {item.max_request_qty}.</p>
+          )}
+          <textarea placeholder="Reason" value={reason} onChange={e => setReason(e.target.value)}
+            style={{ ...inputStyle, minHeight: 60 }}/>
+          <Btn variant="secondary" loading={request.loading}
+            disabled={!validQuantity || !reason.trim()}
+            onClick={() => request.execute()}>
+            Send to customer
+          </Btn>
+          {request.error && (
+            <p style={{ fontSize: 12, color: "var(--danger-text)" }}>
+              {request.error}{request.requestId && ` — Request ID: ${request.requestId}`}
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

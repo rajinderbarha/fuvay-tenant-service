@@ -31,7 +31,10 @@ from app.engines.execution.constants import (
     PARTS_STATUS_BUSINESS_REJECTED, PARTS_STATUS_CUSTOMER_APPROVAL_PENDING,
     PARTS_STATUS_CUSTOMER_APPROVED, PARTS_STATUS_CUSTOMER_REJECTED,
     PARTS_STATUS_INSTALLED, PARTS_REQUEST_ALLOWED_JOB_STATUSES,
-    ERR_PART_NAME_REQUIRED, ERR_QUANTITY_INVALID, ERR_ESTIMATED_COST_INVALID,
+    ERR_PARTS_INVENTORY_ITEM_REQUIRED, ERR_PARTS_INVENTORY_ITEM_UNAVAILABLE,
+    ERR_PARTS_INSUFFICIENT_STOCK, ERR_QUANTITY_INVALID,
+    ERR_PARTS_PENDING_BLOCK_WORK_DONE, PARTS_PENDING_STATUSES, PARTS_APPROVED_STATUSES,
+    PARTS_STATUS_CANCELLED, EV_PARTS_REQUEST_CANCELLED,
     ERR_PARTS_REASON_REQUIRED, ERR_PARTS_NOT_ALLOWED_STATUS,
     ERR_PARTS_REQUEST_NOT_FOUND, ERR_PARTS_ALREADY_DECIDED,
     ERR_PARTS_NOT_APPROVED, ERR_PARTS_REJECTED_CANNOT_INSTALL,
@@ -600,7 +603,9 @@ class HomeServiceJobExecutionService:
     async def mark_work_done(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
+        await self._assert_no_pending_parts(db, job)
         await self._set_status(db, job, JS_WORK_DONE, EV_WORK_DONE, user_id, "staff", request_id=request_id)
+        await self._install_approved_parts(db, job)
         await db.flush()
         from app.engines.execution.usage_credit_deduction import attempt_charge_at_event
         await attempt_charge_at_event(
@@ -823,6 +828,116 @@ class HomeServiceJobExecutionService:
 
     # ── HS8B — real parts request workflow ───────────────────────────────────
 
+    @staticmethod
+    async def _inventory_part(db: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID):
+        """A live item from this provider's own inventory, or a clear refusal."""
+        from app.engines.inventory.models import InventoryItem
+        item = (await db.execute(
+            select(InventoryItem).where(
+                InventoryItem.id == item_id, InventoryItem.tenant_id == tenant_id,
+                InventoryItem.is_active.is_(True), InventoryItem.status == "published",
+            )
+        )).scalars().first()
+        if not item:
+            raise ServiceOSException(
+                ERR_PARTS_INVENTORY_ITEM_UNAVAILABLE,
+                "That part is no longer in your provider's inventory.",
+                status_code=404,
+            )
+        return item
+
+    @staticmethod
+    def _inventory_part_price(item) -> Decimal:
+        # The customer price, with the same fallback the inventory workspace uses.
+        price = item.selling_price if item.selling_price is not None else item.unit_cost
+        return Decimal(str(price))
+
+    @staticmethod
+    async def _available_stock(db: AsyncSession, tenant_id: uuid.UUID, item_ids: list) -> dict:
+        """Unreserved stock per item, as (location_id, available, staff_id) for
+        each active location holding it."""
+        from app.engines.inventory.models import StockBalance, StockLocation
+        rows = (await db.execute(
+            select(
+                StockBalance.item_id, StockBalance.location_id,
+                StockBalance.quantity - StockBalance.reserved_qty, StockLocation.staff_id,
+            )
+            .join(StockLocation, StockLocation.id == StockBalance.location_id)
+            .where(
+                StockBalance.tenant_id == tenant_id, StockLocation.tenant_id == tenant_id,
+                StockLocation.is_active.is_(True), StockBalance.item_id.in_(item_ids),
+            )
+        )).all()
+        stock: dict = {}
+        for item_id, location_id, available, staff_id in rows:
+            stock.setdefault(item_id, []).append((location_id, max(0, int(available)), staff_id))
+        return stock
+
+    async def _stock_location_for_part(
+        self, db: AsyncSession, tenant_id: uuid.UUID, item, quantity: int, holders: set[str],
+    ) -> uuid.UUID:
+        """Where the part will be reserved from once the customer approves.
+
+        A reservation draws on one location, so one location must hold the
+        whole quantity. The technician's own stock (a van) comes first, then
+        the fullest location.
+        """
+        locations = (await self._available_stock(db, tenant_id, [item.id])).get(item.id, [])
+        usable = sorted(
+            (loc for loc in locations if loc[1] >= quantity),
+            key=lambda loc: (str(loc[2]) not in holders, -loc[1]),
+        )
+        if not usable:
+            best = max((loc[1] for loc in locations), default=0)
+            raise ServiceOSException(
+                ERR_PARTS_INSUFFICIENT_STOCK,
+                f"Only {best} of {item.name} in stock." if best else f"{item.name} is out of stock.",
+                status_code=409,
+                context={"available": best, "requested": quantity},
+            )
+        return usable[0][0]
+
+    async def list_parts_catalog(
+        self, db: AsyncSession, job_id: uuid.UUID, tenant_id: uuid.UUID,
+        staff_member_id: uuid.UUID, search: str | None = None,
+    ) -> dict:
+        """The provider's inventory as a technician picks parts from it: the
+        customer price and stock on hand, never the provider's cost or margin."""
+        from sqlalchemy import or_
+        from app.engines.inventory.models import InventoryItem
+
+        job = await self._get_job(db, job_id, tenant_id)
+        self._assert_staff_owns_job(job, staff_member_id)
+        q = select(InventoryItem).where(
+            InventoryItem.tenant_id == tenant_id,
+            InventoryItem.is_active.is_(True), InventoryItem.status == "published",
+        )
+        term = (search or "").strip()
+        if term:
+            like = f"%{term}%"
+            q = q.where(or_(InventoryItem.name.ilike(like), InventoryItem.sku.ilike(like),
+                            InventoryItem.category.ilike(like)))
+        items = (await db.execute(q.order_by(InventoryItem.name).limit(200))).scalars().all()
+        stock = await self._available_stock(db, tenant_id, [item.id for item in items])
+        parts = []
+        for item in items:
+            locations = stock.get(item.id, [])
+            parts.append({
+                "item_id": str(item.id),
+                "name": item.name,
+                "sku": item.sku,
+                "category": item.category,
+                "unit": item.unit,
+                "unit_price": float(self._inventory_part_price(item)),
+                "warranty": item.warranty,
+                "available_qty": sum(loc[1] for loc in locations),
+                # The most one request can take: a reservation draws on one location.
+                "max_request_qty": max((loc[1] for loc in locations), default=0),
+            })
+        # In-stock parts first; the sort is stable, so names stay alphabetical.
+        parts.sort(key=lambda part: part["max_request_qty"] <= 0)
+        return {"items": parts}
+
     async def create_parts_request(
         self,
         db: AsyncSession,
@@ -830,26 +945,34 @@ class HomeServiceJobExecutionService:
         tenant_id: uuid.UUID,
         staff_member_id: uuid.UUID,
         user_id: uuid.UUID,
-        part_name: str,
+        inventory_item_id: uuid.UUID | None,
         quantity: int,
-        estimated_cost,
         reason: str,
         photo_ids: list | None = None,
         technician_note: str | None = None,
-        customer_approval_required: bool = False,
         request_id: str | None = None,
     ) -> dict:
+        """A technician's part request, always picked from the provider's inventory.
+
+        The provider already priced the item for customers in its catalogue,
+        so the request needs no second business sign-off: it goes straight to
+        the customer. Stock is reserved only once the customer approves
+        (`customer_decide_parts_request`). The caller commits, then asks the
+        customer with `notify_customer_parts_pending`.
+        """
         from app.engines.execution.models import PartsRequest
 
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
 
-        if not part_name or not part_name.strip():
-            raise ServiceOSException(ERR_PART_NAME_REQUIRED, "Part name is required.", status_code=422)
+        if not inventory_item_id:
+            raise ServiceOSException(
+                ERR_PARTS_INVENTORY_ITEM_REQUIRED,
+                "Choose the part from your provider's inventory.",
+                status_code=422,
+            )
         if quantity is None or quantity <= 0:
             raise ServiceOSException(ERR_QUANTITY_INVALID, "Quantity must be a positive number.", status_code=422)
-        if estimated_cost is None or float(estimated_cost) < 0:
-            raise ServiceOSException(ERR_ESTIMATED_COST_INVALID, "Estimated cost must be 0 or greater.", status_code=422)
         if not reason or not reason.strip():
             raise ServiceOSException(ERR_PARTS_REASON_REQUIRED, "Reason is required.", status_code=422)
         if job.status not in PARTS_REQUEST_ALLOWED_JOB_STATUSES:
@@ -859,23 +982,114 @@ class HomeServiceJobExecutionService:
                 status_code=422,
             )
 
+        item = await self._inventory_part(db, tenant_id, inventory_item_id)
+        stock_location_id = await self._stock_location_for_part(
+            db, tenant_id, item, quantity, holders={str(staff_member_id), str(user_id)},
+        )
+        unit_price = self._inventory_part_price(item)
+
         pr = PartsRequest(
             job_id=job.id, tenant_id=tenant_id, technician_id=staff_member_id,
-            part_name=part_name.strip(), quantity=quantity, estimated_cost=estimated_cost,
+            part_name=item.name, quantity=quantity, estimated_cost=unit_price,
             reason=reason.strip(), photo_ids=photo_ids or [], technician_note=technician_note,
-            customer_approval_required=customer_approval_required,
-            business_approval_required=True,
-            status=PARTS_STATUS_REQUESTED,
+            customer_approval_required=True,
+            business_approval_required=False,
+            status=PARTS_STATUS_CUSTOMER_APPROVAL_PENDING,
+            procurement_source="inventory",
+            inventory_item_id=item.id,
+            stock_location_id=stock_location_id,
+            unit_price_snapshot=unit_price,
             request_id=request_id,
         )
         db.add(pr)
-        # Reflect that parts are pending on the job itself (reuses the
-        # existing quote_required terminal status — see HS8's
-        # mark_parts_required for the same mapping).
-        if job.status != JS_QUOTE_REQUIRED:
+        # A part found during inspection reshapes the estimate, so the job
+        # waits in quote_required (HS8's mark_parts_required mapping). Once work
+        # has started it stays started: dashboards read quote_required as
+        # "send an estimate", and the technician would be offered Start work
+        # again. The pending part blocks mark_work_done instead.
+        if job.status not in (JS_QUOTE_REQUIRED, JS_SERVICE_STARTED):
             await self._set_status(db, job, JS_QUOTE_REQUIRED, EV_PARTS_REQUIRED, user_id, "staff", request_id=request_id)
+        else:
+            await self._log_event(
+                db, job, EV_PARTS_REQUIRED, job.status, job.status,
+                actor_user_id=user_id, actor_role="staff", request_id=request_id,
+            )
         await db.flush()
         return pr.to_dict()
+
+    async def cancel_parts_request(
+        self, db: AsyncSession, job_id: uuid.UUID, parts_request_id: uuid.UUID,
+        tenant_id: uuid.UUID, staff_member_id: uuid.UUID, user_id: uuid.UUID,
+        request_id: str | None = None,
+    ) -> dict:
+        """The technician cancels a part request nobody has decided on yet.
+
+        Without this a customer who never answers in chat would block the job
+        forever: nothing else moves a request out of customer_approval_pending.
+        No stock is held before approval, so there is nothing to release.
+        """
+        job = await self._get_job(db, job_id, tenant_id)
+        self._assert_staff_owns_job(job, staff_member_id)
+        pr = await self._get_parts_request(db, parts_request_id, tenant_id)
+        if pr.job_id != job.id:
+            raise ServiceOSException(ERR_PARTS_REQUEST_NOT_FOUND, "Parts request not found.", status_code=404)
+        if pr.status not in PARTS_PENDING_STATUSES:
+            raise ServiceOSException(
+                ERR_PARTS_ALREADY_DECIDED,
+                f"This parts request has already been {pr.status.replace('_', ' ')}.",
+                status_code=409,
+            )
+        pr.status = PARTS_STATUS_CANCELLED
+        db.add(pr)
+        await self._log_event(
+            db, job, EV_PARTS_REQUEST_CANCELLED, job.status, job.status,
+            actor_user_id=user_id, actor_role="staff",
+            notes=f"parts_request_id={pr.id}", request_id=request_id,
+        )
+        await db.flush()
+        return pr.to_dict()
+
+    async def _assert_no_pending_parts(self, db: AsyncSession, job) -> None:
+        from app.engines.execution.models import PartsRequest
+        pending = (await db.execute(
+            select(PartsRequest).where(
+                PartsRequest.job_id == job.id, PartsRequest.status.in_(PARTS_PENDING_STATUSES),
+            )
+        )).scalars().all()
+        if pending:
+            raise ServiceOSException(
+                ERR_PARTS_PENDING_BLOCK_WORK_DONE,
+                "A part is still waiting for approval. Wait for the customer's answer, "
+                "or cancel the request, before finishing work.",
+                status_code=409,
+                context={"pending_part_request_ids": [str(p.id) for p in pending]},
+            )
+
+    async def _install_approved_parts(self, db: AsyncSession, job) -> None:
+        """Finishing work means the approved parts went in: mark them installed
+        and deduct inventory parts from the stock reserved for them.
+
+        Nothing else consumes a reservation in practice (the provider install
+        endpoint has no screen), so without this stock stayed reserved forever.
+        A legacy inventory part with no reservation is left approved rather
+        than blocking the technician; the provider can reconcile it.
+        """
+        from app.engines.execution.models import PartsRequest
+        approved = (await db.execute(
+            select(PartsRequest).where(
+                PartsRequest.job_id == job.id, PartsRequest.status.in_(PARTS_APPROVED_STATUSES),
+            )
+        )).scalars().all()
+        for pr in approved:
+            if pr.procurement_source == "inventory":
+                if not pr.stock_reservation_id:
+                    import structlog
+                    structlog.get_logger(__name__).warning(
+                        "parts_request.install_skipped_no_reservation", parts_request_id=str(pr.id))
+                    continue
+                await self._consume_parts_inventory(db, pr)
+            pr.status = PARTS_STATUS_INSTALLED
+            db.add(pr)
 
     async def list_parts_requests(self, db: AsyncSession, job_id: uuid.UUID, tenant_id: uuid.UUID) -> list[dict]:
         from app.engines.execution.models import PartsRequest
@@ -916,9 +1130,12 @@ class HomeServiceJobExecutionService:
         from app.engines.inventory.service import InventoryService
         inv = InventoryService(db, actor_id=actor_id, actor_role="system",
                                actor_tenant_id=pr.tenant_id)
-        item = await inv.get_item(pr.inventory_item_id)
-        pr.estimated_cost = Decimal(str(item["selling_price"]))
-        pr.unit_price_snapshot = Decimal(str(item["selling_price"]))
+        if pr.unit_price_snapshot is None:
+            # A price already shown to the customer is the price they approved;
+            # a later catalogue change must not rewrite it.
+            item = await inv.get_item(pr.inventory_item_id)
+            pr.estimated_cost = Decimal(str(item["selling_price"]))
+            pr.unit_price_snapshot = Decimal(str(item["selling_price"]))
         result = await inv.create_reservation(
             self._parts_inventory_job_ref(pr), pr.inventory_item_id,
             pr.stock_location_id, pr.tenant_id, pr.quantity,
@@ -964,6 +1181,11 @@ class HomeServiceJobExecutionService:
         pr.procurement_source = procurement_source
         pr.inventory_item_id = inventory_item_id if procurement_source == "inventory" else None
         pr.stock_location_id = stock_location_id if procurement_source == "inventory" else None
+        if procurement_source == "inventory":
+            # Price it from the catalogue now, so a customer asked to approve
+            # the part sees what they will actually pay.
+            item = await self._inventory_part(db, tenant_id, inventory_item_id)
+            pr.estimated_cost = pr.unit_price_snapshot = self._inventory_part_price(item)
         pr.status = (
             PARTS_STATUS_CUSTOMER_APPROVAL_PENDING if pr.customer_approval_required
             else PARTS_STATUS_BUSINESS_APPROVED
@@ -976,51 +1198,74 @@ class HomeServiceJobExecutionService:
             await self._reserve_parts_inventory(db, pr, approver_user_id)
         db.add(pr)
         await db.flush()
-        if pr.status == PARTS_STATUS_CUSTOMER_APPROVAL_PENDING:
-            # The job is now halted on the customer's answer, so ask them where
-            # they actually are. Best-effort: a chat notification never decides
-            # whether the provider's approval succeeded.
-            await self._notify_customer_parts_pending(db, pr)
         return pr.to_dict()
 
     @staticmethod
-    async def _notify_customer_parts_pending(db: AsyncSession, pr) -> None:
-        """Tell the customer on WhatsApp/Instagram that a part needs approving.
+    async def notify_customer_parts_pending(part: dict) -> bool:
+        """Ask the customer to approve a part on the WhatsApp/Instagram chat
+        they booked through. `part` is the request's `to_dict()`.
 
-        Only lands inside Meta's 24-hour customer service window; outside it a
-        pre-approved template would be required, so the request simply waits
-        for the customer's next message, where the chat shows it first.
+        Call it only after the request is committed: the customer's tap looks
+        the request up, and a message must never announce a part that rolled
+        back. It uses its own session, like quote notifications, so a messaging
+        failure can never abort the caller's transaction.
+
+        Only lands inside Meta's 24-hour customer service window; outside it the
+        request waits for the customer's next message, where the chat shows it
+        first. Best-effort: returns whether a message went out.
         """
+        import structlog
+        from app.database import get_session_factory
         from app.engines.final_records.models import ServiceBooking, ServiceJob
         from app.engines.messaging_gateway.constants import PICKER_SEP, PICK_PARTS
+        from app.engines.messaging_gateway.flow import (
+            PARTS_HEADER, PARTS_LINE, PARTS_REASON, _money,
+        )
         from app.engines.messaging_gateway.service import notify_customer
 
+        if part.get("status") != PARTS_STATUS_CUSTOMER_APPROVAL_PENDING:
+            return False
         try:
-            job = await db.get(ServiceJob, pr.job_id)
-            if not job or not job.customer_id:
-                return
-            booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
-            part_request_id = str(pr.id)
-            await notify_customer(
-                db, job.customer_id,
-                "Your technician needs a part to finish the job: "
-                f"{pr.part_name} x {pr.quantity}. "
-                "Approve or decline it here.",
-                rows=[
-                    {"id": PICKER_SEP.join((PICK_PARTS, part_request_id, "approve")),
-                     "title": "Approve part"},
-                    {"id": PICKER_SEP.join((PICK_PARTS, part_request_id, "decline")),
-                     "title": "Decline part"},
-                ],
-                source_ai_session_id=(booking.ai_session_id if booking else None),
-                section_title="Part approval",
-            )
+            async with get_session_factory()() as messaging_db:
+                try:
+                    job = await messaging_db.get(ServiceJob, uuid.UUID(str(part["job_id"])))
+                    if not job or not job.customer_id:
+                        return False
+                    booking = (
+                        await messaging_db.get(ServiceBooking, job.booking_id)
+                        if job.booking_id else None
+                    )
+                    line_total = Decimal(str(part["estimated_cost"])) * int(part["quantity"])
+                    lines = [PARTS_HEADER, ""]
+                    if booking and booking.booking_number:
+                        lines.append(f"Booking {booking.booking_number}")
+                    lines.append(PARTS_LINE.format(
+                        part=part["part_name"], quantity=part["quantity"],
+                        total=_money("INR", line_total)))
+                    if part.get("reason"):
+                        lines.append(PARTS_REASON.format(reason=str(part["reason"])[:300]))
+                    part_request_id = str(part["parts_request_id"])
+                    sent = await notify_customer(
+                        messaging_db, job.customer_id, "\n".join(lines),
+                        rows=[
+                            {"id": PICKER_SEP.join((PICK_PARTS, part_request_id, "approve")),
+                             "title": "Approve part"},
+                            {"id": PICKER_SEP.join((PICK_PARTS, part_request_id, "decline")),
+                             "title": "Decline part"},
+                        ],
+                        source_ai_session_id=(booking.ai_session_id if booking else None),
+                        section_title="Part approval",
+                    )
+                    await messaging_db.commit()
+                    return sent
+                except Exception:
+                    await messaging_db.rollback()
+                    raise
         except Exception as exc:  # noqa: BLE001
-            import structlog
-
             structlog.get_logger(__name__).warning(
                 "parts_request.customer_notify_failed",
-                parts_request_id=str(pr.id), error=str(exc))
+                parts_request_id=str(part.get("parts_request_id")), error=str(exc))
+            return False
 
     async def reject_parts_request(
         self, db: AsyncSession, parts_request_id: uuid.UUID, tenant_id: uuid.UUID,

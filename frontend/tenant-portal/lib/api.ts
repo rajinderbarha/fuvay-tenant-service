@@ -4683,6 +4683,16 @@ export interface PartsRequestItem {
   created_at: string; updated_at: string;
 }
 
+/** A provider inventory item as a technician sees it: customer price and
+ * stock, never the provider's cost. */
+export interface StaffPartsCatalogItem {
+  item_id: string; name: string; sku: string; category: string | null; unit: string;
+  unit_price: number; warranty: string | null;
+  available_qty: number;
+  /** The most one request can take: a reservation draws on one stock location. */
+  max_request_qty: number;
+}
+
 // MODULE-L5-38: home_service_assignment's staff_router wraps its outcomes in
 // a non-standard envelope rather than HTTP status codes -- a controlled error
 // (caught ValueError) is {success:false, error:{code,message}} and
@@ -4746,10 +4756,16 @@ export const homeServiceStaffJobsApi = {
     apiFetch<{ id: string }>(`/v1/staff/service-jobs/${jobId}/media`, { method: "POST", body: JSON.stringify({ media_type: mediaType, file_url: fileUrl, is_customer_visible: isCustomerVisible }) }),
   getTimeline: (jobId: string) => apiFetch<Record<string, unknown>[]>(`/v1/staff/service-jobs/${jobId}/timeline`),
 
-  // HS8B — parts requests
+  // HS8B — parts requests. A technician picks the part from the provider's
+  // inventory; name and customer price come from there, and the request goes
+  // straight to the customer's chat for approval.
   listPartsRequests: (jobId: string) => apiFetch<{ job_id: string; parts_requests: PartsRequestItem[] }>(`/v1/staff/service-jobs/${jobId}/parts-requests`),
-  createPartsRequest: (jobId: string, body: { part_name: string; quantity: number; estimated_cost: number; reason: string; technician_note?: string }) =>
+  listPartsCatalog: (jobId: string, search?: string) =>
+    apiFetch<{ items: StaffPartsCatalogItem[] }>(`/v1/staff/service-jobs/${jobId}/parts-catalog${search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : ""}`),
+  createPartsRequest: (jobId: string, body: { inventory_item_id: string; quantity: number; reason: string; technician_note?: string }) =>
     apiFetch<PartsRequestItem>(`/v1/staff/service-jobs/${jobId}/parts-requests`, { method: "POST", body: JSON.stringify(body) }),
+  cancelPartsRequest: (jobId: string, partsRequestId: string) =>
+    apiFetch<PartsRequestItem>(`/v1/staff/service-jobs/${jobId}/parts-requests/${partsRequestId}/cancel`, { method: "POST" }),
 
   // HS8B — single validated completion action
   complete: (jobId: string, body: { work_summary: string; collected_amount: number; payment_mode?: string; technician_note?: string }) =>
