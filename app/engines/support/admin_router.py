@@ -52,6 +52,7 @@ async def queue(
     category: str | None = None,
     status: str | None = None,
     priority: str | None = None,
+    assignee: str | None = None,
     limit: int = Query(100, le=200),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -60,7 +61,7 @@ async def queue(
     _require(user, P.SUPPORT_ADMIN_QUEUE_VIEW)
     rows, total = await svc.list_tickets(
         db, tenant_id=tenant_id, search=search, category=category, status=status,
-        priority=priority, limit=limit, offset=offset,
+        priority=priority, assignee=assignee, limit=limit, offset=offset,
     )
     by_status = dict((await db.execute(
         select(SupportTicket.status, func.count()).group_by(SupportTicket.status)
@@ -253,7 +254,8 @@ async def list_incidents(
                              .limit(100))).scalars().all()
     return ok({"items": [{
         "id": str(i.id), "reference": i.reference, "title": i.title,
-        "severity": i.severity, "status": i.status, "components": i.components or [],
+        "description": i.description, "severity": i.severity, "status": i.status,
+        "components": i.components or [],
         "started_at": i.started_at.isoformat() if i.started_at else None,
         "resolved_at": i.resolved_at.isoformat() if i.resolved_at else None,
     } for i in rows]}, request_id=_rid(request))
@@ -298,10 +300,21 @@ async def resolve_incident(
     return ok({"id": str(inc.id), "status": inc.status}, request_id=_rid(request))
 
 
+@router.get("/status")
+async def get_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+):
+    """Read the current evidence-backed platform status without mutating it."""
+    _require(user, P.SUPPORT_ADMIN_QUEUE_VIEW)
+    return ok(await svc.service_status(db), request_id=_rid(request))
+
+
 @router.post("/status/heartbeat")
 async def heartbeat(
     request: Request,
-    component: str = Query(...),
+    component: str = Query(..., min_length=2, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$"),
     is_healthy: bool = Query(True),
     detail: str | None = None,
     db: AsyncSession = Depends(get_db),

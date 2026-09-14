@@ -21,12 +21,22 @@ from app.engines.home_service_assignment.staff_model import ProviderTeamMember
 from app.engines.auth.models import User
 from app.engines.complaints.models import CustomerComplaint
 from app.engines.final_records.models import ServiceJob
+from app.engines.security.models import PlatformAuditLog
 from app.exceptions import ServiceOSException, NotFoundException
 
 # ServiceJob is the canonical Home-Services job table (not the dead
 # field_ops `jobs` table the old global staff page queried against, per the
 # platform's own established audit finding -- see MODULE-L5-35/36/38).
-_ACTIVE_JOB_STATUSES = ("assigned", "in_progress", "pending_start", "on_the_way")
+_ACTIVE_JOB_STATUSES = (
+    "pending_assignment", "assigned", "accepted", "scheduled", "pending_start",
+    "on_the_way", "reached_site", "inspection_started", "inspection_done",
+    "quote_required", "awaiting_customer_quote_approval", "quote_approved",
+    "service_started", "in_progress", "customer_not_available",
+)
+# A staff member is only "on job" once work has actually started at the
+# customer's location.  Assignment, travel and a future slot still consume
+# capacity, but must not be presented as work in progress.
+_WORK_IN_PROGRESS_JOB_STATUSES = ("inspection_started", "service_started", "in_progress")
 _ENGINE_ID = "vertical_directory"
 
 ASSIGNMENT_STATUSES = ("pending", "active", "restricted", "suspended", "deactivated")
@@ -209,6 +219,9 @@ class VerticalStaffDirectoryService:
             func.count(ServiceJob.id).label("total_jobs"),
             func.count(ServiceJob.id).filter(ServiceJob.status == "completed").label("completed_jobs"),
             func.count(ServiceJob.id).filter(ServiceJob.status.in_(_ACTIVE_JOB_STATUSES)).label("active_jobs"),
+            func.count(ServiceJob.id).filter(
+                ServiceJob.status.in_(_WORK_IN_PROGRESS_JOB_STATUSES)
+            ).label("work_in_progress_jobs"),
             func.min(ServiceJob.scheduled_date).filter(
                 ServiceJob.status.in_(_ACTIVE_JOB_STATUSES)).label("next_job_date"),
         ).where(ServiceJob.assigned_staff_id.isnot(None)).group_by(ServiceJob.assigned_staff_id)
@@ -238,11 +251,13 @@ class VerticalStaffDirectoryService:
             if not owner:
                 continue
             current = result.setdefault(owner, {
-                "total_jobs": 0, "completed_jobs": 0, "active_jobs": 0, "next_job_date": None,
+                "total_jobs": 0, "completed_jobs": 0, "active_jobs": 0,
+                "work_in_progress_jobs": 0, "next_job_date": None,
             })
             current["total_jobs"] += int(row.total_jobs or 0)
             current["completed_jobs"] += int(row.completed_jobs or 0)
             current["active_jobs"] += int(row.active_jobs or 0)
+            current["work_in_progress_jobs"] += int(row.work_in_progress_jobs or 0)
             if row.next_job_date and (
                 current["next_job_date"] is None or row.next_job_date < current["next_job_date"]
             ):
@@ -250,7 +265,8 @@ class VerticalStaffDirectoryService:
         return result
 
     def _derive_availability(
-        self, ptm: ProviderTeamMember, sbv: StaffBusinessVertical | None, active_jobs: int,
+        self, ptm: ProviderTeamMember, sbv: StaffBusinessVertical | None,
+        active_jobs: int, work_in_progress_jobs: int,
     ) -> str:
         # Assignment-level state always wins over live job load -- a
         # suspended/restricted assignment is never "available" no matter
@@ -262,9 +278,17 @@ class VerticalStaffDirectoryService:
             return "unavailable"
         if sbv and not sbv.is_active:
             return "offline"
-        if active_jobs > 0:
+        if work_in_progress_jobs > 0:
             return "on_job"
-        return ptm.availability_state or "available"
+        stored = (ptm.availability_state or "available").lower()
+        # Job-derived states can become stale when a job advances or is
+        # cancelled.  Recompute them from ServiceJob instead of trusting the
+        # roster projection indefinitely.
+        if stored in ("on_job", "busy", "in_progress", "assigned"):
+            return "assigned" if active_jobs > 0 else "available"
+        if active_jobs > 0 and stored == "available":
+            return "assigned"
+        return stored
 
     async def list_staff(self, db: AsyncSession, scope: VerticalScope, *,
                          search: str | None = None, verification_status: str | None = None,
@@ -302,7 +326,8 @@ class VerticalStaffDirectoryService:
         for ptm, sbv, tenant, user in rows:
             wl = workload_by_staff.get(ptm.id, {})
             active_jobs = int(wl.get("active_jobs", 0))
-            avail = self._derive_availability(ptm, sbv, active_jobs)
+            work_in_progress_jobs = int(wl.get("work_in_progress_jobs", 0))
+            avail = self._derive_availability(ptm, sbv, active_jobs, work_in_progress_jobs)
             if availability and avail != availability:
                 continue
             items.append({
@@ -314,7 +339,8 @@ class VerticalStaffDirectoryService:
                 "assignment_status": self._effective_assignment(sbv, ptm),
                 "login_status": ("not_created" if not ptm.user_id else "enabled" if user and user.is_active else "disabled"),
                 "availability_status": avail,
-                "active_jobs": active_jobs, "completed_jobs": int(wl.get("completed_jobs", 0)),
+                "active_jobs": active_jobs, "work_in_progress_jobs": work_in_progress_jobs,
+                "completed_jobs": int(wl.get("completed_jobs", 0)),
                 "has_capabilities": bool(
                     ptm.supported_offering_ids or ptm.supported_type_ids or ptm.supported_brand_ids
                     or (sbv and (sbv.job_type_capabilities or sbv.service_capabilities))
@@ -343,6 +369,7 @@ class VerticalStaffDirectoryService:
         sbv, ptm, tenant, user = await self.get_staff(db, scope, staff_id)
         wl = (await self._workloads_for_members(db, [ptm])).get(ptm.id, {})
         active_jobs = int(wl.get("active_jobs", 0))
+        work_in_progress_jobs = int(wl.get("work_in_progress_jobs", 0))
         return {
             "id": str(sbv.id) if sbv else None, "staff_id": str(ptm.id), "tenant_id": str(ptm.tenant_id),
             "vertical_id": str(scope.vertical.id), "full_name": ptm.full_name,
@@ -353,8 +380,11 @@ class VerticalStaffDirectoryService:
             "verification_status": self._effective_verification(sbv, ptm, user),
             "assignment_status": self._effective_assignment(sbv, ptm),
             "login_status": "not_created" if not ptm.user_id else "enabled" if user and user.is_active else "disabled",
-            "availability_status": self._derive_availability(ptm, sbv, active_jobs),
-            "active_jobs": active_jobs, "completed_jobs": int(wl.get("completed_jobs", 0)),
+            "availability_status": self._derive_availability(
+                ptm, sbv, active_jobs, work_in_progress_jobs
+            ),
+            "active_jobs": active_jobs, "work_in_progress_jobs": work_in_progress_jobs,
+            "completed_jobs": int(wl.get("completed_jobs", 0)),
             "next_job_date": wl["next_job_date"].isoformat() if wl.get("next_job_date") else None,
         }
 
@@ -416,16 +446,20 @@ class VerticalStaffDirectoryService:
         }
 
     async def get_activity(self, db: AsyncSession, scope: VerticalScope, staff_id: uuid.UUID, limit: int = 50) -> dict:
-        _, ptm, _, _ = await self.get_staff(db, scope, staff_id)
+        sbv, ptm, _, _ = await self.get_staff(db, scope, staff_id)
+        entity_id = str(sbv.id) if sbv else str(ptm.id)
         rows = (await db.execute(
-            select(VerticalAuditLog).where(
-                VerticalAuditLog.vertical_id == scope.vertical.id,
-                VerticalAuditLog.tenant_id == ptm.tenant_id,
-                VerticalAuditLog.action_type.like("staff.%"),
-            ).order_by(VerticalAuditLog.created_at.desc()).limit(limit)
+            select(PlatformAuditLog).where(
+                PlatformAuditLog.engine_id == _ENGINE_ID,
+                PlatformAuditLog.entity_type == "staff_business_vertical",
+                PlatformAuditLog.entity_id == entity_id,
+                PlatformAuditLog.tenant_id == ptm.tenant_id,
+                PlatformAuditLog.operation.like("staff.%"),
+            ).order_by(PlatformAuditLog.created_at.desc()).limit(limit)
         )).scalars().all()
         return {"items": [{
-            "id": str(r.id), "action_type": r.action_type, "notes": r.notes,
+            "id": str(r.id), "action_type": r.operation,
+            "notes": (r.after_state or {}).get("reason"),
             "before_state": r.before_state, "after_state": r.after_state,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         } for r in rows]}
@@ -436,7 +470,7 @@ class VerticalStaffDirectoryService:
         workloads = await self._workloads_for_members(db, [ptm for ptm, _, _, _ in rows])
         total = len(rows)
         active = pending_verification = suspended = capability_incomplete = 0
-        technicians = staff_members = available = assigned = unavailable = 0
+        technicians = staff_members = available = assigned = assigned_not_started = unavailable = 0
         for ptm, sbv, _, user in rows:
             assignment = self._effective_assignment(sbv, ptm)
             verification = self._effective_verification(sbv, ptm, user)
@@ -447,14 +481,17 @@ class VerticalStaffDirectoryService:
             staff_members += int(ptm.member_type != "technician")
             capability_incomplete += int(ptm.member_type == "technician" and not ptm.supported_offering_ids)
             aj = int(workloads.get(ptm.id, {}).get("active_jobs", 0))
-            av = self._derive_availability(ptm, sbv, aj)
+            wip = int(workloads.get(ptm.id, {}).get("work_in_progress_jobs", 0))
+            av = self._derive_availability(ptm, sbv, aj, wip)
             if av == "available": available += 1
             elif av == "on_job": assigned += 1
+            elif av == "assigned": assigned_not_started += 1
             else: unavailable += 1
 
         return {
             "total_staff": total, "active": active, "pending_verification": pending_verification,
-            "available": available, "assigned": assigned, "unavailable": unavailable,
+            "available": available, "assigned": assigned,
+            "assigned_not_started": assigned_not_started, "unavailable": unavailable,
             "capability_incomplete": capability_incomplete, "suspended": suspended,
             "technicians": technicians, "staff_members": staff_members,
         }
@@ -501,7 +538,7 @@ class VerticalStaffDirectoryService:
             sbv.is_active = True
             ptm.status = "active"
             ptm.can_receive_assignment = True
-        after = {field: new_value}
+        after = {field: new_value, "reason": reason or None}
         await db.flush()
         await record_platform_audit(
             db, operation=f"staff.{action}", engine_id=_ENGINE_ID,

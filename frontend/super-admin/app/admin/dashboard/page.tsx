@@ -326,7 +326,7 @@ export default function PlatformCommandCenterPage() {
       <Kpi label="Platform Health" value={`${h?.score ?? 0}/100`} note={(h?.status || "unknown").replaceAll("_", " ")} icon={<HeartPulse size={18}/>} tone={(h?.score ?? 0) >= 90 ? "success" : (h?.score ?? 0) >= 70 ? "warning" : "danger"}/>
       <Kpi label="Active Tenants" value={s?.active_tenants.count ?? 0} note={`${s?.active_tenants.bookable ?? 0} customer-bookable providers`} icon={<Building2 size={18}/>} href="/admin/home-services/providers"/>
       <Kpi label="Live Operations" value={s?.live_operations.jobs ?? 0} note={`${s?.live_operations.bookings ?? 0} bookings created today`} icon={<Activity size={18}/>} href="/admin/home-services/bookings-jobs"/>
-      <Kpi label="Pending Admin Actions" value={s?.pending_admin_actions.count ?? 0} note="Approvals, complaints and escalations" icon={<ClipboardCheck size={18}/>} tone={(s?.pending_admin_actions.count ?? 0) ? "warning" : "success"}/>
+      <Kpi label="Pending Admin Actions" value={s?.pending_admin_actions.count ?? 0} note="Provider approvals and verification changes" icon={<ClipboardCheck size={18}/>} tone={(s?.pending_admin_actions.count ?? 0) ? "warning" : "success"}/>
       <Kpi id="kpi-at-risk" label="At-Risk Tenants" value={s?.at_risk_tenants.count ?? 0} note={`${s?.at_risk_tenants.high_risk ?? 0} critical control failures`} icon={<AlertTriangle size={18}/>} tone={(s?.at_risk_tenants.count ?? 0) ? "danger" : "success"} href="/admin/home-services/providers"/>
     </div>}
 

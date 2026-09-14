@@ -723,6 +723,7 @@ async def ticket_detail(
 async def list_tickets(
     db: AsyncSession, *, tenant_id: uuid.UUID | None = None, search: str | None = None,
     category: str | None = None, status: str | None = None, priority: str | None = None,
+    assignee: str | None = None,
     submitted_by: uuid.UUID | None = None, created_from: datetime | None = None,
     updated_from: datetime | None = None, limit: int = 100, offset: int = 0,
 ) -> tuple[list[SupportTicket], int]:
@@ -737,6 +738,12 @@ async def list_tickets(
         conds.append(SupportTicket.status == status)
     if priority:
         conds.append(SupportTicket.priority == priority)
+    if assignee:
+        assignee_like = f"%{assignee.lower()}%"
+        conds.append(or_(
+            func.lower(func.coalesce(SupportTicket.assigned_admin_name, "")).like(assignee_like),
+            func.lower(func.coalesce(SupportTicket.assigned_team, "")).like(assignee_like),
+        ))
     if submitted_by:
         conds.append(SupportTicket.reporter_user_id == submitted_by)
     if created_from:

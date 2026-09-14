@@ -369,6 +369,8 @@ class CreateFeatureFlagBody(BaseModel):
     rollout_percent: Optional[int] = None
     category_scope: Optional[str] = None
     tenant_scope: Optional[uuid.UUID] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     owner_module: Optional[str] = None
 
 
@@ -386,6 +388,9 @@ class UpdateFeatureFlagBody(BaseModel):
     rollout_type: Optional[str] = None
     rollout_percent: Optional[int] = None
     category_scope: Optional[str] = None
+    tenant_scope: Optional[uuid.UUID] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     owner_module: Optional[str] = None
 
 
@@ -393,7 +398,7 @@ class UpdateFeatureFlagBody(BaseModel):
 async def update_feature_flag(r: Request, flag_id: uuid.UUID, body: UpdateFeatureFlagBody,
                                u: UserContext = Depends(require_permission(P.SETTINGS_FEATURE_FLAGS_UPDATE)),
                                s: SettingsService = Depends(_svc)):
-    return ok(await s.update_feature_flag(flag_id, body.model_dump(exclude_none=True)), _rid(r), ENGINE_ID)
+    return ok(await s.update_feature_flag(flag_id, body.model_dump(exclude_unset=True)), _rid(r), ENGINE_ID)
 
 
 @router.post("/feature-flags/{flag_id}/enable", summary="Enable feature flag")

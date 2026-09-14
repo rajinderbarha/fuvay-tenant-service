@@ -29,15 +29,28 @@ export interface AvailabilitySchedule {
   }>;
 }
 
+export interface AvailabilityUnassignedJob {
+  job_id: string;
+  job_number: string;
+  status: string;
+  date: string;
+  time_window: string | null;
+  service_name: string | null;
+}
+
 interface BoardProps {
   technicians: AvailabilityTechnician[];
   schedules: AvailabilitySchedule[];
+  unassignedJobs: AvailabilityUnassignedJob[];
+  unassignedTotal: number;
+  unassignedTruncated: boolean;
   days: string[];
   focusDate: string;
   selectedStaffId: string | null;
   onSelectDay: (staffId: string, date: string) => void;
   onCloseDrawer: () => void;
   onOpenJob: (jobId: string) => void;
+  onOpenDispatch: (date: string, jobId: string) => void;
 }
 
 const LEAVE_REASONS = new Set(["on_time_off", "staff_time_off"]);
@@ -87,10 +100,10 @@ function TechnicianAvatar({ technician }: { technician: AvailabilityTechnician }
   );
 }
 
-function AvailabilityKpis({ technicians, schedules, focusDate }: {
-  technicians: AvailabilityTechnician[];
+function AvailabilityKpis({ schedules, focusDate, unassignedTotal }: {
   schedules: AvailabilitySchedule[];
   focusDate: string;
+  unassignedTotal: number;
 }) {
   const focusSchedules = schedules.filter(schedule => schedule.date === focusDate);
   const onDuty = focusSchedules.filter(schedule => !scheduleIsOff(schedule)).length;
@@ -103,7 +116,7 @@ function AvailabilityKpis({ technicians, schedules, focusDate }: {
   ).size;
   const values = [
     { label: "On duty today", value: onDuty, note: "technicians working" },
-    { label: "Jobs this week", value: jobs, note: "across the team" },
+    { label: "Jobs this week", value: jobs + unassignedTotal, note: `${jobs} assigned · ${unassignedTotal} awaiting technician` },
     { label: "Open capacity", value: Math.max(totalCapacity - jobs, 0), note: "slots free to fill" },
     { label: "On leave", value: onLeave, note: "not working this week" },
   ];
@@ -118,6 +131,37 @@ function AvailabilityKpis({ technicians, schedules, focusDate }: {
         </section>
       ))}
     </div>
+  );
+}
+
+function UnassignedJobs({ jobs, total, truncated, onOpenDispatch }: {
+  jobs: AvailabilityUnassignedJob[];
+  total: number;
+  truncated: boolean;
+  onOpenDispatch: (date: string, jobId: string) => void;
+}) {
+  if (!total) return null;
+  return (
+    <section className="availability-unassigned" aria-label="Bookings awaiting technician assignment">
+      <div className="availability-unassigned-header">
+        <div>
+          <h2>Awaiting technician <span>{total}</span></h2>
+          <p>New bookings are shown here until they are assigned. They are not counted against a technician’s capacity yet.</p>
+        </div>
+      </div>
+      <div className="availability-unassigned-list">
+        {jobs.map(job => (
+          <div className="availability-unassigned-job" key={job.job_id}>
+            <div>
+              <strong>{job.service_name ?? "Service booking"}</strong>
+              <span>{job.job_number} · {dayLabel(job.date).date} · {job.time_window ?? "Time not set"}</span>
+            </div>
+            <button type="button" onClick={() => onOpenDispatch(job.date, job.job_id)}>Manage in dispatch</button>
+          </div>
+        ))}
+      </div>
+      {truncated && <p className="availability-unassigned-more">Showing the first {jobs.length} bookings. Open Dispatch to see the full queue.</p>}
+    </section>
   );
 }
 
@@ -251,12 +295,16 @@ function AvailabilityDayDrawer({ technician, schedule, date, onClose, onOpenJob 
 export function AvailabilityWeekBoard({
   technicians,
   schedules,
+  unassignedJobs,
+  unassignedTotal,
+  unassignedTruncated,
   days,
   focusDate,
   selectedStaffId,
   onSelectDay,
   onCloseDrawer,
   onOpenJob,
+  onOpenDispatch,
 }: BoardProps) {
   const selectedTechnician = technicians.find(technician => technician.id === selectedStaffId);
   const selectedSchedule = selectedTechnician
@@ -270,7 +318,8 @@ export function AvailabilityWeekBoard({
 
   return (
     <div className="availability-board">
-      <AvailabilityKpis technicians={technicians} schedules={schedules} focusDate={focusDate} />
+      <AvailabilityKpis schedules={schedules} focusDate={focusDate} unassignedTotal={unassignedTotal} />
+      <UnassignedJobs jobs={unassignedJobs} total={unassignedTotal} truncated={unassignedTruncated} onOpenDispatch={onOpenDispatch} />
       <div className="availability-tech-list">
         {orderedTechnicians.map(technician => (
           <TechnicianWeekCard

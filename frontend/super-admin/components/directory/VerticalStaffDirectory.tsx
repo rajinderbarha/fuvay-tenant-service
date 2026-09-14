@@ -16,6 +16,8 @@ import { Lock, FileText, ShieldCheck, Search, Download } from "lucide-react";
 // (ServiceJob-based) -- no second state machine lives in this component.
 
 type Row = Record<string, unknown>;
+type InspectorTab = "overview" | "capabilities" | "workload" | "performance" | "activity";
+const PAGE_SIZE = 25;
 
 const VERIFICATION_FILTERS = ["not_started", "in_review", "changes_requested", "verified", "access_disabled", "rejected", "expired"];
 const ASSIGNMENT_FILTERS = ["pending", "active", "inactive", "restricted", "suspended", "deactivated"];
@@ -46,19 +48,23 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
   const [assignmentStatus, setAssignmentStatus] = useState<string | undefined>(undefined);
   const [memberType, setMemberType] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<string | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("overview");
+  const [page, setPage] = useState(1);
 
   const listApi = useApi(useCallback(
     () => verticalDirectoryApi.listStaff(vertical, {
       search: search || undefined,
       verification_status: verificationStatus, assignment_status: assignmentStatus,
       member_type: memberType,
-      page_size: 25,
+      page, page_size: PAGE_SIZE,
     }),
-    [vertical, search, verificationStatus, assignmentStatus, memberType]));
+    [vertical, search, verificationStatus, assignmentStatus, memberType, page]));
   const summaryApi = useApi(useCallback(() => verticalDirectoryApi.staffSummary(vertical), [vertical]));
 
   const rows = (listApi.data?.items ?? []) as Row[];
   const s = summaryApi.data as Record<string, number> | null;
+  const total = Number(listApi.data?.total ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   async function doExport() {
     const data = await verticalDirectoryApi.exportStaff(vertical);
@@ -89,8 +95,8 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="ghost" size="sm" onClick={doExport}><Download size={14} style={{ marginRight: 4 }}/>Export</Btn>
-            <Btn variant="ghost" size="sm" onClick={() => setSelected(selected)}><FileText size={14} style={{ marginRight: 4 }}/>View Audit</Btn>
-            <Btn variant="primary" size="sm" onClick={() => setMemberType("technician")}>
+            <Btn variant="ghost" size="sm" disabled={!selected} onClick={() => setInspectorTab("activity")}><FileText size={14} style={{ marginRight: 4 }}/>View Audit</Btn>
+            <Btn variant="primary" size="sm" onClick={() => { setMemberType("technician"); setPage(1); }}>
               <ShieldCheck size={14} style={{ marginRight: 4 }}/>Show Technicians
             </Btn>
           </div>
@@ -106,7 +112,8 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginBottom: 16 }}>
           {[
             ["Total Team", s?.total_staff], ["Technicians", s?.technicians], ["Staff & Managers", s?.staff_members],
-            ["Active", s?.active], ["Available", s?.available], ["Assigned", s?.assigned],
+            ["Active", s?.active], ["Available", s?.available], ["Assigned, not started", s?.assigned_not_started],
+            ["Working now", s?.assigned],
             ["Setup Incomplete", s?.capability_incomplete], ["Inactive / Suspended", s?.suspended],
           ].map(([label, value]) => (
             <div key={label as string} style={{ padding: "10px 12px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)" }}>
@@ -126,21 +133,21 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           <div style={{ position: "relative", flex: "1 1 240px", maxWidth: 320 }}>
             <Search size={13} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }}/>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Name, email, phone or staff ID"
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Name, email, phone or staff ID"
               style={{ width: "100%", padding: "7px 10px 7px 28px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)",
                 background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}/>
           </div>
-          <select value={verificationStatus ?? ""} onChange={e => setVerificationStatus(e.target.value || undefined)}
+          <select value={verificationStatus ?? ""} onChange={e => { setVerificationStatus(e.target.value || undefined); setPage(1); }}
             style={{ padding: "7px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
             <option value="">All login / review states</option>
             {VERIFICATION_FILTERS.map(v => <option key={v} value={v}>{v.replace(/_/g, " ")}</option>)}
           </select>
-          <select value={memberType ?? ""} onChange={e => setMemberType(e.target.value || undefined)}
+          <select value={memberType ?? ""} onChange={e => { setMemberType(e.target.value || undefined); setPage(1); }}
             style={{ padding: "7px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
             <option value="">All roles</option>
             {MEMBER_TYPE_FILTERS.map(v => <option key={v} value={v}>{v}</option>)}
           </select>
-          <select value={assignmentStatus ?? ""} onChange={e => setAssignmentStatus(e.target.value || undefined)}
+          <select value={assignmentStatus ?? ""} onChange={e => { setAssignmentStatus(e.target.value || undefined); setPage(1); }}
             style={{ padding: "7px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 13 }}>
             <option value="">All statuses</option>
             {ASSIGNMENT_FILTERS.map(v => <option key={v} value={v}>{v}</option>)}
@@ -174,7 +181,7 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
                     </thead>
                     <tbody>
                       {rows.map(row => (
-                        <tr key={row.staff_id as string} onClick={() => setSelected(row.staff_id as string)}
+                        <tr key={row.staff_id as string} onClick={() => { setSelected(row.staff_id as string); setInspectorTab("overview"); }}
                           style={{ borderBottom: "1px solid var(--border)", cursor: "pointer",
                             background: selected === row.staff_id ? "var(--surface-sunken)" : "transparent" }}>
                           <td style={{ padding: "9px 14px", fontWeight: 600 }}>{row.full_name as string}</td>
@@ -190,11 +197,24 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
                   </TableSurface>
                 </div>
               )}
+              {!listApi.loading && !listApi.error && total > 0 && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 14px", borderTop: "1px solid var(--border)" }}>
+                  <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                    Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Btn>
+                    <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Page {page} of {totalPages}</span>
+                    <Btn variant="ghost" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next</Btn>
+                  </div>
+                </div>
+              )}
             </Card>
           </div>
           {selected && (
             <div style={{ width: 360, flexShrink: 0 }}>
               <StaffInspector vertical={vertical} verticalLabel={verticalLabel} staffId={selected}
+                tab={inspectorTab} onTabChange={setInspectorTab}
                 onClose={() => setSelected(null)}
                 onChanged={() => { listApi.refetch(); summaryApi.refetch(); }}/>
             </div>
@@ -205,10 +225,10 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
   );
 }
 
-function StaffInspector({ vertical, verticalLabel, staffId, onClose, onChanged }: {
-  vertical: string; verticalLabel: string; staffId: string; onClose: () => void; onChanged: () => void;
+function StaffInspector({ vertical, verticalLabel, staffId, tab, onTabChange, onClose, onChanged }: {
+  vertical: string; verticalLabel: string; staffId: string; tab: InspectorTab;
+  onTabChange: (tab: InspectorTab) => void; onClose: () => void; onChanged: () => void;
 }) {
-  const [tab, setTab] = useState<"overview" | "capabilities" | "workload" | "performance" | "activity">("overview");
   const [reason, setReason] = useState("");
   const detail = useApi(useCallback(() => verticalDirectoryApi.getStaff(vertical, staffId), [vertical, staffId]));
   const capabilities = useApi(useCallback(() => verticalDirectoryApi.getStaffCapabilities(vertical, staffId), [vertical, staffId]), [tab], { enabled: tab === "capabilities" });
@@ -247,7 +267,7 @@ function StaffInspector({ vertical, verticalLabel, staffId, onClose, onChanged }
       )}
       <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: 10, overflowX: "auto" }}>
         {(["overview", "capabilities", "workload", "performance", "activity"] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
+          <button key={t} onClick={() => onTabChange(t)}
             style={{ padding: "6px 8px", fontSize: 11, fontWeight: 600, background: "none", border: "none",
               borderBottom: tab === t ? "2px solid var(--brand)" : "2px solid transparent",
               color: tab === t ? "var(--text-primary)" : "var(--text-tertiary)", cursor: "pointer", textTransform: "capitalize" }}>
@@ -264,7 +284,8 @@ function StaffInspector({ vertical, verticalLabel, staffId, onClose, onChanged }
           <Row label="Login access" value={((d.login_status as string) ?? "not created").replace(/_/g, " ")}/>
           <Row label="Employee code" value={(d.employee_code as string) ?? "—"}/>
           <Row label="Availability" value={(d.availability_status as string)?.replace(/_/g, " ")}/>
-          <Row label="Active jobs" value={String(d.active_jobs ?? 0)}/>
+          <Row label="Assigned jobs" value={String(d.active_jobs ?? 0)}/>
+          <Row label="Work in progress" value={String(d.work_in_progress_jobs ?? 0)}/>
           <Row label="Completed jobs" value={String(d.completed_jobs ?? 0)}/>
           <Row label="Next job" value={(d.next_job_date as string) ?? "—"}/>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }}>
@@ -274,14 +295,14 @@ function StaffInspector({ vertical, verticalLabel, staffId, onClose, onChanged }
             <textarea placeholder="Reason (required for restrict/suspend/request changes)" value={reason} onChange={e => setReason(e.target.value)} rows={2}
               style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", fontSize: 12, boxSizing: "border-box" }}/>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <Btn variant="secondary" size="sm" onClick={() => run(requestChanges)} disabled={requestChanges.loading}>Request Changes</Btn>
+              <Btn variant="secondary" size="sm" onClick={() => run(requestChanges)} disabled={requestChanges.loading || !reason.trim()}>Request Changes</Btn>
               <Btn variant="success" size="sm" onClick={() => run(verify)} disabled={verify.loading}>Verify</Btn>
-              <Btn variant="warning" size="sm" onClick={() => run(restrict)} disabled={restrict.loading}>Restrict</Btn>
-              <Btn variant="danger" size="sm" onClick={() => run(suspend)} disabled={suspend.loading}>Suspend</Btn>
+              <Btn variant="warning" size="sm" onClick={() => run(restrict)} disabled={restrict.loading || !reason.trim()}>Restrict</Btn>
+              <Btn variant="danger" size="sm" onClick={() => run(suspend)} disabled={suspend.loading || !reason.trim()}>Suspend</Btn>
               <Btn variant="ghost" size="sm" onClick={() => run(reactivate)} disabled={reactivate.loading}>Reactivate</Btn>
             </div>
-            {(requestChanges.error || restrict.error || suspend.error) && (
-              <p style={{ fontSize: 11, color: "var(--danger-text)" }}>{requestChanges.error || restrict.error || suspend.error}</p>
+            {(requestChanges.error || verify.error || restrict.error || suspend.error || reactivate.error) && (
+              <p style={{ fontSize: 11, color: "var(--danger-text)" }}>{requestChanges.error || verify.error || restrict.error || suspend.error || reactivate.error}</p>
             )}
           </div>
         </div>

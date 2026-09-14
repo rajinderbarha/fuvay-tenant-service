@@ -38,12 +38,16 @@ describe("AvailabilityWeekBoard", () => {
             service_name: "Geyser Service & Descaling",
           }] : [],
         }))}
+        unassignedJobs={[]}
+        unassignedTotal={0}
+        unassignedTruncated={false}
         days={days}
         focusDate="2026-09-03"
         selectedStaffId={null}
         onSelectDay={onSelectDay}
         onCloseDrawer={vi.fn()}
         onOpenJob={vi.fn()}
+        onOpenDispatch={vi.fn()}
       />,
     );
 
@@ -87,12 +91,16 @@ describe("AvailabilityWeekBoard", () => {
             service_name: "AC Gas Refill",
           }],
         }]}
+        unassignedJobs={[]}
+        unassignedTotal={0}
+        unassignedTruncated={false}
         days={["2026-09-03"]}
         focusDate="2026-09-03"
         selectedStaffId="staff-1"
         onSelectDay={vi.fn()}
         onCloseDrawer={vi.fn()}
         onOpenJob={onOpenJob}
+        onOpenDispatch={vi.fn()}
       />,
     );
 
@@ -101,5 +109,37 @@ describe("AvailabilityWeekBoard", () => {
     expect(screen.getByText("5 more jobs could fit today")).toBeInTheDocument();
     fireEvent.click(screen.getAllByText("AC Gas Refill").at(-1)!);
     expect(onOpenJob).toHaveBeenCalledWith("job-1");
+  });
+
+  it("keeps newly booked unassigned jobs visible and routes assignment to Dispatch", () => {
+    const onOpenDispatch = vi.fn();
+    render(
+      <AvailabilityWeekBoard
+        technicians={[]}
+        schedules={[]}
+        unassignedJobs={[{
+          job_id: "new-job",
+          job_number: "JOB-NEW",
+          status: "pending_assignment",
+          date: "2026-09-03",
+          time_window: "14:00-16:00",
+          service_name: "AC not cooling",
+        }]}
+        unassignedTotal={1}
+        unassignedTruncated={false}
+        days={["2026-09-03"]}
+        focusDate="2026-09-03"
+        selectedStaffId={null}
+        onSelectDay={vi.fn()}
+        onCloseDrawer={vi.fn()}
+        onOpenJob={vi.fn()}
+        onOpenDispatch={onOpenDispatch}
+      />,
+    );
+
+    expect(screen.getByText("Awaiting technician")).toBeInTheDocument();
+    expect(screen.getByText("AC not cooling")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Manage in dispatch" }));
+    expect(onOpenDispatch).toHaveBeenCalledWith("2026-09-03", "new-job");
   });
 });

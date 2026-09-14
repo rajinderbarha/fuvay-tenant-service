@@ -123,13 +123,21 @@ async def _fetch_assignments(db: AsyncSession, tenant_id: uuid.UUID, staff_id: u
     if cache and cache["tenant_id"] == str(tenant_id):
         return cache["assignments"].get((str(staff_id), target_date), [])
     rows = (await db.execute(text(
-        "SELECT j.id, j.job_number, j.status, j.scheduled_time_window, "
+        "SELECT j.id, j.job_number, j.status, "
+        "       COALESCE(j.scheduled_time_window, b.preferred_time_window) AS scheduled_time_window, "
         "       COALESCE(ts.tenant_display_name, ms.service_name) AS service_name "
         "FROM service_jobs j "
+        "JOIN service_bookings b ON b.id=j.booking_id "
         "LEFT JOIN tenant_services ts ON ts.id = j.offering_id "
         "LEFT JOIN master_services ms ON ms.id = COALESCE(ts.master_service_id, j.offering_id) "
-        "WHERE j.tenant_id=:tid AND j.assigned_staff_id=:sid AND j.scheduled_date=:d"
-    ), {"tid": str(tenant_id), "sid": str(staff_id), "d": target_date})).fetchall()
+        "WHERE j.tenant_id=:tid AND j.assigned_staff_id=:sid "
+        "AND COALESCE(j.scheduled_date, b.preferred_date)=:d "
+        "AND j.status != ALL(CAST(:terminal_statuses AS text[])) "
+        "AND b.status != ALL(CAST(:terminal_statuses AS text[]))"
+    ), {
+        "tid": str(tenant_id), "sid": str(staff_id), "d": target_date,
+        "terminal_statuses": list(TERMINAL_STATUSES),
+    })).fetchall()
     return [dict(r._mapping) for r in rows]
 
 
@@ -355,17 +363,24 @@ async def _prefetch_resolution_cache(
             assignment_owner[str(row["user_id"])] = canonical
     assignment_ids = list(assignment_owner)
     assignment_rows = (await db.execute(text(
-        "SELECT j.id, j.assigned_staff_id, j.scheduled_date, j.job_number, j.status, "
-        "j.scheduled_time_window, COALESCE(ts.tenant_display_name, ms.service_name) AS service_name "
+        "SELECT j.id, j.assigned_staff_id, "
+        "COALESCE(j.scheduled_date, b.preferred_date) AS scheduled_date, "
+        "j.job_number, j.status, "
+        "COALESCE(j.scheduled_time_window, b.preferred_time_window) AS scheduled_time_window, "
+        "COALESCE(ts.tenant_display_name, ms.service_name) AS service_name "
         "FROM service_jobs j "
+        "JOIN service_bookings b ON b.id=j.booking_id "
         "LEFT JOIN tenant_services ts ON ts.id=j.offering_id "
         "LEFT JOIN master_services ms ON ms.id=COALESCE(ts.master_service_id,j.offering_id) "
         "WHERE j.tenant_id=CAST(:tid AS uuid) "
         "AND j.assigned_staff_id=ANY(CAST(:assignment_ids AS uuid[])) "
-        "AND j.scheduled_date BETWEEN :date_from AND :date_to"
+        "AND COALESCE(j.scheduled_date, b.preferred_date) BETWEEN :date_from AND :date_to "
+        "AND j.status != ALL(CAST(:terminal_statuses AS text[])) "
+        "AND b.status != ALL(CAST(:terminal_statuses AS text[]))"
     ), {
         "tid": str(tenant_id), "assignment_ids": assignment_ids,
         "date_from": date_from, "date_to": date_to,
+        "terminal_statuses": list(TERMINAL_STATUSES),
     })).all()
     for row in assignment_rows:
         value = dict(row._mapping)
@@ -374,6 +389,56 @@ async def _prefetch_resolution_cache(
         if canonical:
             cache["assignments"].setdefault((canonical, scheduled_date), []).append(value)
     return cache
+
+
+async def _fetch_unassigned_week(
+    db: AsyncSession, tenant_id: uuid.UUID, date_from: dt.date, date_to: dt.date,
+) -> tuple[list[dict], int]:
+    """Confirmed jobs with a promised date but no technician yet.
+
+    These cannot appear in a technician cell, yet are important to a provider
+    planning the week. Keep the query independent of roster pagination so an
+    empty or filtered roster does not erase real bookings from the board.
+    """
+    predicate = (
+        "FROM service_jobs j "
+        "JOIN service_bookings b ON b.id=j.booking_id "
+        "WHERE j.tenant_id=CAST(:tid AS uuid) "
+        "AND j.assigned_staff_id IS NULL "
+        "AND COALESCE(j.scheduled_date, b.preferred_date) BETWEEN :date_from AND :date_to "
+        "AND j.status != ALL(CAST(:terminal_statuses AS text[])) "
+        "AND b.status != ALL(CAST(:terminal_statuses AS text[]))"
+    )
+    params = {
+        "tid": str(tenant_id), "date_from": date_from, "date_to": date_to,
+        "terminal_statuses": list(TERMINAL_STATUSES),
+    }
+    total = int((await db.execute(text("SELECT count(*) " + predicate), params)).scalar() or 0)
+    rows = (await db.execute(text(
+        "SELECT j.id, j.job_number, j.status, "
+        "COALESCE(j.scheduled_date, b.preferred_date) AS scheduled_date, "
+        "COALESCE(j.scheduled_time_window, b.preferred_time_window) AS time_window, "
+        "COALESCE(ts.tenant_display_name, ms.service_name) AS service_name "
+        "FROM service_jobs j "
+        "JOIN service_bookings b ON b.id=j.booking_id "
+        "LEFT JOIN tenant_services ts ON ts.id=j.offering_id "
+        "LEFT JOIN master_services ms ON ms.id=COALESCE(ts.master_service_id,j.offering_id) "
+        "WHERE j.tenant_id=CAST(:tid AS uuid) "
+        "AND j.assigned_staff_id IS NULL "
+        "AND COALESCE(j.scheduled_date, b.preferred_date) BETWEEN :date_from AND :date_to "
+        "AND j.status != ALL(CAST(:terminal_statuses AS text[])) "
+        "AND b.status != ALL(CAST(:terminal_statuses AS text[])) "
+        "ORDER BY scheduled_date, time_window NULLS LAST, j.created_at, j.id "
+        "LIMIT 200"
+    ), params)).all()
+    return ([{
+        "job_id": str(row.id),
+        "job_number": row.job_number,
+        "status": row.status,
+        "date": row.scheduled_date.isoformat(),
+        "time_window": row.time_window,
+        "service_name": row.service_name,
+    } for row in rows], total)
 
 
 _WINDOW_RE = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*[-\u2013\u2014]\s*(\d{1,2}):(\d{2})\s*$")
@@ -929,6 +994,9 @@ async def resolve_tenant_week(
             for service_id in supported_ids if service_id in offering_map
         ]
 
+    unassigned_jobs, unassigned_total = await _fetch_unassigned_week(
+        db, tenant_id, date_from, date_to,
+    )
     cache = await _prefetch_resolution_cache(db, tenant_id, staff_list, date_from, date_to)
     db.info["availability_resolution_cache"] = cache
     schedules: list[dict] = []
@@ -987,6 +1055,9 @@ async def resolve_tenant_week(
         },
         "technicians": staff_list,
         "effective_schedules": schedules,
+        "unassigned_jobs": unassigned_jobs,
+        "unassigned_total": unassigned_total,
+        "unassigned_truncated": unassigned_total > len(unassigned_jobs),
         "conflicts": conflicts,
         "pagination": {
             "total": total, "limit": limit, "offset": offset,

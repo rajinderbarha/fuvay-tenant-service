@@ -115,9 +115,12 @@ class TestSecureProviderDocumentPreview:
         from app.engines.media import admin_router
 
         src = inspect.getsource(admin_router.resolve_signed_media)
-        assert "MediaAssetService(db=db, actor=u)" in src
-        assert "get_remote_url_for_serve(media_id)" in src
-        assert "if asset.public_url" not in src
+        delivery = inspect.getsource(admin_router._serve_admin_media)
+        assert "_serve_admin_media(db, u, media_id, purpose)" in src
+        assert "MediaAssetService(db=db, actor=actor)" in delivery
+        assert "get_remote_url_for_serve(media_id)" in delivery
+        assert "if asset.public_url" not in delivery
+        assert "StreamingResponse" in delivery
 
     def test_production_preserves_local_fallback_files_across_rollouts(self):
         from pathlib import Path

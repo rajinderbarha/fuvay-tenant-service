@@ -24,6 +24,7 @@ const BREACH_VARIANT: Record<string, "success" | "warning" | "danger" | "muted" 
   on_track: "success", at_risk: "warning", breached: "danger",
   paused: "info", met: "success", not_applicable: "muted",
 };
+const PAGE_SIZE = 25;
 
 function fmt(ts: string | null | undefined) {
   return ts ? ts.replace("T", " ").slice(0, 16) : "—";
@@ -43,6 +44,7 @@ export default function AdminSupportQueuePage() {
   const [category, setCategory] = useState("");
   const [tenantId, setTenantId] = useState("");
   const [assignee, setAssignee] = useState("");
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -50,21 +52,18 @@ export default function AdminSupportQueuePage() {
       setData(await supportAdminApi.queue({
         search: search || undefined, status: status || undefined,
         priority: priority || undefined, category: category || undefined,
-        tenant_id: tenantId || undefined, limit: 100,
+        tenant_id: tenantId || undefined, assignee: assignee || undefined,
+        limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE,
       }));
     } catch (e) {
       setErr(e as ServiceOSError);
     } finally { setLoading(false); }
-  }, [search, status, priority, category, tenantId]);
+  }, [search, status, priority, category, tenantId, assignee, page]);
 
   useEffect(() => { void load(); }, [load]);
 
-  // Assignee is filtered client-side: the backend queue endpoint has no
-  // assignee filter (checked route-by-route), so this narrows the fetched page
-  // rather than pretending to be a server-side filter.
-  const rows = (data?.items ?? []).filter(r =>
-    !assignee || (r.assigned_admin_name ?? "").toLowerCase().includes(assignee.toLowerCase())
-    || (r.assigned_team ?? "").toLowerCase().includes(assignee.toLowerCase()));
+  const rows = data?.items ?? [];
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
 
   const selStyle: React.CSSProperties = {
     height: 34, padding: "0 10px", borderRadius: 9, fontSize: 12,
@@ -76,8 +75,8 @@ export default function AdminSupportQueuePage() {
     <AdminLayout>
       <PageShell>
         <PageHeader
-          title="Tenant Support"
-          description="Fuvay support queue for provider requests to the platform. Customer service complaints are resolved directly by the provider; admins monitor quality and SLA signals."
+          title="Provider Platform Support"
+          description="Provider businesses use this queue for Fuvay account, platform and operational-system problems. Service complaints between customers and providers are not handled here."
           actions={<Btn variant="secondary" size="sm" onClick={() => void load()}>Refresh</Btn>}
         />
 
@@ -110,25 +109,25 @@ export default function AdminSupportQueuePage() {
 
             <Card padding={14}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <input value={search} onChange={e => setSearch(e.target.value)}
+                <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
                   placeholder="Search subject, ticket number, description…"
                   style={{ ...selStyle, minWidth: 260, flex: 1 }} />
-                <select value={status} onChange={e => setStatus(e.target.value)} style={selStyle}>
+                <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} style={selStyle}>
                   <option value="">All statuses</option>
                   <option value="open">Open (any)</option>
                   {(data?.statuses ?? []).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
-                <select value={priority} onChange={e => setPriority(e.target.value)} style={selStyle}>
+                <select value={priority} onChange={e => { setPriority(e.target.value); setPage(1); }} style={selStyle}>
                   <option value="">All priorities</option>
                   {(data?.priorities ?? []).map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
-                <select value={category} onChange={e => setCategory(e.target.value)} style={selStyle}>
+                <select value={category} onChange={e => { setCategory(e.target.value); setPage(1); }} style={selStyle}>
                   <option value="">All categories</option>
                   {(data?.categories ?? []).map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                 </select>
-                <input value={tenantId} onChange={e => setTenantId(e.target.value)}
+                <input value={tenantId} onChange={e => { setTenantId(e.target.value); setPage(1); }}
                   placeholder="Tenant ID" style={{ ...selStyle, width: 200 }} />
-                <input value={assignee} onChange={e => setAssignee(e.target.value)}
+                <input value={assignee} onChange={e => { setAssignee(e.target.value); setPage(1); }}
                   placeholder="Assignee / team" style={{ ...selStyle, width: 160 }} />
               </div>
             </Card>
@@ -192,9 +191,16 @@ export default function AdminSupportQueuePage() {
                   </TableSurface>
                 </Card>
               )}
-            {data && <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
-              Showing {rows.length} of {data.total} matching support requests.
-            </p>}
+            {data && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0 }}>
+                Showing {data.total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} of {data.total} matching provider requests.
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Btn variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Btn>
+                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Page {page} of {totalPages}</span>
+                <Btn variant="ghost" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next</Btn>
+              </div>
+            </div>}
           </>
         )}
       </PageShell>
@@ -214,7 +220,13 @@ function StatusPanel() {
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
-    try { setIncidents((await supportAdminApi.listIncidents()).items); }
+    try {
+      const [incidentData, statusData] = await Promise.all([
+        supportAdminApi.listIncidents(), supportAdminApi.getStatus(),
+      ]);
+      setIncidents(incidentData.items);
+      setStatus(statusData);
+    }
     catch (e) { setErr(e as ServiceOSError); }
     finally { setLoading(false); }
   }, []);
@@ -222,7 +234,7 @@ function StatusPanel() {
 
   const beat = async (healthy: boolean) => {
     setBusy(true);
-    try { setStatus(await supportAdminApi.heartbeat(component, healthy)); }
+    try { setStatus(await supportAdminApi.heartbeat(component.trim(), healthy)); }
     catch (e) { setErr(e as ServiceOSError); }
     finally { setBusy(false); }
   };
@@ -255,15 +267,14 @@ function StatusPanel() {
       <Card>
         <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700 }}>Status heartbeat</h3>
         <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-secondary)" }}>
-          The tenant-facing status banner refuses to claim &ldquo;Operational&rdquo; without recent evidence.
-          Posting a heartbeat here is currently the only mechanism that produces that evidence —
-          there is no scheduled/automatic heartbeat job in the backend.
+          This view reads the latest evidence-backed platform state automatically. Use these controls
+          only to record a component health check or a confirmed degradation.
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <input value={component} onChange={e => setComponent(e.target.value)}
             placeholder="component (e.g. api)" style={{ ...inp, width: 200 }} />
-          <Btn size="sm" variant="success" loading={busy} onClick={() => void beat(true)}>Report healthy</Btn>
-          <Btn size="sm" variant="warning" loading={busy} onClick={() => void beat(false)}>Report degraded</Btn>
+          <Btn size="sm" variant="success" loading={busy} disabled={component.trim().length < 2} onClick={() => void beat(true)}>Report healthy</Btn>
+          <Btn size="sm" variant="warning" loading={busy} disabled={component.trim().length < 2} onClick={() => void beat(false)}>Report degraded</Btn>
         </div>
         {status && (
           <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-secondary)" }}>

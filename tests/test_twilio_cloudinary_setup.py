@@ -251,7 +251,15 @@ def test_cloudinary_delivery_url_format():
     mock_settings = MagicMock(CLOUDINARY_CLOUD_NAME="dr1b4ezct")
     with patch("app.cloudinary_client.get_settings", return_value=mock_settings):
         url = build_delivery_url("tenants/abc/photo.jpg", resource_type="image")
-    assert url == "https://res.cloudinary.com/dr1b4ezct/image/upload/tenants/abc/photo.jpg"
+    assert url == "https://res.cloudinary.com/dr1b4ezct/image/upload/tenants/abc/photo.jpg.jpg"
+
+
+def test_cloudinary_raw_delivery_does_not_repeat_extension():
+    from app.cloudinary_client import build_delivery_url
+    mock_settings = MagicMock(CLOUDINARY_CLOUD_NAME="dr1b4ezct")
+    with patch("app.cloudinary_client.get_settings", return_value=mock_settings):
+        url = build_delivery_url("tenants/abc/manual.pdf", resource_type="raw")
+    assert url == "https://res.cloudinary.com/dr1b4ezct/raw/upload/tenants/abc/manual.pdf"
 
 
 # ── 12. Cloudinary is_configured reads all 3 env vars ────────────────────────

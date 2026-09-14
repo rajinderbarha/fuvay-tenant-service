@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useCallback, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { Alert, Button, PageHeader, PageShell, Skeleton } from "@serviceos/design-system";
@@ -10,6 +10,7 @@ import {
   AvailabilityWeekBoard,
   type AvailabilitySchedule,
   type AvailabilityTechnician,
+  type AvailabilityUnassignedJob,
 } from "../../../../components/availability/AvailabilityWeekBoard";
 import { AvailabilityJobDrawer } from "../../../../components/availability/AvailabilityJobDrawer";
 import { dispatchUrlForAvailabilityJob } from "./availabilityNavigation";
@@ -28,11 +29,22 @@ interface PlannerResponse {
   };
   technicians: AvailabilityTechnician[];
   effective_schedules: AvailabilitySchedule[];
+  unassigned_jobs: AvailabilityUnassignedJob[];
+  unassigned_total: number;
+  unassigned_truncated: boolean;
   pagination: { total: number; limit: number; offset: number; has_next: boolean };
 }
 
 function toISODate(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+function providerToday(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: string) => parts.find(value => value.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 function addDays(iso: string, amount: number): string {
@@ -69,7 +81,7 @@ export default function AvailabilityPage() {
 function AvailabilityPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const today = toISODate(new Date());
+  const today = providerToday();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today));
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(() => searchParams.get("staff_id"));
   const [selectedDate, setSelectedDate] = useState(today);
@@ -84,8 +96,22 @@ function AvailabilityPageContent() {
       limit: "100",
       offset: "0",
     });
-    return apiFetch<PlannerResponse>(`/v1/tenant/home-services/availability?${query}`);
+    return apiFetch<PlannerResponse>(`/v1/tenant/home-services/availability?${query}`, { cache: "no-store" });
   }, [weekStart, weekEnd, selectedDate]), [weekStart, weekEnd, selectedDate]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") planner.refetch();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    const interval = window.setInterval(refresh, 60_000);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      window.clearInterval(interval);
+    };
+  }, [planner.refetch]);
 
   const jobDetail = useApi<BJDetail | null>(useCallback(
     () => selectedJobId ? bookingsJobsApi.detail(selectedJobId) : Promise.resolve(null),
@@ -112,6 +138,10 @@ function AvailabilityPageContent() {
         description="See who's working, who's off, and how full each technician's week is."
         actions={(
           <div className="availability-week-nav" aria-label="Week navigation">
+            <button type="button" onClick={() => {
+              setWeekStart(startOfWeek(providerToday()));
+              setSelectedDate(providerToday());
+            }} className="availability-today-button">Today</button>
             <button type="button" onClick={() => moveWeek(-1)} aria-label="Previous week">
               <ChevronLeft size={16} />
             </button>
@@ -119,11 +149,14 @@ function AvailabilityPageContent() {
             <button type="button" onClick={() => moveWeek(1)} aria-label="Next week">
               <ChevronRight size={16} />
             </button>
+            <button type="button" onClick={planner.refetch} aria-label="Refresh bookings and availability" title="Refresh bookings and availability">
+              <RefreshCw size={16} />
+            </button>
           </div>
         )}
       />
 
-      {planner.loading && (
+      {planner.loading && !planner.data && (
         <div className="availability-loading" aria-label="Loading availability">
           <div className="availability-kpi-grid">
             {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} height={96} />)}
@@ -143,10 +176,17 @@ function AvailabilityPageContent() {
         </Alert>
       )}
 
+      {planner.loading && planner.data && (
+        <span className="availability-refresh-status" role="status">Updating bookings and availability…</span>
+      )}
+
       {planner.data && (
         <AvailabilityWeekBoard
           technicians={planner.data.technicians}
           schedules={planner.data.effective_schedules}
+          unassignedJobs={planner.data.unassigned_jobs ?? []}
+          unassignedTotal={planner.data.unassigned_total ?? 0}
+          unassignedTruncated={planner.data.unassigned_truncated ?? false}
           days={days}
           focusDate={selectedDate}
           selectedStaffId={selectedStaffId}
@@ -160,6 +200,7 @@ function AvailabilityPageContent() {
             setSelectedJobId(null);
           }}
           onOpenJob={setSelectedJobId}
+          onOpenDispatch={(date, jobId) => router.push(dispatchUrlForAvailabilityJob(date, jobId))}
         />
       )}
 

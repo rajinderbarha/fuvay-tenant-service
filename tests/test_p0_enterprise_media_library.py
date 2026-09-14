@@ -514,7 +514,18 @@ class TestMediaPage:
 
     def test_signed_preview_used(self):
         src = _frontend("app/admin/media/page.tsx")
-        assert "createSignedPreviewUrl" in src
+        preview = _frontend("lib/open-admin-media-preview.ts")
+        assert "openAdminMediaPreview" in src
+        assert "createSignedPreviewUrl" in preview
+
+    def test_admin_thumbnails_use_the_authenticated_proxy(self):
+        src = _frontend("app/admin/media/page.tsx")
+        client = _frontend("lib/api.ts")
+        router = _backend("engines/media/admin_router.py")
+        assert "fetchAdminThumbnail(asset.id)" in src
+        assert "/thumbnail" in client
+        assert "async def get_media_thumbnail" in router
+        assert "_serve_admin_media(db, actor, media_id, \"thumbnail\")" in router
 
     def test_bulk_archive_ui(self):
         src = _frontend("app/admin/media/page.tsx")
@@ -555,10 +566,11 @@ class TestMediaPage:
         assert "Force delete" not in src
         assert "bypass active-link guard" not in src
 
-    def test_cursor_pagination_is_wired(self):
+    def test_page_pagination_stops_at_the_reported_total(self):
         src = _frontend("app/admin/media/page.tsx")
-        assert "next_cursor" in src
-        assert "cursorHistory" in src
+        assert "page >= totalPages" in src
+        assert "page <= 1" in src
+        assert "cursorHistory" not in src
 
     def test_sort_is_sent_to_backend(self):
         src = _frontend("lib/api.ts")

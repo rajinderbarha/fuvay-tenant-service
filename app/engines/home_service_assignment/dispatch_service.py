@@ -167,6 +167,9 @@ class HomeServiceDispatchProjectionService:
         base_conditions = [
             ServiceJob.tenant_id == tenant_id,
             ServiceJob.status.notin_(list(TERMINAL_STATUSES)),
+            # A closed booking with a stale active job must not return to the
+            # operational queue or disagree with the availability planner.
+            ServiceBooking.status.notin_(list(TERMINAL_STATUSES)),
         ]
         if offering_id:
             base_conditions.append(ServiceJob.offering_id == offering_id)

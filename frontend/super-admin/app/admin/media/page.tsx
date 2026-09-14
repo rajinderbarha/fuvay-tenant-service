@@ -16,6 +16,7 @@ import {
   type MediaAssetAdmin, type MediaSummary, type MediaLinkedRecord, type MediaAuditLog,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
+import { openAdminMediaPreview } from "../../../lib/open-admin-media-preview";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -288,8 +289,10 @@ function SecureThumbnail({ asset, fit = "cover" }: { asset: MediaAssetAdmin; fit
   useEffect(() => {
     let active = true;
     let objectUrl: string | null = null;
-    if (!asset.mime_type?.startsWith("image/") || !asset.preview_url) return;
-    mediaAdminApi.fetchSignedFile(asset.preview_url)
+    setSource(null);
+    setFailed(false);
+    if (!asset.mime_type?.startsWith("image/")) return;
+    mediaAdminApi.fetchAdminThumbnail(asset.id)
       .then((blob) => {
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
@@ -300,7 +303,7 @@ function SecureThumbnail({ asset, fit = "cover" }: { asset: MediaAssetAdmin; fit
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [asset.id, asset.mime_type, asset.preview_url]);
+  }, [asset.id, asset.mime_type]);
 
   if (source) return <img src={source} alt="" style={{ width: "100%", height: "100%", objectFit: fit }} />;
   return (
@@ -328,7 +331,7 @@ function MediaCard({ asset, selected, onSelect, onPreview, onDetail, onArchive, 
       {/* Thumbnail */}
       <div style={{ height: 120, background: isImage ? "#f3f4f6" : `${mColor}12`, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}
         onClick={onDetail}>
-        {isImage && asset.preview_url
+        {isImage
           ? <SecureThumbnail asset={asset} />
           : <div style={{ color: mColor }}>{getMimeIcon(asset.mime_type, 36)}</div>
         }
@@ -417,13 +420,7 @@ function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete
   const { data: links } = useApi(() => mediaAdminApi.getLinkedRecords(asset.id), [asset.id]);
   const { data: logs  } = useApi(() => mediaAdminApi.getAuditLogs(asset.id, 30), [asset.id]);
   const [tab, setTab]   = useState<"info" | "access" | "links" | "audit">("info");
-  const { execute: execPreview } = useAction(async () => {
-    const signed = await mediaAdminApi.createSignedPreviewUrl(asset.id);
-    const blob = await mediaAdminApi.fetchSignedFile(signed.url);
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  });
+  const { execute: execPreview } = useAction(() => openAdminMediaPreview(asset.id));
   const { execute: execDownload } = useAction(async () => {
     const signed = await mediaAdminApi.createSignedDownloadUrl(asset.id);
     const blob = await mediaAdminApi.fetchSignedFile(signed.url);
@@ -462,7 +459,7 @@ function DetailDrawer({ asset, onClose, onArchive, onFlag, onMarkClean, onDelete
         </div>
 
         {/* Preview */}
-        {asset.mime_type?.startsWith("image/") && asset.preview_url && (
+        {asset.mime_type?.startsWith("image/") && (
           <div style={{ padding: "12px 20px", height: 244, borderBottom: "1px solid var(--border)", background: "var(--bg)", display: "grid", placeItems: "center", overflow: "hidden" }}>
             <SecureThumbnail asset={asset} fit="contain" />
           </div>
@@ -726,8 +723,6 @@ export default function MediaLibraryPage() {
   const [tab, setTab]           = useState<TabKey>("all");
   const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [detail, setDetail]     = useState<MediaAssetAdmin | null>(null);
   const [modal, setModal]       = useState<ActiveModal>(null);
@@ -755,7 +750,7 @@ export default function MediaLibraryPage() {
 
   const { data: summary, refetch: reloadSummary } = useApi(() => mediaAdminApi.getSummary(), []);
   const { data: filterOptions } = useApi(() => mediaAdminApi.getFilterOptions(), []);
-  const { data: listData, loading, refetch: reload } = useApi(
+  const { data: listData, loading, error: listError, refetch: reload } = useApi(
     () => {
       const f: Filters = JSON.parse(efKey) as Filters;
       return mediaAdminApi.listMedia({
@@ -769,12 +764,11 @@ export default function MediaLibraryPage() {
         dateFrom: f.dateFrom || undefined,
         dateTo: f.dateTo || undefined,
         sort: f.sort as "newest" | "oldest" | "largest" | "smallest",
-        cursor: cursor || undefined,
         page,
         pageSize,
       });
     },
-    [efKey, cursor, page, pageSize],
+    [efKey, page, pageSize],
   );
 
   const refresh = useCallback(() => { reload(); reloadSummary(); setSelected(new Set()); }, [reload, reloadSummary]);
@@ -782,13 +776,7 @@ export default function MediaLibraryPage() {
   const { execute: execArchive }   = useAction(async (a: MediaAssetAdmin) => { await mediaAdminApi.archiveMedia(a.id); refresh(); });
   const { execute: execRestore }   = useAction(async (a: MediaAssetAdmin) => { await mediaAdminApi.restoreMedia(a.id); refresh(); });
   const { execute: execMarkClean } = useAction(async (a: MediaAssetAdmin) => { await mediaAdminApi.markClean(a.id); refresh(); });
-  const { execute: execPreview }  = useAction(async (a: MediaAssetAdmin) => {
-    const signed = await mediaAdminApi.createSignedPreviewUrl(a.id);
-    const blob = await mediaAdminApi.fetchSignedFile(signed.url);
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  });
+  const { execute: execPreview }  = useAction((a: MediaAssetAdmin) => openAdminMediaPreview(a.id));
   const { execute: execBulkArchive, loading: bulkArchiving } = useAction(async () => {
     await mediaAdminApi.bulkArchive(Array.from(selected));
     refresh();
@@ -816,9 +804,12 @@ export default function MediaLibraryPage() {
     } catch { /* silent */ }
   };
 
-  const items      = (listData?.items ?? []) as Row[];
+  const items      = (loading || listError ? [] : listData?.items ?? []) as Row[];
   const total      = listData?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
+  useEffect(() => {
+    if (!loading && page > Math.max(1, totalPages)) setPage(Math.max(1, totalPages));
+  }, [loading, page, totalPages]);
   const hasActiveFilters = Object.entries(filters).some(([key, value]) => key !== "sort" && Boolean(value));
   const emptyCopy = EMPTY_STATE_COPY[tab];
 
@@ -829,31 +820,24 @@ export default function MediaLibraryPage() {
   const clearAll  = () => setSelected(new Set());
 
   const handleTabChange = (t: TabKey) => {
-    setTab(t); setPage(1); setCursor(null); setCursorHistory([]); clearAll();
+    setTab(t); setPage(1); clearAll();
     setFilters((f) => ({ ...f, fileType: "", status: "", isFlagged: "", dateFrom: "" }));
   };
 
   const applyFilters = (next: Filters) => {
     setFilters(next);
     setPage(1);
-    setCursor(null);
-    setCursorHistory([]);
     clearAll();
   };
 
   const goNext = () => {
-    if (!listData?.next_cursor) return;
-    setCursorHistory((history) => [...history, cursor]);
-    setCursor(listData.next_cursor);
+    if (loading || page >= totalPages) return;
     setPage((value) => value + 1);
     clearAll();
   };
 
   const goPrevious = () => {
-    if (!cursorHistory.length) return;
-    const previous = cursorHistory[cursorHistory.length - 1] ?? null;
-    setCursorHistory((history) => history.slice(0, -1));
-    setCursor(previous);
+    if (loading || page <= 1) return;
     setPage((value) => Math.max(1, value - 1));
     clearAll();
   };
@@ -964,6 +948,7 @@ export default function MediaLibraryPage() {
 
             {/* Results */}
             <Card style={{ padding: "16px 20px" }}>
+              {listError && <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 12, marginBottom: 12, borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger-text)" }}><span>{listError}</span><Btn variant="secondary" size="sm" onClick={reload}>Retry</Btn></div>}
               {/* Row count + select all */}
               {!loading && total > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -979,7 +964,7 @@ export default function MediaLibraryPage() {
               )}
 
               {/* Loading */}
-              {loading && items.length === 0 && (
+              {loading && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
                   {Array.from({ length: 8 }).map((_, i) => (
                     <div key={i} className="skeleton" style={{ height: 180, borderRadius: 10 }} />
@@ -988,7 +973,7 @@ export default function MediaLibraryPage() {
               )}
 
               {/* Empty state */}
-              {!loading && items.length === 0 && (
+              {!loading && !listError && items.length === 0 && (
                 <div style={{ textAlign: "center", padding: "56px 0" }}>
                   <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--surface-sunken)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
                     <HardDrive size={28} style={{ color: "var(--text-tertiary)" }} />
@@ -1033,18 +1018,18 @@ export default function MediaLibraryPage() {
               )}
 
               {/* Pagination */}
-              {(cursorHistory.length > 0 || Boolean(listData?.has_next)) && (
+              {totalPages > 1 && (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)" }}>
                     Rows per page:
                     {[10, 25, 50, 100].map((n) => (
-                      <button key={n} onClick={() => { setPageSize(n); setPage(1); setCursor(null); setCursorHistory([]); }} style={{ padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border)", background: pageSize === n ? "var(--brand)" : "var(--surface)", color: pageSize === n ? "#fff" : "var(--text)", cursor: "pointer", fontSize: 11 }}>{n}</button>
+                      <button key={n} onClick={() => { setPageSize(n); setPage(1); clearAll(); }} style={{ padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border)", background: pageSize === n ? "var(--brand)" : "var(--surface)", color: pageSize === n ? "#fff" : "var(--text)", cursor: "pointer", fontSize: 11 }}>{n}</button>
                     ))}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Page {page}{totalPages > 0 ? ` of ${totalPages.toLocaleString()}` : ""}</span>
-                    <Btn aria-label="Previous page" variant="secondary" size="sm" disabled={!cursorHistory.length} onClick={goPrevious}><ChevronLeft size={13} /></Btn>
-                    <Btn aria-label="Next page" variant="secondary" size="sm" disabled={!listData?.has_next} onClick={goNext}><ChevronRight size={13} /></Btn>
+                    <Btn aria-label="Previous page" variant="secondary" size="sm" disabled={loading || page <= 1} onClick={goPrevious}><ChevronLeft size={13} /></Btn>
+                    <Btn aria-label="Next page" variant="secondary" size="sm" disabled={loading || page >= totalPages} onClick={goNext}><ChevronRight size={13} /></Btn>
                   </div>
                 </div>
               )}

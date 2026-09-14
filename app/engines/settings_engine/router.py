@@ -80,13 +80,17 @@ async def set_plan(plan_type: str, key: str, r: Request,
                     s: SettingsService = Depends(_svc)) -> ApiResponse[dict]:
     body = await r.json()
     return ok(await s.set_plan_setting(plan_type, key, body["value"],
-              body.get("type","string")), _rid(r), ENGINE_ID)
+              body.get("type","string"), body.get("reason")), _rid(r), ENGINE_ID)
 
 @router.delete("/plans/{plan_type}/{key}", response_model=ApiResponse[dict])
 async def delete_plan(plan_type: str, key: str, r: Request,
                        u: UserContext = Depends(require_super_admin),
                        s: SettingsService = Depends(_svc)) -> ApiResponse[dict]:
-    return ok(await s.delete_plan_setting(plan_type, key), _rid(r), ENGINE_ID)
+    try:
+        body = await r.json()
+    except ValueError:
+        body = {}
+    return ok(await s.delete_plan_setting(plan_type, key, body.get("reason")), _rid(r), ENGINE_ID)
 
 # Tenant settings
 @router.get("/tenants/{tenant_id}", response_model=ApiResponse[dict])

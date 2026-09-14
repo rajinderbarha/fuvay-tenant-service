@@ -2,10 +2,62 @@
 import datetime as dt
 import uuid
 from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
 
 import pytest
 
 from app.engines.home_service_assignment import availability_resolver as resolver
+
+
+@pytest.mark.asyncio
+async def test_availability_uses_booking_date_and_excludes_closed_records():
+    tenant_id, staff_id, job_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    day = dt.date(2026, 9, 14)
+    db = MagicMock()
+    result = MagicMock()
+    result.fetchall.return_value = [SimpleNamespace(_mapping={
+        "id": job_id, "job_number": "JOB-NEW", "status": "assigned",
+        "scheduled_time_window": "14:00-16:00", "service_name": "AC Repair",
+    })]
+    db.execute = AsyncMock(return_value=result)
+
+    jobs = await resolver._fetch_assignments(db, tenant_id, staff_id, day)
+
+    assert jobs[0]["job_number"] == "JOB-NEW"
+    query, params = db.execute.await_args.args
+    assert "COALESCE(j.scheduled_date, b.preferred_date)=:d" in query.text
+    assert "COALESCE(j.scheduled_time_window, b.preferred_time_window)" in query.text
+    assert "b.status != ALL" in query.text and "j.status != ALL" in query.text
+    assert "completed" in params["terminal_statuses"]
+
+
+@pytest.mark.asyncio
+async def test_unassigned_bookings_are_returned_without_a_technician_roster():
+    tenant_id, job_id = uuid.uuid4(), uuid.uuid4()
+    day = dt.date(2026, 9, 14)
+    db = MagicMock()
+    count = MagicMock()
+    count.scalar.return_value = 1
+    rows = MagicMock()
+    rows.all.return_value = [SimpleNamespace(
+        id=job_id, job_number="JOB-NEW", status="pending_assignment",
+        scheduled_date=day, time_window="14:00-16:00", service_name="AC Repair",
+    )]
+    db.execute = AsyncMock(side_effect=[count, rows])
+
+    jobs, total = await resolver._fetch_unassigned_week(db, tenant_id, day, day)
+
+    assert total == 1
+    assert jobs == [{
+        "job_id": str(job_id), "job_number": "JOB-NEW",
+        "status": "pending_assignment", "date": "2026-09-14",
+        "time_window": "14:00-16:00", "service_name": "AC Repair",
+    }]
+    for call in db.execute.await_args_list:
+        query = call.args[0].text
+        assert "j.assigned_staff_id IS NULL" in query
+        assert "COALESCE(j.scheduled_date, b.preferred_date) BETWEEN" in query
+        assert "b.status != ALL" in query
 
 
 @pytest.mark.asyncio

@@ -2957,7 +2957,7 @@ export interface MediaQuota { tenant_id: string; used_bytes: number; limit_bytes
 // â”€â”€ Platform Settings types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface PlatformSetting { key: string; value: unknown; description?: string; source: string; updated_at?: string; updated_by?: string; }
 export interface PlatformSettingsList { settings: PlatformSetting[]; }
-export interface PlanSetting { key: string; value: unknown; plan_type: string; }
+export interface PlanSetting { key: string; value: unknown; plan_type: string; type?: string; }
 export interface PlanSettingsList { plan_type: string; settings: PlanSetting[]; }
 export interface ResolvedSetting { key: string; value: unknown; source: string; resolved_for?: string; }
 export interface SettingsAuditEntry { log_id: string; key: string; old_value?: unknown; new_value?: unknown; action: string; actor_id?: string; scope: string; created_at: string; }
@@ -3119,6 +3119,14 @@ export const mediaAdminApi = {
   },
 
   getDetail:        (mediaId: string) => apiFetch<MediaAssetAdmin>(`/v1/admin/media/${mediaId}`),
+  fetchAdminThumbnail: async (mediaId: string) => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/v1/admin/media/${encodeURIComponent(mediaId)}/thumbnail`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: "no-store",
+    });
+    if (!res.ok) throw new ServiceOSError("MEDIA_PREVIEW_FAILED", "Image preview is unavailable.");
+    return res.blob();
+  },
   getLinkedRecords: (mediaId: string) => apiFetch<MediaLinkedRecord[]>(`/v1/admin/media/${mediaId}/linked-records`),
   getAuditLogs:     (mediaId: string, limit = 50) => apiFetch<MediaAuditLog[]>(`/v1/admin/media/${mediaId}/audit-logs?limit=${limit}`),
 
@@ -3282,12 +3290,14 @@ export const platformSettingsApi = {
     apiFetch<PlatformSettingsList>("/v1/settings/platform/bulk",
       { method: "POST", body: JSON.stringify({ settings }) }),
   getPlanSettings: (planType: string) =>
-    apiFetch<PlanSettingsList>(`/v1/settings/plans/${planType}`),
-  setPlanSetting: (planType: string, key: string, value: unknown) =>
-    apiFetch<PlanSetting>(`/v1/settings/plans/${planType}/${key}`,
-      { method: "PUT", body: JSON.stringify({ value }) }),
-  deletePlanSetting: (planType: string, key: string) =>
-    apiFetch<void>(`/v1/settings/plans/${planType}/${key}`, { method: "DELETE" }),
+    apiFetch<PlanSettingsList>(`/v1/settings/plans/${encodeURIComponent(planType)}`),
+  setPlanSetting: (planType: string, key: string, value: unknown, type = "string", reason?: string) =>
+    apiFetch<PlanSetting>(`/v1/settings/plans/${encodeURIComponent(planType)}/${encodeURIComponent(key)}`,
+      { method: "PUT", body: JSON.stringify({ value, type, reason }) }),
+  deletePlanSetting: (planType: string, key: string, reason?: string) =>
+    apiFetch<{ plan_type: string; key: string; deleted: boolean }>(
+      `/v1/settings/plans/${encodeURIComponent(planType)}/${encodeURIComponent(key)}`,
+      { method: "DELETE", body: JSON.stringify({ reason }) }),
   resolve: (key: string, tenantId?: string) => {
     const qs = tenantId ? `?tenant_id=${tenantId}` : "";
     return apiFetch<ResolvedSetting>(`/v1/settings/resolve/${key}${qs}`);
@@ -8749,6 +8759,7 @@ export const settingsAdminApi = {
   createFeatureFlag: (data: {
     flag_key: string; label: string; description?: string; status?: string; rollout_type?: string;
     rollout_percent?: number; category_scope?: string; tenant_scope?: string; owner_module?: string;
+    start_date?: string; end_date?: string;
   }) => apiFetch<FeatureFlag>("/v1/admin/settings/feature-flags", {
     method: "POST", body: JSON.stringify(data),
   }),
@@ -8761,10 +8772,11 @@ export const settingsAdminApi = {
   disableFeatureFlag: (flagId: string) =>
     apiFetch<FeatureFlag>(`/v1/admin/settings/feature-flags/${flagId}/disable`, { method: "POST" }),
 
-  getAuditLogs: (params?: { key?: string; tenant_id?: string; limit?: number }) => {
+  getAuditLogs: (params?: { key?: string; tenant_id?: string; limit?: number; cursor?: string }) => {
     const qs = new URLSearchParams();
     if (params?.key) qs.set("key", params.key);
     if (params?.tenant_id) qs.set("tenant_id", params.tenant_id);
+    if (params?.cursor) qs.set("cursor", params.cursor);
     qs.set("limit", String(params?.limit ?? 50));
     return apiFetch<{ logs: SettingAuditLogRow[]; has_next: boolean; next_cursor: string | null }>(
       `/v1/admin/settings/audit-logs?${qs.toString()}`);
@@ -10641,7 +10653,7 @@ export interface SupportServiceStatus {
 export const supportAdminApi = {
   queue: (params?: {
     search?: string; tenant_id?: string; category?: string; status?: string; priority?: string;
-    limit?: number; offset?: number;
+    assignee?: string; limit?: number; offset?: number;
   }) => {
     const qs = params
       ? `?${new URLSearchParams(
@@ -10686,6 +10698,9 @@ export const supportAdminApi = {
 
   listIncidents: () =>
     apiFetch<{ items: SupportIncidentRow[]; statuses?: SupportServiceStatus[] }>("/v1/admin/support/incidents"),
+
+  getStatus: () =>
+    apiFetch<SupportServiceStatus>("/v1/admin/support/status"),
 
   createIncident: (payload: { title: string; description?: string; severity?: string; components?: string[] }) =>
     apiFetch<SupportIncidentRow>("/v1/admin/support/incidents", {

@@ -10,8 +10,8 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -163,6 +163,76 @@ async def create_signed_download_url(
     u: UserContext = Depends(require_super_admin),
 ):
     return ok(await svc.create_signed_download_url(media_id), _rid(r))
+
+
+async def _serve_admin_media(db: AsyncSession, actor: UserContext, media_id: uuid.UUID, purpose: str):
+    """Serve protected media through the API so browser previews avoid CDN CORS redirects."""
+    from app.engines.media.asset_service import MediaAssetService
+    from app.engines.media.models import MediaAsset
+    from sqlalchemy import select
+
+    asset = (await db.execute(select(MediaAsset).where(
+        MediaAsset.id == media_id, MediaAsset.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Media not found.")
+    service = MediaAssetService(db=db, actor=actor)
+    disposition = "inline" if purpose != "download" else "attachment"
+    if asset.storage_driver == "local":
+        path, mime_type = await service.get_local_file_for_serve(media_id)
+        return FileResponse(
+            str(path), media_type=mime_type or "application/octet-stream",
+            headers={"Content-Disposition": f'{disposition}; filename="{asset.file_name_original}"',
+                     "Cache-Control": "private, no-store"},
+        )
+
+    delivery_url, mime_type = await service.get_remote_url_for_serve(media_id)
+    if not delivery_url.startswith("https://res.cloudinary.com/"):
+        return RedirectResponse(url=delivery_url, status_code=302)
+
+    import httpx
+    client = httpx.AsyncClient(timeout=30.0, follow_redirects=False)
+    try:
+        response = await client.send(client.build_request("GET", delivery_url), stream=True)
+        if response.status_code != 200:
+            await response.aclose()
+            await client.aclose()
+            raise HTTPException(status_code=404, detail="Media file not available.")
+    except Exception:
+        await client.aclose()
+        raise
+
+    async def content():
+        try:
+            async for chunk in response.aiter_bytes():
+                yield chunk
+        finally:
+            await response.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        content(), media_type=mime_type or "application/octet-stream",
+        headers={"Content-Disposition": f'{disposition}; filename="{asset.file_name_original}"',
+                 "Cache-Control": "private, no-store"},
+    )
+
+
+@router.get("/{media_id}/thumbnail", summary="Authenticated admin image thumbnail")
+async def get_media_thumbnail(
+    media_id: uuid.UUID,
+    db: AsyncSession = Depends(get_async_session),
+    actor: UserContext = Depends(require_super_admin),
+):
+    from app.engines.media.models import MediaAsset
+    from sqlalchemy import select
+
+    asset = (await db.execute(select(MediaAsset).where(
+        MediaAsset.id == media_id, MediaAsset.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not asset or not asset.mime_type.startswith("image/"):
+        raise HTTPException(status_code=404, detail="Image not found.")
+    await MediaLibraryAdminService(db, actor)._log_audit(media_id, "admin_thumbnail_accessed")
+    return await _serve_admin_media(db, actor, media_id, "thumbnail")
 
 
 # ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -329,9 +399,6 @@ async def resolve_signed_media(
     authenticated (the token proves which file, not who can access anything).
     """
     from app.engines.media.admin_service import MediaLibraryAdminService
-    from app.engines.media.asset_service import MediaAssetService
-    from app.engines.media.models import MediaAsset
-    from sqlalchemy import select
     import uuid as _uuid
 
     svc = MediaLibraryAdminService(db, u)
@@ -340,32 +407,6 @@ async def resolve_signed_media(
     media_id = _uuid.UUID(info["media_id"])
     purpose = info["purpose"]
 
-    asset_r = await db.execute(select(MediaAsset).where(MediaAsset.id == media_id))
-    asset = asset_r.scalar_one_or_none()
-    if not asset:
-        from app.exceptions import NotFoundException
-        raise NotFoundException("MediaAsset", str(media_id))
-
     await svc._log_audit(media_id, f"signed_{purpose}_accessed",
                          {"token": token[:12] + "...", "purpose": purpose})
-
-    # Resolve through the canonical media service so private Cloudinary files
-    # can be served from their protected storage key after the admin access
-    # check.  Private uploads intentionally do not persist ``public_url``;
-    # requiring that field made every provider document preview return 404.
-    asset_service = MediaAssetService(db=db, actor=u)
-    if asset.storage_driver == "local":
-        from fastapi.responses import FileResponse
-        path, mime_type = await asset_service.get_local_file_for_serve(media_id)
-        content_disposition = "inline" if purpose == "preview" else "attachment"
-        return FileResponse(
-            path=str(path),
-            media_type=mime_type or "application/octet-stream",
-            headers={
-                "Content-Disposition": f'{content_disposition}; filename="{asset.file_name_original}"'
-            },
-        )
-
-    from fastapi.responses import RedirectResponse
-    delivery_url, _ = await asset_service.get_remote_url_for_serve(media_id)
-    return RedirectResponse(url=delivery_url, status_code=302)
+    return await _serve_admin_media(db, u, media_id, purpose)

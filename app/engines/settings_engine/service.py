@@ -295,7 +295,9 @@ class SettingsService:
                 "settings": [{"key": s.key, "value": self._unwrap(s), "type": s.setting_type}
                              for s in items]}
 
-    async def set_plan_setting(self, plan_type: str, key: str, value: Any, setting_type: str) -> dict:
+    async def set_plan_setting(self, plan_type: str, key: str, value: Any, setting_type: str,
+                               reason: str | None = None) -> dict:
+        self._validate_value_type(value, setting_type)
         r = await self.db.execute(select(PlanSetting).where(
             PlanSetting.plan_type == plan_type, PlanSetting.key == key))
         existing = r.scalar_one_or_none()
@@ -305,16 +307,18 @@ class SettingsService:
         else:
             self.db.add(PlanSetting(plan_type=plan_type, key=key, value={"v": value},
                 setting_type=setting_type, set_by=self.actor_id))
-        await self._audit(SettingTier.PLAN, key, old, value)
+        await self._audit(SettingTier.PLAN, key, old, value, reason=reason)
         await self._invalidate(key)
         return {"plan_type": plan_type, "key": key, "value": value}
 
-    async def delete_plan_setting(self, plan_type: str, key: str) -> dict:
+    async def delete_plan_setting(self, plan_type: str, key: str, reason: str | None = None) -> dict:
         r = await self.db.execute(select(PlanSetting).where(
             PlanSetting.plan_type == plan_type, PlanSetting.key == key))
         s = r.scalar_one_or_none()
         if not s: raise NotFoundException("PlanSetting", f"{plan_type}:{key}")
+        old_value = self._unwrap(s)
         await self.db.delete(s)
+        await self._audit(SettingTier.PLAN, key, old_value, None, reason=reason)
         await self._invalidate(key)
         return {"plan_type": plan_type, "key": key, "deleted": True}
 
@@ -590,30 +594,75 @@ class SettingsService:
         r = await self.db.execute(select(FeatureFlag).order_by(FeatureFlag.flag_key))
         return {"flags": [f.to_dict() for f in r.scalars().all()]}
 
+    @staticmethod
+    def _validate_feature_flag(data: dict) -> None:
+        rollout_type = data.get("rollout_type", "global")
+        if rollout_type not in {"global", "percentage", "category", "tenant"}:
+            raise ServiceOSException("VALIDATION_ERROR", "Unsupported feature-flag rollout strategy.")
+        if rollout_type == "percentage":
+            percentage = data.get("rollout_percent")
+            if percentage is None or percentage < 0 or percentage > 100:
+                raise ServiceOSException("VALIDATION_ERROR", "Rollout percentage must be between 0 and 100.")
+        if rollout_type == "category" and not data.get("category_scope"):
+            raise ServiceOSException("VALIDATION_ERROR", "Category scope is required for a category rollout.")
+        if rollout_type == "tenant" and not data.get("tenant_scope"):
+            raise ServiceOSException("VALIDATION_ERROR", "Tenant scope is required for a tenant rollout.")
+        if data.get("start_date") and data.get("end_date") and data["end_date"] <= data["start_date"]:
+            raise ServiceOSException("VALIDATION_ERROR", "Feature-flag end date must be after its start date.")
+
     async def create_feature_flag(self, data: dict) -> dict:
+        self._validate_feature_flag(data)
         flag = FeatureFlag(
             flag_key=data["flag_key"], label=data["label"], description=data.get("description"),
             status=data.get("status", "disabled"), rollout_type=data.get("rollout_type", "global"),
             rollout_percent=data.get("rollout_percent"), category_scope=data.get("category_scope"),
-            tenant_scope=data.get("tenant_scope"), owner_module=data.get("owner_module"),
+            tenant_scope=data.get("tenant_scope"), start_date=data.get("start_date"),
+            end_date=data.get("end_date"), owner_module=data.get("owner_module"),
         )
         self.db.add(flag)
         await self.db.flush()
+        await self._audit(
+            SettingTier.PLATFORM, f"feature_flag.{flag.flag_key}", None, flag.to_dict(),
+            reason="Feature flag created", action_type="feature_flag_created",
+        )
         return flag.to_dict()
 
     async def update_feature_flag(self, flag_id: uuid.UUID, data: dict) -> dict:
         r = await self.db.execute(select(FeatureFlag).where(FeatureFlag.id == flag_id))
         flag = r.scalar_one_or_none()
         if not flag: raise NotFoundException("FeatureFlag", str(flag_id))
+        old_value = flag.to_dict()
+        effective = {
+            "rollout_type": flag.rollout_type,
+            "rollout_percent": flag.rollout_percent,
+            "category_scope": flag.category_scope,
+            "tenant_scope": flag.tenant_scope,
+            "start_date": flag.start_date,
+            "end_date": flag.end_date,
+            **data,
+        }
+        self._validate_feature_flag(effective)
         for field in ("label", "description", "status", "rollout_type", "rollout_percent",
-                      "category_scope", "owner_module"):
-            if field in data and data[field] is not None:
+                      "category_scope", "tenant_scope", "start_date", "end_date", "owner_module"):
+            if field in data and (data[field] is not None or field in {
+                "description", "rollout_percent", "category_scope", "tenant_scope", "owner_module",
+                "start_date", "end_date",
+            }):
                 setattr(flag, field, data[field])
+        await self._audit(
+            SettingTier.PLATFORM, f"feature_flag.{flag.flag_key}", old_value, flag.to_dict(),
+            reason="Feature flag configuration updated", action_type="feature_flag_updated",
+        )
         return flag.to_dict()
 
     async def set_feature_flag_status(self, flag_id: uuid.UUID, status: str) -> dict:
         r = await self.db.execute(select(FeatureFlag).where(FeatureFlag.id == flag_id))
         flag = r.scalar_one_or_none()
         if not flag: raise NotFoundException("FeatureFlag", str(flag_id))
+        old_value = flag.to_dict()
         flag.status = status
+        await self._audit(
+            SettingTier.PLATFORM, f"feature_flag.{flag.flag_key}", old_value, flag.to_dict(),
+            reason=f"Feature flag {status}", action_type=f"feature_flag_{status}",
+        )
         return flag.to_dict()

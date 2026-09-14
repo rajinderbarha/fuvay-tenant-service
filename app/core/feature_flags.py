@@ -6,6 +6,8 @@ must be removed before routers are mounted and before a database session exists.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +26,20 @@ async def _flag_enabled(db: AsyncSession, flag_key: str) -> bool:
     row = await db.scalar(select(FeatureFlag).where(FeatureFlag.flag_key == flag_key))
     if row is None:
         return DEFAULTS[flag_key]
-    return row.status == "enabled"
+    if row.status != "enabled":
+        return False
+    now = datetime.now(timezone.utc)
+    start_date = row.start_date
+    end_date = row.end_date
+    if start_date and start_date.tzinfo is None:
+        start_date = start_date.replace(tzinfo=timezone.utc)
+    if end_date and end_date.tzinfo is None:
+        end_date = end_date.replace(tzinfo=timezone.utc)
+    if start_date and now < start_date:
+        return False
+    if end_date and now >= end_date:
+        return False
+    return True
 
 
 async def get_home_services_pricing_flags(db: AsyncSession) -> dict:

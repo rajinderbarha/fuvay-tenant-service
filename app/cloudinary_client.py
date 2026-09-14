@@ -62,7 +62,12 @@ def build_delivery_url(public_id: str, resource_type: str = "image", cloud_name:
     """
     settings = get_settings()
     cloud_name = cloud_name or settings.CLOUDINARY_CLOUD_NAME
-    return f"https://res.cloudinary.com/{cloud_name}/{resource_type}/upload/{public_id}"
+    suffix = ""
+    if resource_type in {"image", "video"}:
+        filename = public_id.rsplit("/", 1)[-1]
+        if "." in filename:
+            suffix = "." + filename.rsplit(".", 1)[-1]
+    return f"https://res.cloudinary.com/{cloud_name}/{resource_type}/upload/{public_id}{suffix}"
 
 
 async def destroy(public_id: str, resource_type: str = "image", cloud_name: str | None = None,

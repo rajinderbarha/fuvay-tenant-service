@@ -66,10 +66,10 @@ export const PAGE_COPY = {
       emptyDescription: "Customer reviews will appear here once jobs are completed.",
     },
     complaints: {
-      title: "Complaints",
-      description: "Manage customer complaints, disputes, and escalations.",
+      title: "Complaint Oversight",
+      description: "Monitor provider-owned customer complaint SLAs, health impact, and quality trends.",
       emptyTitle: "No open complaints",
-      emptyDescription: "All complaints have been resolved or no complaints have been filed.",
+      emptyDescription: "No provider-owned service complaints currently require monitoring.",
     },
     categories: {
       title: "Service Categories",
