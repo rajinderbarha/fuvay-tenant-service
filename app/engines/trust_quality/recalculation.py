@@ -39,7 +39,7 @@ from app.engines.trust_quality.models import (
     HealthPenaltyRule, HealthScore, RiskRule, RiskScore,
 )
 from app.engines.trust_quality.service import (
-    _JOB_CANCELLED_STATUSES, _JOB_DONE_STATUSES, _TARGET_SOURCE_SQL,
+    _COUNTED_JOB_OUTCOME_SQL, _JOB_CANCELLED_STATUSES, _JOB_DONE_STATUSES, _TARGET_SOURCE_SQL,
     FIXED_BADGE_BY_KEY, FIXED_BADGE_KEYS, _evaluate_operator,
     _is_tenant_verified, calc_health_score,
 )
@@ -242,6 +242,7 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
         f"       count(*) FILTER (WHERE status IN ({done_list})) AS done, "
         f"       count(*) FILTER (WHERE status IN ({cancel_list})) AS cancelled "
         f"FROM service_jobs WHERE {job_col} = ANY(CAST(:ids AS uuid[])) "
+        f"  AND {_COUNTED_JOB_OUTCOME_SQL} "
         f"GROUP BY {job_col}"), {"ids": str_ids})).mappings().all()
     for row in rows:
         t = _key(row["target_key"])

@@ -1142,6 +1142,22 @@ class HomeServiceChatbotBookingService:
         )
 
         if not match or not match.get("signals"):
+            # The customer only ever sees "no service in <ZIP>", whichever gate
+            # excluded the provider (published job type, type/brand coverage,
+            # credits, price, capacity...). Serviceability already passed at
+            # this point, so without the per-provider reason codes a live chat
+            # report cannot be told apart from a genuinely uncovered pincode.
+            logger.warning(
+                "home_service.matching.no_eligible_provider",
+                master_service_id=str(master_service_id),
+                zipcode=zipcode, city=city,
+                job_type_id=str(job_type_id) if job_type_id else None,
+                offering_type_id=str(offering_type_id) if offering_type_id else None,
+                brand_id=str(brand_id) if brand_id else None,
+                draft_id=str(draft_id) if draft_id else None,
+                candidate_count=(match or {}).get("candidate_count", 0),
+                excluded_providers=(match or {}).get("excluded_providers", []),
+            )
             location = f"ZIP code {zipcode}" if zipcode else city
             raise ServiceOSException(
                 ERR_NO_PROVIDER_AVAILABLE,

@@ -37,6 +37,19 @@ _TARGET_SOURCE_SQL: dict[str, str] = {
 _JOB_DONE_STATUSES = ("completed", "invoice_issued", "force_closed")
 _JOB_CANCELLED_STATUSES = ("cancelled", "voided")
 
+# The retired provider-assignment sweep (11-13 Sept 2026) cancelled unassigned
+# jobs itself whenever no replacement provider existed, stamping this
+# failure_reason. That policy was reversed: a missed technician-assignment
+# deadline no longer cancels a job. Those platform closures are neither the
+# provider's nor the customer's outcome, so they leave the job-outcome
+# denominator entirely. Counting them marked providers with no other history
+# 100% cancelled, put them in a non-bookable health band, and made every
+# social booking in their pincode report that no service was available.
+_RETIRED_PLATFORM_CLOSURE_PREFIX = "Closed because no alternative provider"
+_COUNTED_JOB_OUTCOME_SQL = (
+    f"COALESCE(failure_reason, '') NOT LIKE '{_RETIRED_PLATFORM_CLOSURE_PREFIX}%'"
+)
+
 # How much of a formula's total weight must be measurable before its score is
 # trustworthy enough to put a target into a band. See _calc_score.
 _MIN_HEALTH_COVERAGE_PERCENT = 50.0
@@ -1304,7 +1317,8 @@ class TrustQualityService:
 
         counts = dict((await self.db.execute(
             text(f"SELECT status, count(*) AS c FROM service_jobs "
-                 f"WHERE {job_col} = :t GROUP BY status"), {"t": str(target_id)})).all())
+                 f"WHERE {job_col} = :t AND {_COUNTED_JOB_OUTCOME_SQL} "
+                 f"GROUP BY status"), {"t": str(target_id)})).all())
         done = sum(counts.get(s, 0) for s in _JOB_DONE_STATUSES)
         cancelled = sum(counts.get(s, 0) for s in _JOB_CANCELLED_STATUSES)
         terminal = done + cancelled
