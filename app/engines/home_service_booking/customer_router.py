@@ -9,6 +9,7 @@ from typing import Optional
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import require_customer, UserContext
@@ -134,6 +135,34 @@ async def interpret_assistant_bootstrap_text(
     return ok(result, _rid(r), "home_service_booking")
 
 
+class SelectIssueRequest(BaseModel):
+    """Typed body for select-issue.
+
+    This endpoint used to read an unvalidated `await r.json()` and index it
+    directly (`body["category_slug"]`, `body["issue_id"]`), so a request
+    missing either field raised KeyError and surfaced as **500
+    INTERNAL_ERROR** ("An unexpected error occurred. Our team has been
+    notified.") -- a client mistake reported as a server fault, and paging
+    noise for something no amount of server-side fixing can prevent.
+    Reproduced 2026-09-16 by posting `issue_ids` instead of `issue_id`.
+    A malformed `ai_session_id`/`master_service_id` took the same path
+    through `uuid.UUID(...)`'s ValueError.
+
+    Extra keys are deliberately still ignored rather than rejected: other
+    callers (the messaging gateway flow) post supersets of this body, and
+    tightening that is a separate decision from fixing the 500.
+    """
+    category_slug: str
+    issue_id: str
+    zipcode: str | None = None
+    ai_session_id: uuid.UUID | None = None
+    additional_issue_ids: list[str] | None = None
+    service_group_slug: str | None = None
+    master_service_id: uuid.UUID | None = None
+    allow_duplicate: bool = False
+    language: str | None = None
+
+
 # ── POST /assistant-bootstrap/select-issue — canonical issue selection ──────
 @assistant_bootstrap_router.post(
     "/assistant-bootstrap/select-issue",
@@ -142,21 +171,21 @@ async def interpret_assistant_bootstrap_text(
 )
 async def select_assistant_bootstrap_issue(
     r: Request,
+    body: SelectIssueRequest,
     svc: HomeServiceChatbotBookingService = Depends(_svc),
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(require_customer),
 ):
-    body = await r.json()
     customer_id = uuid.UUID(user.user_id)
     result = await svc.select_issue(
         customer_id=customer_id,
-        ai_session_id=uuid.UUID(body["ai_session_id"]) if body.get("ai_session_id") else None,
-        category_slug=body["category_slug"], zipcode=body.get("zipcode"),
-        issue_id=body["issue_id"],
-        additional_issue_ids=body.get("additional_issue_ids"),
-        service_group_slug=body.get("service_group_slug"),
-        master_service_id=(uuid.UUID(body["master_service_id"]) if body.get("master_service_id") else None),
-        allow_duplicate=body.get("allow_duplicate") is True,
+        ai_session_id=body.ai_session_id,
+        category_slug=body.category_slug, zipcode=body.zipcode,
+        issue_id=body.issue_id,
+        additional_issue_ids=body.additional_issue_ids,
+        service_group_slug=body.service_group_slug,
+        master_service_id=body.master_service_id,
+        allow_duplicate=body.allow_duplicate,
     )
     # Real bug fixed here: this endpoint returns the FIRST question of the
     # flow, but presentation was only wired into get_question_flow and
@@ -165,8 +194,8 @@ async def select_assistant_bootstrap_issue(
     # too, using the same validated, fail-closed path.
     from app.engines.home_service_booking.question_presentation_service import present_envelope
     result["envelope"] = await present_envelope(
-        db, result.get("envelope"), body.get("language"),
-        session_id=body.get("ai_session_id"), request_id=_rid(r),
+        db, result.get("envelope"), body.language,
+        session_id=str(body.ai_session_id) if body.ai_session_id else None, request_id=_rid(r),
     )
     return ok(result, _rid(r), "home_service_booking")
 
