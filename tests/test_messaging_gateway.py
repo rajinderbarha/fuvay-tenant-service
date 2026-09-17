@@ -1560,6 +1560,152 @@ async def test_staging_instagram_same_phone_keeps_different_senders_separate(mon
 
 
 @pytest.mark.asyncio
+async def test_staging_instagram_sender_can_book_with_a_new_number(monkeypatch):
+    """The number typed in chat is contact detail, not identity.
+
+    An Instagram chat is not pinned to the first number it ever sent: the same
+    sender books for a family member, or corrects a typo, and the booking goes
+    through against the same sender-scoped account with the new number.
+    """
+    from app.config import get_settings
+    from app.engines.ai_conversation import backend_tools
+    from app.engines.auth.models import User
+    from app.engines.home_service_booking import service as booking_service_module
+    from app.engines.final_records import creation_service as creation_service_module
+
+    def _hash(number):
+        return hmac.new(
+            get_settings().SECRET_KEY.encode(),
+            f"instagram-test-phone:{number}".encode(), hashlib.sha256,
+        ).hexdigest()
+
+    new_phone = "+919876543210"
+    sender_user = User(
+        id=uuid.uuid4(), email="customer_ig_sender@serviceos.internal",
+        role="customer", is_active=True, phone=None,
+        meta={"registration_source": "instagram_booking_dev",
+              "instagram_test_phone_hash": _hash("+919876500000")},
+    )
+    draft_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    draft = SimpleNamespace(
+        customer_id=None, customer_phone=new_phone, customer_name="Instagram QA",
+        city="Bassi Pathana", zipcode="140412",
+        address_snapshot={"address_line_1": "House 4, Main Road"},
+    )
+    session = SimpleNamespace(customer_id=None)
+
+    class Result:
+        def scalars(self):
+            return self
+
+        def first(self):
+            return sender_user
+
+    class DB:
+        def __init__(self):
+            self.added = []
+
+        async def get(self, model, row_id):
+            if model.__name__ == "HomeServiceBookingDraft":
+                return draft
+            if model.__name__ == "AIConversationSession":
+                return session
+            return None
+
+        async def execute(self, query):
+            return Result()
+
+        def add(self, row):
+            self.added.append(row)
+
+        async def flush(self):
+            pass
+
+        async def commit(self):
+            pass
+
+    booking_service = SimpleNamespace(
+        get_booking_draft=AsyncMock(return_value={"status": "provider_matched"}),
+        mark_ready_for_confirmation=AsyncMock(),
+    )
+
+    class Finalizer:
+        def __init__(self, db):
+            pass
+
+        async def finalize(self, **kwargs):
+            return {"booking_number": "BK-TEST"}
+
+    monkeypatch.setattr(backend_tools, "instagram_phone_bypass_enabled", lambda channel: True)
+    monkeypatch.setattr(booking_service_module, "HomeServiceChatbotBookingService", lambda db: booking_service)
+    monkeypatch.setattr(creation_service_module, "HomeServiceFinalCreationService", Finalizer)
+
+    db = DB()
+    executor = BackendToolExecutor(
+        db, customer_id=None, session_id=str(session_id),
+        channel="instagram", channel_user_id="ig-returning-sender",
+        instagram_username="gameland",
+    )
+    result = await executor._tool_confirm_home_service_booking(str(draft_id), "CONFIRM BOOKING")
+
+    assert result["confirmed"] is True
+    # Reused, not duplicated: the sender still owns exactly one account.
+    assert db.added == []
+    assert draft.customer_id == sender_user.id
+    assert session.customer_id == sender_user.id
+    assert sender_user.meta["instagram_test_phone_hash"] == _hash(new_phone)
+    # A bypassed number is still never promoted to a verified one.
+    assert sender_user.phone is None
+
+
+@pytest.mark.asyncio
+async def test_instagram_test_phone_can_be_corrected_before_confirming(monkeypatch):
+    """The last step before the summary is where a mistyped number shows up."""
+    from app.engines.messaging_gateway import flow
+
+    thread = SimpleNamespace(
+        channel="instagram", customer_id=None, pending_phone_ciphertext=None,
+        zipcode="140412", city="Bassi Pathana",
+    )
+    draft = {
+        "id": str(uuid.uuid4()), "preferred_date": "2026-09-13",
+        "preferred_time_window": "09:00-11:00",
+        "customer_phone": "+919876500000",
+        "address_snapshot": {"address_line_1": "House 4, Main Road"},
+    }
+    corrected = {**draft, "customer_phone": "+919876543210"}
+    executor = SimpleNamespace(
+        _tool_update_home_service_draft=AsyncMock(return_value={"updated": True}),
+    )
+    identity = SimpleNamespace(stage_phone_verification=AsyncMock())
+    monkeypatch.setattr(flow, "instagram_phone_bypass_enabled", lambda channel: True)
+    monkeypatch.setattr(flow, "_draft", AsyncMock(return_value=corrected))
+
+    note, result = await flow._apply_text(
+        None, thread, executor, "sorry, use 9876543210", draft, identity=identity,
+    )
+
+    assert note is None
+    assert result["customer_phone"] == "+919876543210"
+    executor._tool_update_home_service_draft.assert_awaited_once_with(
+        draft_id=draft["id"], customer_phone="+919876543210",
+    )
+    identity.stage_phone_verification.assert_not_awaited()
+
+    # The confirmation phrase carries no digits, so it still falls straight
+    # through to the confirm step instead of being read as a number.
+    executor._tool_update_home_service_draft.reset_mock()
+    note, result = await flow._apply_text(
+        None, thread, executor, "CONFIRM BOOKING", corrected, identity=identity,
+    )
+
+    assert note is None
+    assert result["customer_phone"] == "+919876543210"
+    executor._tool_update_home_service_draft.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_social_confirmation_returns_an_actionable_rate_limit_message(monkeypatch):
     """An expected safety rejection must not masquerade as a broken button."""
     from types import SimpleNamespace

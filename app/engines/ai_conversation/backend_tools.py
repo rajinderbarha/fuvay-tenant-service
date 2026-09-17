@@ -946,29 +946,22 @@ class BackendToolExecutor:
                 # temporary Instagram test mode.  It therefore cannot be used
                 # to merge two different Instagram senders into one customer;
                 # doing so exposed one account's name and bookings in another
-                # account.  Reuse is sender-scoped through synthetic_email.
-                current_identity_matches = bool(
-                    current_user
-                    and (current_user.meta or {}).get("instagram_identity_hash")
-                    == identity_hash
-                )
-                for existing_user in (
-                    current_user if current_identity_matches else None,
-                    sender_user,
-                ):
-                    if existing_user and (existing_user.meta or {}).get("registration_source") == "instagram_booking_dev":
-                        old_hash = (existing_user.meta or {}).get("instagram_test_phone_hash")
-                        if old_hash and old_hash != phone_hash:
-                            return {
-                                "confirmed": False,
-                                "error": "This Instagram chat has used a different number. Contact support to change it.",
-                            }
+                # account.  Reuse is sender-scoped through synthetic_email, and
+                # that -- not the number -- is what keeps senders apart.
+                #
+                # So the number typed in chat is a CONTACT number for this one
+                # booking, never an identity: nothing looks an account up by
+                # it, and finalization only copies it onto the booking
+                # snapshot.  Rejecting a sender whose earlier booking used a
+                # different number therefore guarded nothing and permanently
+                # pinned each Instagram chat to the first number it ever sent,
+                # so booking for a family member -- or correcting a typo --
+                # dead-ended on "Contact support".  Record the new number
+                # against the same sender-scoped account instead.
                 if current_user and (current_user.meta or {}).get("registration_source") != "instagram_booking_dev":
-                    if current_user.phone and current_user.phone != phone:
-                        return {
-                            "confirmed": False,
-                            "error": "This chat is linked to a different verified number. Contact support to change it.",
-                        }
+                    # A genuinely verified account keeps its own verified
+                    # `users.phone` untouched; only this booking's contact
+                    # number differs, and the draft already carries that.
                     user = current_user
                 else:
                     user = sender_user

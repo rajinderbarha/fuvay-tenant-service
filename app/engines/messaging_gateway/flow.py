@@ -1015,10 +1015,18 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
         # the booking is otherwise complete, so nothing typed here can still
         # be an address or a pincode, and this branch cannot swallow them.
         if instagram_phone_bypass_enabled(thread.channel):
-            if draft.get("customer_phone"):
-                return None, draft
             number = _indian_mobile(digits)
-            if not number:
+            if draft.get("customer_phone"):
+                # A number already on the draft is not frozen. This is the
+                # last step before the summary, so a typo is only ever
+                # noticed here, and the number is a contact detail rather
+                # than an identity -- nothing is verified against it. A
+                # fresh, valid mobile replaces it; anything else (CONFIRM
+                # BOOKING, a duplicate yes/no) falls through to the confirm
+                # step untouched rather than drawing BAD_PHONE.
+                if not number or number == draft.get("customer_phone"):
+                    return None, draft
+            elif not number:
                 return (BAD_PHONE if digits else None), draft
             result = await executor._tool_update_home_service_draft(
                 draft_id=str(draft["id"]), customer_phone=number,
