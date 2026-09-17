@@ -1563,7 +1563,10 @@ class MessagingGatewayService:
         from app.engines.quote_checklist.constants import QS_SENT_TO_CUSTOMER
         from app.engines.quote_checklist.models import ServiceJobQuote
 
-        from app.engines.admin_catalog.models import MasterService, ServiceCategory
+        from app.engines.admin_catalog.models import (
+            MasterIssueType, MasterService, ServiceCategory,
+        )
+        from app.engines.messaging_gateway.problem_cards import problem_card_image
 
         # The selected problem is what distinguishes bookings within the same
         # service (for example "AC not cooling" and "Remote control problem").
@@ -1573,6 +1576,9 @@ class MessagingGatewayService:
             select(
                 ServiceBooking,
                 MasterService.service_name,
+                MasterIssueType.name,
+                MasterIssueType.image_url,
+                MasterIssueType.icon_url,
                 MasterService.image_url,
                 MasterService.icon_url,
                 ServiceCategory.image_url,
@@ -1581,6 +1587,9 @@ class MessagingGatewayService:
                 ServiceJobQuote.status,
             )
             .join(MasterService, MasterService.id == ServiceBooking.offering_id,
+                  isouter=True)
+            .join(MasterIssueType,
+                  MasterIssueType.id == ServiceBooking.selected_problem_id,
                   isouter=True)
             .join(ServiceCategory, ServiceCategory.id == ServiceBooking.category_id,
                   isouter=True)
@@ -1597,14 +1606,19 @@ class MessagingGatewayService:
             .order_by(ServiceBooking.created_at.desc())
             .limit(10)
         )).all()
-        return [
-            {
+        def _public(*values):
+            """The first genuinely fetchable URL — Meta silently drops the rest."""
+            return next((
+                str(value).strip() for value in values
+                if str(value or "").strip().startswith("https://")
+            ), None)
+
+        def _row(booking, problem, service_name, problem_image, problem_icon,
+                 service_image, service_icon, category_image, category_icon,
+                 job_status, quote_status):
+            return {
                 "number": booking.booking_number,
-                "service": (
-                    str(getattr(booking, "issue_summary", None) or "").strip()
-                    or service_name
-                    or booking.booking_number
-                ),
+                "service": problem or service_name or booking.booking_number,
                 "status": (
                     "Awaiting Approval"
                     if quote_status == QS_SENT_TO_CUSTOMER
@@ -1614,15 +1628,38 @@ class MessagingGatewayService:
                 # by when the technician is due.
                 "when": (booking.preferred_date.strftime("%a %d %b")
                          if booking.preferred_date else None),
-                "image_url": next((
-                    str(value).strip() for value in (
-                        service_image, service_icon, category_image, category_icon,
-                    ) if str(value or "").strip().startswith("https://")
-                ), None),
+                # Keyed on the PROBLEM, not the service. Service and category
+                # artwork is per-catalog-row, so every open AC booking drew the
+                # same picture and the cards were told apart only by their
+                # subtitles -- the one thing a customer scanning a carousel
+                # does not read. The problem is already what the title says, so
+                # the picture follows it: the admin's own problem artwork
+                # first, then the generated family card the customer saw when
+                # they PICKED that problem during booking. Service and category
+                # artwork still covers a booking that named no problem at all.
+                "image_url": (
+                    _public(problem_image, problem_icon)
+                    or (problem_card_image(problem) if problem else None)
+                    or _public(service_image, service_icon,
+                               category_image, category_icon)
+                ),
             }
+
+        return [
+            _row(
+                booking,
+                # The snapshot taken at booking time wins: renaming a problem
+                # in the catalog must not retitle bookings already placed.
+                str(getattr(booking, "issue_summary", None) or problem_name
+                    or "").strip(),
+                service_name, problem_image, problem_icon,
+                service_image, service_icon, category_image, category_icon,
+                job_status, quote_status,
+            )
             for (
-                booking, service_name, service_image, service_icon,
-                category_image, category_icon, job_status, quote_status,
+                booking, service_name, problem_name, problem_image, problem_icon,
+                service_image, service_icon, category_image, category_icon,
+                job_status, quote_status,
             ) in rows
         ]
 

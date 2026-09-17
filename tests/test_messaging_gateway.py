@@ -2073,8 +2073,9 @@ async def test_live_booking_list_labels_a_sent_quote_as_awaiting_approval():
         preferred_date=date(2026, 9, 12), issue_summary="AC not cooling",
     )
     result = SimpleNamespace(all=lambda: [(
-        booking, "AC Repair", "https://cdn.example/ac.jpg", None,
-        None, None, "quote_required", "sent_to_customer",
+        booking, "AC Repair", "AC not cooling", None, None,
+        "https://cdn.example/ac.jpg", None, None, None,
+        "quote_required", "sent_to_customer",
     )])
     db = SimpleNamespace(execute=AsyncMock(return_value=result))
     thread = SimpleNamespace(customer_id=uuid.uuid4())
@@ -2084,6 +2085,71 @@ async def test_live_booking_list_labels_a_sent_quote_as_awaiting_approval():
     assert rows[0]["number"] == "BK-APPROVAL"
     assert rows[0]["service"] == "AC not cooling"
     assert rows[0]["status"] == "Awaiting Approval"
+
+
+@pytest.mark.asyncio
+async def test_live_booking_rows_show_the_problem_image_not_one_shared_service_image():
+    """Two open bookings for one service must not show the same picture.
+
+    Service and category artwork is per catalog row, so every open AC booking
+    drew the identical card and only the subtitle -- the one thing a customer
+    scanning a carousel does not read -- told them apart.
+    """
+    from app.engines.messaging_gateway.service import MessagingGatewayService
+    from app.engines.messaging_gateway.problem_cards import problem_card_image
+
+    service_image = "https://cdn.example/ac-service.jpg"
+    cooling = SimpleNamespace(
+        booking_number="BK-COOL", status="assigned",
+        preferred_date=date(2026, 9, 12), issue_summary="AC not cooling",
+    )
+    noise = SimpleNamespace(
+        booking_number="BK-NOISE", status="assigned",
+        preferred_date=date(2026, 9, 13), issue_summary="Loud noise from unit",
+    )
+    result = SimpleNamespace(all=lambda: [
+        # The admin uploaded artwork against this problem.
+        (cooling, "AC Repair", "AC not cooling",
+         "https://cdn.example/problem-cooling.jpg", None,
+         service_image, None, None, None, "assigned", None),
+        # This one has none, so it falls back to the generated family card --
+        # the same one the customer saw when they picked the problem.
+        (noise, "AC Repair", "Loud noise from unit", None, None,
+         service_image, None, None, None, "assigned", None),
+    ])
+    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+    thread = SimpleNamespace(customer_id=uuid.uuid4())
+
+    rows = await MessagingGatewayService(db).live_bookings(thread)
+
+    assert rows[0]["image_url"] == "https://cdn.example/problem-cooling.jpg"
+    assert rows[1]["image_url"] == problem_card_image("Loud noise from unit")
+    assert rows[0]["image_url"] != rows[1]["image_url"]
+    # Neither row falls back to the single shared service picture.
+    assert service_image not in {row["image_url"] for row in rows}
+
+
+@pytest.mark.asyncio
+async def test_live_booking_without_a_problem_keeps_the_service_artwork():
+    """A booking that named no problem has nothing more specific to show."""
+    from app.engines.messaging_gateway.service import MessagingGatewayService
+
+    booking = SimpleNamespace(
+        booking_number="BK-OLD", status="assigned",
+        preferred_date=None, issue_summary=None,
+    )
+    result = SimpleNamespace(all=lambda: [(
+        booking, "AC Repair", None, None, None,
+        "https://cdn.example/ac-service.jpg", None, None, None,
+        "assigned", None,
+    )])
+    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+    thread = SimpleNamespace(customer_id=uuid.uuid4())
+
+    rows = await MessagingGatewayService(db).live_bookings(thread)
+
+    assert rows[0]["service"] == "AC Repair"
+    assert rows[0]["image_url"] == "https://cdn.example/ac-service.jpg"
 
 
 @pytest.mark.asyncio
