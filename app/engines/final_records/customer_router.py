@@ -26,6 +26,7 @@ from app.engines.final_records.models import (
     ServiceBooking, ServiceJob, CoachingAppointment, RealEstateLead,
 )
 from app.engines.final_records.constants import ERR_BOOKING_NOT_FOUND, ERR_ACCESS_DENIED
+from app.engines.execution.constants import TERMINAL_JOB_STATUSES
 from app.engines.final_records.bookings_jobs_stage_mapping import map_job_status
 from app.engines.home_service_assignment.staff_model import ProviderTeamMember
 from app.exceptions import ServiceOSException
@@ -148,7 +149,12 @@ async def get_activity_summary(
 #: `accepted`/`assigned`/`on_the_way` -- is still ACTIVE for grouping: an
 #: in-progress job is not a finished one. Mirrors the customer app's own
 #: `TERMINAL_BOOKING_STATUSES` so both sides group identically.
-_TERMINAL_BOOKING_STATUSES = ("completed", "cancelled")
+# `service_bookings.status` mirrors the JOB status, so every terminal job
+# status can land here. Listing only completed/cancelled meant a booking that
+# was force-closed, voided, failed, or closed because the customer declined
+# the estimate stayed in the customer's "Active" tab for good -- and inflated
+# the active count beside it. Confirmed live on BK-20260912-000005.
+_TERMINAL_BOOKING_STATUSES = tuple(sorted(TERMINAL_JOB_STATUSES))
 
 
 # ── GET /bookings ─────────────────────────────────────────────────────────────

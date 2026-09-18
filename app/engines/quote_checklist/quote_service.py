@@ -33,6 +33,7 @@ from app.engines.quote_checklist.models import (
     ServiceJobQuote, ServiceJobQuoteItem, ServiceJobQuoteEvent,
 )
 from app.engines.final_records.models import ServiceJob
+from app.engines.final_records.booking_job_sync import sync_booking_of_job
 from app.engines.execution.constants import (
     JS_QUOTE_REQUIRED, JS_CLOSED_ESTIMATE_DECLINED, JOB_TRANSITIONS,
 )
@@ -185,6 +186,12 @@ class ServiceJobQuoteService:
             .where(ServiceJob.id == job_id)
             .values(status=new_status, updated_at=_utcnow())
         )
+        # The booking mirrors the job. Without this the quote engine moved the
+        # job to quote_required / closed_estimate_declined and left the
+        # customer-facing booking on its previous status permanently -- the
+        # chat bot then kept offering a closed booking under "Track my
+        # booking". Confirmed live on BK-20260912-000005.
+        await sync_booking_of_job(db, job_id, new_status)
 
     async def _customer_dict(self, db: AsyncSession, q: ServiceJobQuote) -> dict:
         """Slice 2F-16A: customer_approve/reject/request_revision previously

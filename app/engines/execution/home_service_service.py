@@ -377,6 +377,40 @@ class HomeServiceJobExecutionService:
         metadata: dict | None = None,
     ) -> None:
         old = job.status
+        # Serialize concurrent transitions on THIS job before validating one.
+        #
+        # `_get_job` reads without a lock, so the guard below was a plain
+        # read-modify-write: two requests arriving together -- a double tap, or
+        # the mobile app retrying a request that actually succeeded after its
+        # socket timed out -- both read the same `old`, both passed the
+        # transition check, and both wrote. That produced duplicate execution
+        # events and ran every side effect twice, including the ones that
+        # charge a fee.
+        #
+        # Taking the row lock here makes the check and the write atomic: the
+        # lock is held for the rest of the transaction, so the loser blocks
+        # until the winner commits, then sees the new status and is rejected
+        # with a 409 instead of silently double-applying. This mirrors the
+        # optimistic check `admin_job_actions` already performs.
+        from app.engines.final_records.models import ServiceJob as _ServiceJob
+
+        locked_status = await db.scalar(
+            select(_ServiceJob.status).where(_ServiceJob.id == job.id).with_for_update()
+        )
+        if locked_status is None:
+            raise ServiceOSException(ERR_RECORD_NOT_FOUND, "Job not found.", status_code=404)
+        if locked_status != old:
+            raise ServiceOSException(
+                "JOB_STATUS_CONFLICT",
+                f"Job status changed since it was read (now '{locked_status}'). "
+                "Reload the job and try again.",
+                status_code=409,
+            )
+        # Re-applying the status the job already holds is a no-op, not a
+        # transition: a retry of a request that succeeded must not log a second
+        # event or fire the side effects again.
+        if old == new_status:
+            return
         # Every job status change in the home-services pipeline funnels through
         # here, so this is where the job's own workflow gets its say. It can only
         # narrow the platform graph, and stays silent unless the job's workflow

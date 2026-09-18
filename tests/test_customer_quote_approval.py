@@ -44,12 +44,14 @@ def _get_quote_db(quote, items=None):
 def _decision_db(quote, items=None, job_status=JS_QUOTE_REQUIRED):
     """Mock matching `customer_approve`/`customer_reject`'s exact call
     order (successful path): fetch quote, UPDATE quote, fetch job status
-    (sync), UPDATE job, fetch items (for `_customer_dict`)."""
+    (sync), UPDATE job, UPDATE booking (mirror the new job status onto the
+    customer-facing record), fetch items (for `_customer_dict`)."""
     db = MagicMock()
     db.execute = AsyncMock(side_effect=[
         _scalar_one(quote),
         MagicMock(),
         _scalar_one(job_status),
+        MagicMock(),
         MagicMock(),
         _scalars(items or []),
     ])

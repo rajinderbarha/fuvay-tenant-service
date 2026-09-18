@@ -423,15 +423,28 @@ async def _recent_allocation_counts(
         "  AND ((:zipcode IS NOT NULL AND zipcode = :zipcode) "
         "    OR (:zipcode IS NULL AND lower(COALESCE(city,'')) = :city)) "
         "  UNION ALL "
-        "  SELECT DISTINCT ON (COALESCE(NULLIF(new_value->>'draft_id',''), entity_id::text)) "
-        "    new_value->>'selected_provider_id' AS provider_id "
-        "  FROM master_data_audit_log "
-        "  WHERE entity_type='matching_decision' AND action='production_match' "
-        "  AND created_at >= now() - (:hold_minutes * interval '1 minute') "
-        "  AND ((:zipcode IS NOT NULL AND new_value->>'zipcode' = :zipcode) "
-        "    OR (:zipcode IS NULL AND lower(COALESCE(new_value->>'city','')) = :city)) "
-        "  AND new_value->>'selected_provider_id' = ANY(CAST(:tenant_ids AS text[])) "
-        "  ORDER BY COALESCE(NULLIF(new_value->>'draft_id',''), entity_id::text), created_at DESC "
+        # The soft-reservation half MUST stay wrapped in its own subquery.
+        # A trailing ORDER BY after a UNION ALL binds to the WHOLE union,
+        # whose only output column is `provider_id` -- so `new_value` and
+        # `created_at` were not in scope and Postgres rejected the entire
+        # statement with `column "new_value" does not exist`. The except
+        # branch below is fail-open, so this never surfaced as an error:
+        # allocation_counts silently came back empty on EVERY match,
+        # flattening fair share to a constant 50.0 and disabling both the
+        # round-robin and the 15-minute anti-stampede hold. Confirmed live
+        # on staging (matching.fair_share_history_unavailable, 4x in one
+        # hour) and reproduced directly against the database.
+        "  SELECT provider_id FROM ( "
+        "    SELECT DISTINCT ON (COALESCE(NULLIF(new_value->>'draft_id',''), entity_id::text)) "
+        "      new_value->>'selected_provider_id' AS provider_id "
+        "    FROM master_data_audit_log "
+        "    WHERE entity_type='matching_decision' AND action='production_match' "
+        "    AND created_at >= now() - (:hold_minutes * interval '1 minute') "
+        "    AND ((:zipcode IS NOT NULL AND new_value->>'zipcode' = :zipcode) "
+        "      OR (:zipcode IS NULL AND lower(COALESCE(new_value->>'city','')) = :city)) "
+        "    AND new_value->>'selected_provider_id' = ANY(CAST(:tenant_ids AS text[])) "
+        "    ORDER BY COALESCE(NULLIF(new_value->>'draft_id',''), entity_id::text), created_at DESC "
+        "  ) AS recent_matches "
         ") AS allocations GROUP BY provider_id"
     ), {
         "days": days,

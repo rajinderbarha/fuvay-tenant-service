@@ -99,6 +99,19 @@ def _db_returning(*objs):
         return next(remaining, empty)
 
     db.execute = AsyncMock(side_effect=execute)
+
+    # `_set_status` takes a row lock and re-reads the job's status through
+    # `db.scalar` before it validates a transition, so the double has to
+    # answer that the way the database would: with the status the row holds
+    # RIGHT NOW. Read lazily rather than captured, so a test that transitions
+    # twice sees the second value on the second call -- a frozen copy would
+    # make the compare-and-set reject the legitimate follow-up.
+    first = objs[0] if objs else None
+
+    async def scalar(*_a, **_kw):
+        return getattr(first, "status", None)
+
+    db.scalar = AsyncMock(side_effect=scalar)
     return db
 
 

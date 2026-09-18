@@ -35,8 +35,8 @@ from app.engines.execution.models import ServiceJobExecutionEvent
 from app.exceptions import ServiceOSException
 
 # ── new terminal statuses this domain adds ─────────────────────────────────
-JS_FORCE_CLOSED = "force_closed"
-JS_VOIDED = "voided"
+from app.engines.final_records.booking_job_sync import sync_booking_to_job_status
+from app.engines.execution.constants import JS_FORCE_CLOSED, JS_VOIDED
 
 TERMINAL_STATUSES = {"completed", "cancelled", "failed", JS_FORCE_CLOSED, JS_VOIDED}
 
@@ -190,6 +190,9 @@ class AdminJobActionsService:
             job.completion_data = {**(job.completion_data or {}), "force_close_note": completion_note}
         self.db.add(job)
         await self.db.flush()
+        # A force-closed job must not leave an active-looking booking behind:
+        # the chat bot and the customer app both read service_bookings.status.
+        await sync_booking_to_job_status(self.db, job.booking_id, JS_FORCE_CLOSED)
 
         await self._log_event(job, EVENT_FORCE_CLOSED, current, JS_FORCE_CLOSED,
                                actor_user_id, actor_role, reason, request_id,
@@ -233,6 +236,7 @@ class AdminJobActionsService:
         job.updated_at = _now()
         self.db.add(job)
         await self.db.flush()
+        await sync_booking_to_job_status(self.db, job.booking_id, JS_VOIDED)
 
         await self._log_event(job, EVENT_VOIDED, current, JS_VOIDED,
                                actor_user_id, actor_role, reason, request_id,

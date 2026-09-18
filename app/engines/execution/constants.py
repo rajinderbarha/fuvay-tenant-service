@@ -21,6 +21,22 @@ JS_FAILED             = "failed"
 # revision-requested, which must remain non-terminal).
 JS_CLOSED_ESTIMATE_DECLINED = "closed_estimate_declined"
 
+# Admin-only terminal outcomes. These were defined privately inside
+# execution/admin_job_actions.py, so they were invisible to every other
+# terminal check in the codebase -- a force-closed or voided job still counted
+# as active in the customer's "Active" tab and in the chat bot's live-booking
+# list. They are deliberately absent from JOB_TRANSITIONS: an admin override
+# is not a transition a workflow can take.
+JS_FORCE_CLOSED = "force_closed"
+JS_VOIDED       = "voided"
+
+#: THE terminal set. Anything here is finished for good and must never be
+#: presented as an in-flight booking, counted as active, or offered an action.
+TERMINAL_JOB_STATUSES: frozenset[str] = frozenset({
+    "completed", JS_CANCELLED, JS_FAILED, JS_CLOSED_ESTIMATE_DECLINED,
+    JS_FORCE_CLOSED, JS_VOIDED,
+})
+
 # ── Allowed job transitions: from_status → set of valid to_statuses ───────────
 JOB_TRANSITIONS: dict[str, set[str]] = {
     JS_ASSIGNED:           {JS_ACCEPTED, JS_CANCELLED},
