@@ -39,6 +39,13 @@ TERMINAL_JOB_STATUSES: frozenset[str] = frozenset({
 
 # ── Allowed job transitions: from_status → set of valid to_statuses ───────────
 JOB_TRANSITIONS: dict[str, set[str]] = {
+    # The entry state was missing entirely, so `JOB_TRANSITIONS.get()` returned
+    # an empty set for a brand-new job and this graph could not describe how a
+    # job leaves its FIRST status. Assignment writes the row directly, which is
+    # why nothing broke -- but any caller routing the same move through
+    # `_set_status` was rejected, and the graph read as though a new job were
+    # already terminal.
+    JS_PENDING_ASSIGNMENT: {JS_ASSIGNED, JS_CANCELLED},
     JS_ASSIGNED:           {JS_ACCEPTED, JS_CANCELLED},
     JS_ACCEPTED:           {JS_SCHEDULED, JS_ON_THE_WAY, JS_CANCELLED},
     JS_SCHEDULED:          {JS_ON_THE_WAY, JS_CANCELLED, JS_CUSTOMER_NOT_AVAIL},
@@ -71,9 +78,16 @@ JOB_TRANSITIONS: dict[str, set[str]] = {
     # approval and it hasn't been granted. The graph alone cannot express
     # that condition; see home_service_service.py.
     JS_INSPECTION_DONE:    {JS_QUOTE_REQUIRED, JS_SERVICE_STARTED, JS_CANCELLED},
-    JS_SERVICE_STARTED:    {JS_WORK_DONE, JS_QUOTE_REQUIRED, JS_CANCELLED, "completed"},
+    # `completed` is NOT reachable from here. `complete_job` is the only caller
+    # that ever writes it and it already refuses anything but JS_WORK_DONE
+    # (COMPLETABLE_JOB_STATUSES), so these edges were dead -- but they left the
+    # graph claiming a job could be completed straight out of an unanswered
+    # estimate, and would have permitted exactly that had any future caller
+    # gone through `_set_status` directly. The graph now states the rule the
+    # service layer already enforces.
+    JS_SERVICE_STARTED:    {JS_WORK_DONE, JS_QUOTE_REQUIRED, JS_CANCELLED},
     JS_WORK_DONE:          {"completed"},    # HS8B — completion via POST .../complete only
-    JS_QUOTE_REQUIRED:     {"completed", JS_SERVICE_STARTED, JS_CLOSED_ESTIMATE_DECLINED},
+    JS_QUOTE_REQUIRED:     {JS_SERVICE_STARTED, JS_CLOSED_ESTIMATE_DECLINED},
     "completed":           set(),           # terminal
     JS_CUSTOMER_NOT_AVAIL: {JS_ACCEPTED, JS_SCHEDULED},
     JS_CANCELLED:          set(),

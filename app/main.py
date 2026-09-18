@@ -79,6 +79,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from app.jobs.platform_status import background_loop as platform_status_loop
         from app.jobs.provider_assignment_timeout import background_loop as provider_assignment_timeout_loop
         from app.jobs.instagram_completion_followups import background_loop as instagram_completion_followups_loop
+        from app.jobs.job_stall_watchdog import background_loop as job_stall_watchdog_loop
 
         loops = (
             ("compliance_sla", compliance_sla_loop),
@@ -94,6 +95,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ("platform_status", platform_status_loop),
             ("provider_assignment_timeout", provider_assignment_timeout_loop),
             ("instagram_completion_followups", instagram_completion_followups_loop),
+            ("job_stall_watchdog", job_stall_watchdog_loop),
         )
         for name, loop in loops:
             background_tasks.append(asyncio.create_task(loop(), name=f"fuvay:{name}"))
