@@ -99,9 +99,12 @@ ASK_ADDRESS_WHATSAPP = (
     "ਤੁਸੀਂ WhatsApp location pin ਵੀ ਭੇਜ ਸਕਦੇ ਹੋ, "
     "ਜੇ ਉਸ ਵਿੱਚ ਪੂਰਾ ਪੜ੍ਹਨਯੋਗ address ਹੋਵੇ।"
 )
+#: Same mix as ASK_ADDRESS above. This is the retry a customer sees after
+#: an incomplete answer, so asking in Punjabi and failing in English was
+#: the jarring half of the pair.
 BAD_ADDRESS = (
-    "Please send a complete service address with at least the house/building "
-    "and street or area."
+    "ਪੂਰਾ service address ਭੇਜੋ — ਘੱਟੋ-ਘੱਟ house/building "
+    "ਅਤੇ street ਜਾਂ area ਜ਼ਰੂਰ ਲਿਖੋ।"
 )
 LOCATION_SAVED = "Location saved — the technician will see it."
 BAD_PINCODE = "That does not look like a pincode. Please send the 6 digits, for example 141001."
