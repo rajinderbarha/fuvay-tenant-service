@@ -3366,7 +3366,7 @@ async def test_whatsapp_combines_address_and_location_in_one_prompt(monkeypatch)
 
     turn = await flow._next_step(None, Thread(), None, draft, CHANNEL_WHATSAPP, 0)
     assert turn.text == flow.ASK_ADDRESS_WHATSAPP
-    assert "complete service address" in turn.text
+    assert "service address" in turn.text
     assert "location pin" in turn.text
     assert turn.picker is None
 

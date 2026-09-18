@@ -53,9 +53,21 @@ logger = structlog.get_logger(__name__)
 #: answer -- and the step underneath already shows whether to tap or to type,
 #: which is why this does not narrate the UI. Both jobs are named because this
 #: same opener also reaches people who came back to track or cancel.
+#: Bilingual: the English opener first, then the same thing in the
+#: Punjabi/English mix the catalog questions use. Both halves carry `{name}`
+#: because `.format` substitutes every occurrence. This roughly doubles the
+#: greeting, which the note above is precisely about -- on Instagram the
+#: combined first message (greeting + browser guidance + the prepended first
+#: step) is chunked at 900 characters by `meta_client._send_text_chunked`,
+#: so keep any future addition short enough to stay inside one message.
 GREETING = (
     "Hi{name}! Welcome to Fuvay Home Services. I can book a service for you "
     "or check an existing booking. To start again at any time, send /fuvay."
+    "\n\n"
+    "ਹੈਲੋ{name}! Fuvay Home Services ਵਿੱਚ ਤੁਹਾਡਾ ਸਵਾਗਤ ਹੈ। "
+    "ਮੈਂ ਤੁਹਾਡੇ ਲਈ service book ਕਰ ਸਕਦਾ ਹਾਂ ਜਾਂ "
+    "ਤੁਹਾਡੀ ਪਹਿਲਾਂ ਵਾਲੀ booking check ਕਰ ਸਕਦਾ ਹਾਂ। "
+    "ਦੁਬਾਰਾ ਸ਼ੁਰੂ ਕਰਨ ਲਈ ਕਿਸੇ ਵੀ ਵੇਲੇ /fuvay ਭੇਜੋ।"
 )
 
 INSTAGRAM_BROWSER_GUIDANCE = (

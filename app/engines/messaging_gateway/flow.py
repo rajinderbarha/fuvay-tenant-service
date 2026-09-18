@@ -85,14 +85,19 @@ NOT_IN_CITY = (
     "or send /fuvay to start again."
 )
 SERVICE_NOT_IN_CITY = "That service is not available in {city} yet."
+#: Punjabi/English mix, matching the catalog questions: the sentence is
+#: Punjabi and the things a customer reads off a door plate or an app stay in
+#: English (service address, flat/house number, building, street, area,
+#: landmark, WhatsApp location pin).
 ASK_ADDRESS = (
-    "Please type the complete service address — flat/house number, building, "
-    "street or area, and a nearby landmark."
+    "ਪੂਰਾ service address ਲਿਖੋ — flat/house number, building, "
+    "street ਜਾਂ area, ਅਤੇ ਨੇੜੇ ਦਾ ਕੋਈ landmark।"
 )
 ASK_ADDRESS_WHATSAPP = (
-    "Please send the complete service address — flat/house number, building, "
-    "street or area, and a nearby landmark. You may share a WhatsApp location "
-    "pin instead if it includes the full readable address."
+    "ਪੂਰਾ service address ਭੇਜੋ — flat/house number, building, "
+    "street ਜਾਂ area, ਅਤੇ ਨੇੜੇ ਦਾ ਕੋਈ landmark। "
+    "ਤੁਸੀਂ WhatsApp location pin ਵੀ ਭੇਜ ਸਕਦੇ ਹੋ, "
+    "ਜੇ ਉਸ ਵਿੱਚ ਪੂਰਾ ਪੜ੍ਹਨਯੋਗ address ਹੋਵੇ।"
 )
 BAD_ADDRESS = (
     "Please send a complete service address with at least the house/building "
