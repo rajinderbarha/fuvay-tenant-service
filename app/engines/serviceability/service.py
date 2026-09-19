@@ -866,6 +866,8 @@ class ServiceabilityService:
     async def list_service_area_requests(self, *, tenant_id: uuid.UUID | None = None,
                                           category_id: uuid.UUID | None = None,
                                           status: str | None = None,
+                                          city: str | None = None,
+                                          zipcode: str | None = None,
                                           limit: int = 50, cursor: str | None = None) -> dict:
         if tenant_id is not None:
             self._assert_owns_tenant(tenant_id)
@@ -878,6 +880,26 @@ class ServiceabilityService:
             conditions.append(TenantServiceAreaRequest.category_id == category_id)
         if status is not None:
             conditions.append(TenantServiceAreaRequest.status == status)
+        # Location belongs to request ITEMS, not the request header. The admin
+        # dashboard links here with a city/ZIP opportunity; ignoring those
+        # parameters loaded the default global list and made the drill-down
+        # look unrelated to the card that opened it. Keep both predicates on
+        # one correlated item query so city + ZIP must describe the same item.
+        location_conditions = []
+        normalized_city = str(city or "").strip()
+        normalized_zipcode = str(zipcode or "").strip()
+        if normalized_city:
+            location_conditions.append(
+                func.lower(TenantServiceAreaRequestItem.city) == normalized_city.lower()
+            )
+        if normalized_zipcode:
+            location_conditions.append(
+                TenantServiceAreaRequestItem.zipcode == normalized_zipcode
+            )
+        if location_conditions:
+            conditions.append(TenantServiceAreaRequest.id.in_(
+                select(TenantServiceAreaRequestItem.request_id).where(*location_conditions)
+            ))
         offset = int(cursor) if cursor else 0
         total = (await self.db.execute(
             select(func.count()).select_from(TenantServiceAreaRequest).where(*conditions)
@@ -888,7 +910,81 @@ class ServiceabilityService:
             .offset(offset).limit(min(limit, 200))
         )).scalars().all()
         next_cursor = str(offset + len(rows)) if offset + len(rows) < total else None
-        return {"requests": [r.to_dict() for r in rows], "total": total, "next_cursor": next_cursor}
+        if not rows:
+            return {"requests": [], "total": total, "next_cursor": next_cursor}
+
+        # The former list returned only header UUIDs, forcing an admin to open
+        # every row to learn the provider, location or service requested. Load
+        # all display context in three batch queries (never N+1) and keep the
+        # detail endpoint as the authority for review actions.
+        from app.engines.admin_catalog.models import MasterService, ServiceCategory
+
+        request_ids = [row.id for row in rows]
+        item_rows = (await self.db.execute(
+            select(
+                TenantServiceAreaRequestItem.request_id,
+                TenantServiceAreaRequestItem.city,
+                TenantServiceAreaRequestItem.zipcode,
+                TenantServiceAreaRequestItem.decision_status,
+                MasterService.service_name,
+            )
+            .outerjoin(
+                MasterService,
+                MasterService.id == TenantServiceAreaRequestItem.master_service_id,
+            )
+            .where(TenantServiceAreaRequestItem.request_id.in_(request_ids))
+            .order_by(TenantServiceAreaRequestItem.created_at.asc())
+        )).all()
+        tenant_rows = (await self.db.execute(
+            select(Tenant.id, Tenant.business_name, Tenant.tenant_name)
+            .where(Tenant.id.in_({row.tenant_id for row in rows}))
+        )).all()
+        category_rows = (await self.db.execute(
+            select(ServiceCategory.id, ServiceCategory.name)
+            .where(ServiceCategory.id.in_({row.category_id for row in rows}))
+        )).all()
+
+        tenants = {
+            row.id: (row.business_name or row.tenant_name or "Service provider")
+            for row in tenant_rows
+        }
+        categories = {row.id: row.name for row in category_rows}
+        summaries: dict[uuid.UUID, dict] = {
+            request_id: {
+                "item_count": 0,
+                "pending_item_count": 0,
+                "cities": set(),
+                "zipcodes": set(),
+                "service_names": set(),
+            }
+            for request_id in request_ids
+        }
+        for item in item_rows:
+            summary = summaries[item.request_id]
+            summary["item_count"] += 1
+            if item.decision_status == "PENDING":
+                summary["pending_item_count"] += 1
+            if item.city:
+                summary["cities"].add(item.city)
+            if item.zipcode:
+                summary["zipcodes"].add(item.zipcode)
+            if item.service_name:
+                summary["service_names"].add(item.service_name)
+
+        payload = []
+        for row in rows:
+            summary = summaries[row.id]
+            payload.append({
+                **row.to_dict(),
+                "tenant_name": tenants.get(row.tenant_id, "Service provider"),
+                "category_name": categories.get(row.category_id),
+                "item_count": summary["item_count"],
+                "pending_item_count": summary["pending_item_count"],
+                "cities": sorted(summary["cities"]),
+                "zipcodes": sorted(summary["zipcodes"]),
+                "service_names": sorted(summary["service_names"]),
+            })
+        return {"requests": payload, "total": total, "next_cursor": next_cursor}
 
     async def get_service_area_request_detail(self, request_id: uuid.UUID) -> dict:
         req = await self._get_request(request_id)

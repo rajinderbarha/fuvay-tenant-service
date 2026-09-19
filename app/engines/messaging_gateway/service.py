@@ -53,26 +53,16 @@ logger = structlog.get_logger(__name__)
 #: answer -- and the step underneath already shows whether to tap or to type,
 #: which is why this does not narrate the UI. Both jobs are named because this
 #: same opener also reaches people who came back to track or cancel.
-#: Bilingual: the English opener first, then the same thing in the
-#: Punjabi/English mix the catalog questions use. Both halves carry `{name}`
-#: because `.format` substitutes every occurrence. This roughly doubles the
-#: greeting, which the note above is precisely about -- on Instagram the
-#: combined first message (greeting + browser guidance + the prepended first
-#: step) is chunked at 900 characters by `meta_client._send_text_chunked`,
-#: so keep any future addition short enough to stay inside one message.
+#: One compact Punjabi/English sentence, matching the catalog questions. It
+#: deliberately does not repeat the same welcome in two languages: the first
+#: pincode question is appended below it in the same outbound message.
 GREETING = (
-    "Hi{name}! Welcome to Fuvay Home Services. I can book a service for you "
-    "or check an existing booking. To start again at any time, send /fuvay."
-    "\n\n"
-    "ਹੈਲੋ{name}! Fuvay Home Services ਵਿੱਚ ਤੁਹਾਡਾ ਸਵਾਗਤ ਹੈ। "
-    "ਮੈਂ ਤੁਹਾਡੇ ਲਈ service book ਕਰ ਸਕਦਾ ਹਾਂ ਜਾਂ "
-    "ਤੁਹਾਡੀ ਪਹਿਲਾਂ ਵਾਲੀ booking check ਕਰ ਸਕਦਾ ਹਾਂ। "
-    "ਦੁਬਾਰਾ ਸ਼ੁਰੂ ਕਰਨ ਲਈ ਕਿਸੇ ਵੀ ਵੇਲੇ /fuvay ਭੇਜੋ।"
+    "ਸਤ ਸ੍ਰੀ ਅਕਾਲ{name}! Fuvay ਤੇ service book ਕਰੋ ਜਾਂ booking track ਕਰੋ। "
+    "ਦੁਬਾਰਾ start ਕਰਨ ਲਈ /fuvay ਭੇਜੋ।"
 )
 
 INSTAGRAM_BROWSER_GUIDANCE = (
-    "For the best booking experience, please use this chat in the Instagram "
-    "mobile app."
+    "Best booking experience ਲਈ ਇਹ chat Instagram mobile app ਵਿੱਚ ਵਰਤੋ।"
 )
 
 #: Sent when the SESSION cap trips -- too many fresh conversations, not too
@@ -144,7 +134,7 @@ def _booking_progress(status: str) -> tuple[str, str]:
         (status or "pending").strip().lower().replace("-", "_").replace(" ", "_")
     )
     if normalized in {"cancelled", "canceled", "rejected", "failed"}:
-        return "Booking closed — contact support if you need help", "Booking closed"
+        return "Booking closed ਹੈ — help ਲਈ support ਨਾਲ contact ਕਰੋ", "Booking closed"
 
     stage = 1
     if normalized in {
@@ -161,7 +151,7 @@ def _booking_progress(status: str) -> tuple[str, str]:
     if normalized in {"completed", "complete", "closed", "delivered"}:
         stage = 4
 
-    labels = ("Booked", "Assigned", "In service", "Complete")
+    labels = ("Booked", "Assigned", "ਕੰਮ ਜਾਰੀ", "Complete")
     tracker = "  →  ".join(
         f"✓ {label}" if position <= stage else f"○ {label}"
         for position, label in enumerate(labels, start=1)
@@ -1714,16 +1704,15 @@ class MessagingGatewayService:
         """
         if not thread.customer_id:
             link_help = (
-                " Send /link followed by your mobile number to link it."
+                " Account link ਕਰਨ ਲਈ /link ਤੋਂ ਬਾਅਦ mobile number ਭੇਜੋ।"
                 if thread.channel == "instagram" else ""
             )
             message = (
-                "To protect your booking details, this chat is not linked to a "
-                "Fuvay customer account yet. Use the same mobile number as your "
-                f"Fuvay account, or open the Fuvay app to track the booking.{link_help}"
+                "Booking details secure ਰੱਖਣ ਲਈ ਇਹ chat ਹਾਲੇ Fuvay account ਨਾਲ "
+                f"link ਨਹੀਂ ਹੈ। ਆਪਣਾ Fuvay ਵਾਲਾ mobile number ਵਰਤੋ।{link_help}"
             )
-            return {"text": message, "title": "Track your booking",
-                    "subtitle": "Link your Fuvay account to continue.",
+            return {"text": message, "title": "Booking track ਕਰੋ",
+                    "subtitle": "ਅੱਗੇ ਜਾਣ ਲਈ Fuvay account link ਕਰੋ।",
                     "image_url": None}
 
         from app.engines.final_records.models import ServiceBooking, ServiceJob
@@ -1738,9 +1727,9 @@ class MessagingGatewayService:
             query.order_by(ServiceBooking.created_at.desc()).limit(1)
         )).scalars().first()
         if not booking:
-            message = "I couldn't find a booking on this account yet. Tell me what service you need to start one."
-            return {"text": message, "title": "No active booking",
-                    "subtitle": "Book a service to start tracking.",
+            message = "ਇਸ account ਤੇ ਕੋਈ booking ਨਹੀਂ ਮਿਲੀ। ਨਵੀਂ service book ਕਰ ਸਕਦੇ ਹੋ।"
+            return {"text": message, "title": "ਕੋਈ active booking ਨਹੀਂ",
+                    "subtitle": "Track ਕਰਨ ਲਈ ਪਹਿਲਾਂ service book ਕਰੋ।",
                     "image_url": None}
 
         job = (await self.db.execute(
@@ -1750,19 +1739,25 @@ class MessagingGatewayService:
         status = raw_status.replace("_", " ").title()
         progress_line, progress_label = _booking_progress(raw_status)
 
-        from app.engines.admin_catalog.models import MasterService, ServiceCategory
+        from app.engines.admin_catalog.models import (
+            MasterIssueType, MasterService, ServiceCategory,
+        )
+        from app.engines.messaging_gateway.problem_cards import problem_card_image
 
         offering = await self.db.get(MasterService, booking.offering_id)
         category = await self.db.get(ServiceCategory, booking.category_id)
+        selected_problem_id = getattr(booking, "selected_problem_id", None)
+        problem = (
+            await self.db.get(MasterIssueType, selected_problem_id)
+            if selected_problem_id else None
+        )
         service_name = (
             getattr(offering, "service_name", None)
             or getattr(category, "name", None)
             or "Home service"
         )
-        problem_name = (
-            str(getattr(booking, "issue_summary", None) or "").strip()
-            or service_name
-        )
+        issue_summary = str(getattr(booking, "issue_summary", None) or "").strip()
+        problem_name = issue_summary or getattr(problem, "name", None) or service_name
         service_image = next((
             str(value).strip() for value in (
                 getattr(offering, "image_url", None),
@@ -1771,13 +1766,24 @@ class MessagingGatewayService:
                 getattr(category, "icon_url", None),
             ) if str(value or "").strip().startswith("https://")
         ), None)
+        problem_image = next((
+            str(value).strip() for value in (
+                getattr(problem, "image_url", None),
+                getattr(problem, "icon_url", None),
+            ) if str(value or "").strip().startswith("https://")
+        ), None)
+        if not problem_image and (selected_problem_id or issue_summary):
+            # Use the same deterministic problem artwork shown during the
+            # booking flow. A generic service image is only a fallback for an
+            # old booking that recorded neither a problem id nor its name.
+            problem_image = problem_card_image(problem_name)
 
         lines = [
-            f"📋 Booking {booking.booking_number}",
-            f"Status: {status}",
-            f"Problem: {problem_name}",
+            f"📋 Booking / ਬੁਕਿੰਗ {booking.booking_number}",
+            f"Status: {status} / ਹਾਲਤ",
+            f"Problem: {problem_name} / ਸਮੱਸਿਆ",
             "",
-            "PROGRESS",
+            "PROGRESS / ਸਥਿਤੀ",
             progress_line,
         ]
         scheduled_date = getattr(job, "scheduled_date", None) if job else None
@@ -1785,24 +1791,24 @@ class MessagingGatewayService:
         visit_label = None
         if scheduled_date:
             visit_label = scheduled_date.strftime("%a, %d %b %Y")
-            visit = f"Visit: {visit_label}"
+            visit = f"Visit time / ਸਮਾਂ: {visit_label}"
             if scheduled_window:
                 visit += f" · {scheduled_window}"
-            lines.extend(("", "VISIT DETAILS", visit))
+            lines.extend(("", "VISIT DETAILS / ਮੁਲਾਕਾਤ", visit))
         else:
             preferred_date = getattr(booking, "preferred_date", None)
             preferred_window = getattr(booking, "preferred_time_window", None)
             visit_label = preferred_date.strftime("%a, %d %b %Y") if preferred_date else None
             if visit_label:
-                visit = f"Requested visit: {visit_label}"
+                visit = f"Requested time / ਮੰਗਿਆ ਸਮਾਂ: {visit_label}"
                 if preferred_window:
                     visit += f" · {preferred_window}"
-                lines.extend(("", "VISIT DETAILS", visit))
+                lines.extend(("", "VISIT DETAILS / ਮੁਲਾਕਾਤ", visit))
 
         # Show assignment state without identifying the marketplace business.
         partner_line = (
-            "Service partner: confirmed" if booking.tenant_id
-            else "Service partner: matching in progress"
+            "Service partner: confirm ਹੈ" if booking.tenant_id
+            else "Service partner: match ਹੋ ਰਿਹਾ ਹੈ"
         )
         provider_badge_names: list[str] = []
 
@@ -1856,15 +1862,18 @@ class MessagingGatewayService:
                 logger.warning("messaging_gateway.booking_badges_failed",
                                booking_number=booking.booking_number, error=str(exc))
 
-            lines.extend(("", "YOUR TECHNICIAN"))
-            lines.append(f"Technician: {technician_name or 'Assigned'}")
-            lines.append(f"Role: {technician_role}")
+            lines.extend(("", "YOUR TECHNICIAN / ਟੈਕਨੀਸ਼ਨ"))
+            lines.append(f"Technician / ਟੈਕਨੀਸ਼ਨ: {technician_name or 'Assigned'}")
+            lines.append(f"Role / ਕੰਮ: {technician_role}")
             if technician_verified:
-                lines.append("Verification: ✓ Verified technician")
+                lines.append("Verification / ਜਾਂਚ: ✓ Verified technician")
             if badge_names:
-                lines.append(f"Badges: {' · '.join(badge_names)}")
+                lines.append(f"Badges / ਬੈਜ: {' · '.join(badge_names)}")
         else:
-            lines.extend(("", "YOUR TECHNICIAN", "Technician: assignment in progress"))
+            lines.extend((
+                "", "YOUR TECHNICIAN / ਟੈਕਨੀਸ਼ਨ",
+                "Technician assignment / ਨਿਯੁਕਤੀ ਜਾਰੀ ਹੈ",
+            ))
 
         if booking.tenant_id:
             try:
@@ -1884,24 +1893,26 @@ class MessagingGatewayService:
 
         service_details = [partner_line]
         if provider_badge_names:
-            service_details.append(f"Provider badges: {' · '.join(provider_badge_names)}")
+            service_details.append(
+                f"Provider badges / ਬੈਜ: {' · '.join(provider_badge_names)}"
+            )
         area = " ".join(str(value) for value in (
             getattr(job, "city", None) if job else booking.city,
             getattr(job, "zipcode", None) if job else booking.zipcode,
         ) if value)
         if area:
-            service_details.append(f"Service area: {area}")
+            service_details.append(f"Service area / ਇਲਾਕਾ: {area}")
 
         price = booking.price_snapshot if isinstance(booking.price_snapshot, dict) else {}
         amount = price.get("display_price")
         if not amount and price.get("customer_total") is not None:
             amount = f"₹{price['customer_total']}"
         if amount:
-            service_details.append(f"Booking amount: {amount}")
-        lines.extend(("", "SERVICE DETAILS", *service_details))
+            service_details.append(f"Booking amount / ਰਕਮ: {amount}")
+        lines.extend(("", "SERVICE DETAILS / ਸੇਵਾ ਜਾਣਕਾਰੀ", *service_details))
 
         card_image = next((
-            str(value).strip() for value in (technician_photo, service_image)
+            str(value).strip() for value in (problem_image, service_image)
             if str(value or "").strip().startswith("https://")
         ), None)
         subtitle_parts = [booking.booking_number, progress_label, status]

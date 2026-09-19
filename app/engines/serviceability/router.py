@@ -386,12 +386,13 @@ async def withdraw_service_area_request(
             response_model=ApiResponse[dict])
 async def admin_list_service_area_requests(
     r: Request, tenant_id: uuid.UUID | None = None, category_id: uuid.UUID | None = None,
-    status_filter: str | None = None, limit: int = 50, cursor: str | None = None,
+    status_filter: str | None = None, city: str | None = None,
+    zipcode: str | None = None, limit: int = 50, cursor: str | None = None,
     u: UserContext = Depends(require_permission(P.PLATFORM_ADMIN)),
     s: ServiceabilityService = Depends(_svc)) -> ApiResponse[dict]:
     data = await s.list_service_area_requests(
         tenant_id=tenant_id, category_id=category_id, status=status_filter,
-        limit=limit, cursor=cursor)
+        city=city, zipcode=zipcode, limit=limit, cursor=cursor)
     return ok(data, _rid(r), ENGINE_ID)
 
 

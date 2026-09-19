@@ -70,8 +70,7 @@ ASK_AREA_PINCODE = "Which pincode in {city}?"
 #: Only ever shown when the covered-area list cannot be built. Typing a
 #: pincode still works, but nobody should have to.
 ASK_PINCODE = (
-    "First, send the 6-digit pincode where you need the service. "
-    "We use it to check service availability."
+    "ਪਹਿਲਾਂ service ਵਾਲਾ 6-digit pincode ਭੇਜੋ — availability ਹੁਣੇ check ਕਰਾਂਗੇ।"
 )
 ASK_CITY = "Which city are you in?"
 #: An uncovered area is a dead end unless the reply says how to leave it. The
@@ -136,7 +135,10 @@ NO_SLOTS = (
     "There are no open slots for this service right now. "
     "Please try again later."
 )
-CONFIRMED = "Booking confirmed. Your booking number is {number}. We will message you when a technician is assigned."
+CONFIRMED = (
+    "✅ Booking confirm ਹੋ ਗਈ। Booking number: {number}. "
+    "Technician assign ਹੋਣ ਤੇ message ਆਵੇਗਾ।"
+)
 #: A confirmed booking is a commitment on both sides — a provider has been
 #: allocated and a technician is being assigned — so it is deliberately NOT
 #: editable from chat. Taps on the messages above it must say so plainly
@@ -145,17 +147,17 @@ ALREADY_BOOKED = "This booking is already confirmed, so it cannot be changed her
 CONFIRM_FAILED = "That booking could not be completed: {reason}"
 DUPLICATE_PROMPT = "Do you still want to book this same problem again?"
 DUPLICATE_DECLINED = "No new booking was created."
-BOOKED_OPTIONS = "Your booking is with us. What would you like to do?"
+BOOKED_OPTIONS = "ਤੁਹਾਡੀ booking ਸਾਡੇ ਕੋਲ ਹੈ — ਹੁਣ ਕੀ ਕਰਨਾ ਹੈ?"
 #: Header for the same menu when nothing is open — "your booking is with us"
 #: over a menu that can only book a new one reads as a booking that exists.
-NO_BOOKING_OPTIONS = "What would you like to do?"
+NO_BOOKING_OPTIONS = "ਹੁਣ ਕੀ ਕਰਨਾ ਹੈ?"
 NOTHING_OPEN = "You have no booking open right now."
-TRACK_ROW = "Track my booking"
-NEW_BOOKING_ROW = "Book another service"
+TRACK_ROW = "Booking track ਕਰੋ"
+NEW_BOOKING_ROW = "New service book ਕਰੋ"
 REPORT_ISSUE_ROW = "Report service issue"
 TRACK_COMPLAINT_ROW = "Track complaint"
 WARRANTY_ROW = "Warranty support"
-NO_BOOKINGS = "There is no booking on this number yet."
+NO_BOOKINGS = "ਇਸ number ਨਾਲ ਹਾਲੇ ਕੋਈ booking ਨਹੀਂ ਮਿਲੀ।"
 CANCEL_ROW = "Cancel booking"
 CANCEL_NOT_ALLOWED = (
     "This booking can no longer be cancelled from chat. "
@@ -1128,7 +1130,7 @@ def _booked_menu(text: str, rows: list[dict] | None = None,
             {"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": NEW_BOOKING_ROW},
         ],
         "list_button": "Choose",
-        "section_title": "Your booking",
+        "section_title": "Your booking / ਬੁਕਿੰਗ",
         "presentation": "buttons",
     })
 
@@ -1821,8 +1823,8 @@ async def _track_step(thread, identity, booking_number: str, channel: str) -> Tu
         # older service has no uploaded artwork.
         cards = channel == CHANNEL_INSTAGRAM
         picker = pickers._paginate(
-            rows, "Which booking?", channel, 0, kind=PICK_TRACK,
-            list_button="Choose", section_title="Your bookings",
+            rows, "ਕਿਹੜੀ booking track ਕਰਨੀ ਹੈ?", channel, 0, kind=PICK_TRACK,
+            list_button="Choose", section_title="ਤੁਹਾਡੀਆਂ bookings",
             presentation="carousel" if cards else "quick_replies",
             capacity_override=MAX_IG_GENERIC_ELEMENTS if cards else None,
         )
@@ -1864,7 +1866,7 @@ async def _tracked_booking_turn(identity, thread, booking_number: str,
         rows = [dict(row) for row in turn.picker.get("rows") or []]
         for row in rows:
             if str(row.get("id") or "").startswith(f"{PICK_TRACK}{PICKER_SEP}"):
-                row["title"] = "Refresh status"
+                row["title"] = "Status refresh ਕਰੋ"
         turn.picker["rows"] = rows
         turn.picker["presentation"] = "status_card"
         turn.picker["card"] = {
@@ -2603,41 +2605,44 @@ async def _confirm_step(executor, draft: dict, thread) -> Turn:
         missing = ', '.join(summary.get('missing') or [])
         return Turn(result.get('error') or f"Please complete your booking details before confirming{': ' + missing if missing else '.'}")
     price = summary.get("price_estimate") or {}
-    lines = ["✅ Review your booking"]
+    lines = ["✅ Review your booking / booking ਦੀ ਜਾਂਚ"]
     for label, value in (
-        ("Service", summary.get("offering_name")),
-        ("Problem", summary.get("issue_summary") or draft.get("issue_summary")),
-        ("When", _when(summary, draft)),
-        ("Address", _address(summary, draft)),
-        ("Phone", summary.get("customer_phone") or draft.get("customer_phone")),
+        ("Service / ਸੇਵਾ", summary.get("offering_name")),
+        ("Problem / ਸਮੱਸਿਆ", summary.get("issue_summary") or draft.get("issue_summary")),
+        ("Time / ਸਮਾਂ", _when(summary, draft)),
+        ("Address / ਪਤਾ", _address(summary, draft)),
+        ("Phone / ਫੋਨ", summary.get("customer_phone") or draft.get("customer_phone")),
         # An emergency must never be a surprise line on the final bill, so the
         # surcharge the provider configured is shown before confirmation.
-        ("Emergency", _emergency_line(summary, draft)),
+        ("Emergency / ਤੁਰੰਤ", _emergency_line(summary, draft)),
     ):
         if value:
             lines.append(f"{label}: {value}")
     for addon in price.get('addon_lines', []):
-        lines.append(f"Add-on: {addon['name']} × {addon['quantity']} — INR {addon['total']}")
+        lines.append(
+            f"Add-on / ਵਾਧੂ: {addon['name']} × {addon['quantity']} — "
+            f"INR {addon['total']}"
+        )
     if price.get("display_price"):
         price_label = (
-            "VISIT & INSPECTION FEE"
+            "VISIT & INSPECTION FEE / ਜਾਂਚ ਫੀਸ"
             if price.get("requires_inspection_estimate")
-            else "TOTAL PRICE"
+            else "TOTAL PRICE / ਕੁੱਲ ਕੀਮਤ"
         )
         lines.extend(["", f"💳 {price_label}", str(price["display_price"])])
         adjustment = _visit_fee_adjustment(price)
         if adjustment:
             lines.append(adjustment)
-    rows = [{"id": f"{PICK_CONFIRM}{PICKER_SEP}{_YES}", "title": "Confirm booking"}]
+    rows = [{"id": f"{PICK_CONFIRM}{PICKER_SEP}{_YES}", "title": "Booking confirm ਕਰੋ"}]
     if price.get('social_addons_reviewed'):
         from app.engines.messaging_gateway.addons import _id
-        rows.append({'id': _id(draft, 'page', 0), 'title': 'Edit add-ons'})
-    rows.append({"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Start over"})
+        rows.append({'id': _id(draft, 'page', 0), 'title': 'Add-ons edit ਕਰੋ'})
+    rows.append({"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "ਦੁਬਾਰਾ start"})
     return Turn("\n".join(lines), {
-        "body": "Shall I confirm this booking?",
+        "body": "ਕੀ ਇਹ booking confirm ਕਰਨੀ ਹੈ?",
         "rows": rows,
         "list_button": "Choose",
-        "section_title": "Confirm",
+        "section_title": "Confirm / ਪੁਸ਼ਟੀ",
         "presentation": "buttons",
     })
 
@@ -2760,29 +2765,24 @@ def _price_block(price: dict) -> str | None:
     if not inspection:
         return (
             "━━━━━━━━━━━━━━\n"
-            f"💳 𝗧𝗢𝗧𝗔𝗟 𝗣𝗥𝗜𝗖𝗘\n{strong_amount}\n"
+            f"💳 𝗧𝗢𝗧𝗔𝗟 𝗣𝗥𝗜𝗖𝗘 / ਕੁੱਲ ਕੀਮਤ\n{strong_amount}\n"
             "━━━━━━━━━━━━━━"
         )
 
     lines = [
         "━━━━━━━━━━━━━━",
-        "🔎 𝗩𝗜𝗦𝗜𝗧 & 𝗜𝗡𝗦𝗣𝗘𝗖𝗧𝗜𝗢𝗡 𝗙𝗘𝗘",
+        "🔎 𝗩𝗜𝗦𝗜𝗧 & 𝗜𝗡𝗦𝗣𝗘𝗖𝗧𝗜𝗢𝗡 𝗙𝗘𝗘 / ਜਾਂਚ ਫੀਸ",
         strong_amount,
         "━━━━━━━━━━━━━━",
+        "",
+        "Repair ਦਾ final estimate inspection ਤੋਂ ਬਾਅਦ ਮਿਲੇਗਾ।",
     ]
     adjustment = _visit_fee_adjustment(price)
     if adjustment:
         lines.extend(["", adjustment])
-    note = str(price.get("note") or "").strip()
-    if note:
-        # The structured, policy-backed disclosure above is the prominent
-        # one; avoid repeating the same promise from the legacy prose note.
-        note = note.replace(
-            "This visit fee is adjusted against your final bill if you continue with the service.",
-            "",
-        ).strip()
-    if note:
-        lines.extend(["", note])
+    # Do not append the legacy free-text note here: it is often English-only,
+    # can repeat the adjustment promise, and makes the compact slot card look
+    # like a second terms page. The structured policy above is authoritative.
     return "\n".join(lines)
 
 
@@ -2790,9 +2790,9 @@ def _visit_fee_adjustment(price: dict) -> str | None:
     policy = price.get("visit_fee_policy") or {}
     if policy.get("credited_against_work"):
         return (
-            "If you approve and continue with the repair, this visit/inspection "
-            "fee is adjusted against the final bill when the repair amount "
-            "exceeds the fee."
+            "ਜੇ ਤੁਸੀਂ repair approve ਕਰਕੇ ਕੰਮ continue ਕਰਵਾਉਂਦੇ ਹੋ, ਇਹ "
+            "visit/inspection fee final bill ਵਿੱਚ adjust ਹੋ ਜਾਵੇਗੀ "
+            "(ਜਦੋਂ repair amount fee ਤੋਂ ਵੱਧ ਹੋਵੇ)।"
         )
     return None
 

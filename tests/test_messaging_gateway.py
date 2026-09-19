@@ -1181,7 +1181,7 @@ def test_price_block_is_clean_and_visually_prioritises_the_amount():
     })
     assert fixed == (
         "━━━━━━━━━━━━━━\n"
-        "💳 𝗧𝗢𝗧𝗔𝗟 𝗣𝗥𝗜𝗖𝗘\n₹𝟭,𝟰𝟵𝟵\n"
+        "💳 𝗧𝗢𝗧𝗔𝗟 𝗣𝗥𝗜𝗖𝗘 / ਕੁੱਲ ਕੀਮਤ\n₹𝟭,𝟰𝟵𝟵\n"
         "━━━━━━━━━━━━━━"
     )
     assert "provider" not in fixed.lower()
@@ -1193,10 +1193,11 @@ def test_price_block_is_clean_and_visually_prioritises_the_amount():
         "visit_fee_policy": {"credited_against_work": True},
     })
     assert inspection.startswith(
-        "━━━━━━━━━━━━━━\n🔎 𝗩𝗜𝗦𝗜𝗧 & 𝗜𝗡𝗦𝗣𝗘𝗖𝗧𝗜𝗢𝗡 𝗙𝗘𝗘\n₹𝟮𝟵𝟵"
+        "━━━━━━━━━━━━━━\n🔎 𝗩𝗜𝗦𝗜𝗧 & 𝗜𝗡𝗦𝗣𝗘𝗖𝗧𝗜𝗢𝗡 𝗙𝗘𝗘 / ਜਾਂਚ ਫੀਸ\n₹𝟮𝟵𝟵"
     )
-    assert "Approve the repair estimate" in inspection
-    assert "adjusted against the final bill" in inspection
+    assert "Repair ਦਾ final estimate inspection ਤੋਂ ਬਾਅਦ ਮਿਲੇਗਾ।" in inspection
+    assert "final bill ਵਿੱਚ adjust ਹੋ ਜਾਵੇਗੀ" in inspection
+    assert "Approve the repair estimate" not in inspection
 
 
 @pytest.mark.asyncio
@@ -1215,8 +1216,8 @@ async def test_review_shows_inspection_fee_adjustment_before_confirmation():
             }}}
 
     turn = await flow._confirm_step(Executor(), {"id": "draft-1"}, SimpleNamespace())
-    assert "VISIT & INSPECTION FEE" in turn.text
-    assert "adjusted against the final bill" in turn.text
+    assert "VISIT & INSPECTION FEE / ਜਾਂਚ ਫੀਸ" in turn.text
+    assert "final bill ਵਿੱਚ adjust ਹੋ ਜਾਵੇਗੀ" in turn.text
     assert [row["id"] for row in turn.picker["rows"]][:1] == ["cf|yes"]
 
 
@@ -1253,7 +1254,7 @@ async def test_price_is_attached_to_the_slot_picker_not_sent_as_loose_text(monke
     assert turn.text is None
     assert turn.picker["body"] == (
         "━━━━━━━━━━━━━━\n"
-        "💳 𝗧𝗢𝗧𝗔𝗟 𝗣𝗥𝗜𝗖𝗘\n₹𝟭,𝟰𝟵𝟵\n"
+        "💳 𝗧𝗢𝗧𝗔𝗟 𝗣𝗥𝗜𝗖𝗘 / ਕੁੱਲ ਕੀਮਤ\n₹𝟭,𝟰𝟵𝟵\n"
         "━━━━━━━━━━━━━━\n\nPick a time that suits you:"
     )
 
@@ -2147,7 +2148,7 @@ async def test_a_live_booking_is_trackable_from_the_chat_on_both_channels():
     assert instagram_status.picker["card"]["image_url"] == (
         "https://cdn.example/technician.jpg"
     )
-    assert instagram_status.picker["rows"][0]["title"] == "Refresh status"
+    assert instagram_status.picker["rows"][0]["title"] == "Status refresh ਕਰੋ"
 
 
 @pytest.mark.asyncio
@@ -2244,17 +2245,19 @@ async def test_live_booking_without_a_problem_keeps_the_service_artwork():
 
 
 @pytest.mark.asyncio
-async def test_booking_status_card_uses_real_technician_trust_and_hides_provider():
+async def test_booking_status_card_uses_exact_problem_artwork_and_real_technician_trust():
     from app.engines.messaging_gateway.service import MessagingGatewayService
 
     booking_id = uuid.uuid4()
     offering_id = uuid.uuid4()
     category_id = uuid.uuid4()
+    problem_id = uuid.uuid4()
     staff_id = uuid.uuid4()
     user_id = uuid.uuid4()
     booking = SimpleNamespace(
         id=booking_id, booking_number="BK-42", offering_id=offering_id,
         category_id=category_id, customer_id=uuid.uuid4(), tenant_id=uuid.uuid4(),
+        selected_problem_id=problem_id,
         status="assigned", preferred_date=date(2026, 9, 10),
         preferred_time_window="09:00-11:00", city="Bassi Pathana",
         zipcode="140412", price_snapshot={"display_price": "₹315"},
@@ -2271,6 +2274,11 @@ async def test_booking_status_card_uses_real_technician_trust_and_hides_provider
         icon_url=None,
     )
     category = SimpleNamespace(name="Home Services", image_url=None, icon_url=None)
+    problem = SimpleNamespace(
+        name="Remote control problem",
+        image_url="https://cdn.example/remote-control-problem.jpg",
+        icon_url=None,
+    )
     member = SimpleNamespace(
         full_name="Aman Singh", designation="Senior Technician",
         profile_photo_url="https://cdn.example/aman.jpg", user_id=user_id,
@@ -2300,6 +2308,7 @@ async def test_booking_status_card_uses_real_technician_trust_and_hides_provider
             values = {
                 ("MasterService", offering_id): offering,
                 ("ServiceCategory", category_id): category,
+                ("MasterIssueType", problem_id): problem,
                 ("ProviderTeamMember", staff_id): member,
                 ("User", user_id): user,
             }
@@ -2308,14 +2317,14 @@ async def test_booking_status_card_uses_real_technician_trust_and_hides_provider
     thread = SimpleNamespace(customer_id=booking.customer_id, channel="instagram")
     view = await MessagingGatewayService(DB()).booking_status_view(thread, "BK-42")
 
-    assert view["image_url"] == "https://cdn.example/aman.jpg"
+    assert view["image_url"] == "https://cdn.example/remote-control-problem.jpg"
     assert view["technician_verified"] is True
     assert view["badges"] == ["Top Rated"]
-    assert "Verification: ✓ Verified technician" in view["text"]
-    assert "Badges: Top Rated" in view["text"]
-    assert "Service partner: confirmed" in view["text"]
+    assert "Verification / ਜਾਂਚ: ✓ Verified technician" in view["text"]
+    assert "Badges / ਬੈਜ: Top Rated" in view["text"]
+    assert "Service partner: confirm ਹੈ" in view["text"]
     assert "PROGRESS" in view["text"]
-    assert "✓ Booked  →  ✓ Assigned  →  ○ In service  →  ○ Complete" in view["text"]
+    assert "✓ Booked  →  ✓ Assigned  →  ○ ਕੰਮ ਜਾਰੀ  →  ○ Complete" in view["text"]
     assert "VISIT DETAILS" in view["text"]
     assert "YOUR TECHNICIAN" in view["text"]
     assert "SERVICE DETAILS" in view["text"]
@@ -4317,6 +4326,8 @@ def test_instagram_welcome_gives_browser_guidance_without_device_guess():
     ))
     assert INSTAGRAM_BROWSER_GUIDANCE in instagram
     assert "Instagram mobile app" in instagram
+    assert "ਲਈ" in instagram
+    assert len(instagram) < 240
     assert "refresh" not in instagram.lower()
     assert INSTAGRAM_BROWSER_GUIDANCE not in whatsapp
 

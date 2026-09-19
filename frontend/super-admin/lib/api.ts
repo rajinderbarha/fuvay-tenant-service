@@ -2647,6 +2647,9 @@ export interface ServiceAreaRequest {
   tenant_notes?:string|null; admin_notes?:string|null;
   created_at:string; updated_at:string;
   items?: ServiceAreaRequestItem[];
+  tenant_name?:string|null; category_name?:string|null;
+  item_count?:number; pending_item_count?:number;
+  cities?:string[]; zipcodes?:string[]; service_names?:string[];
 }
 export interface ActiveCoverageRow {
   id:string; tenant_id:string; category_id?:string|null; coverage_type:string;
@@ -2658,7 +2661,7 @@ export interface ActiveCoverageRow {
 }
 
 export const serviceAreaRequestAdminApi = {
-  list: (params: { tenant_id?:string; category_id?:string; status_filter?:string; limit?:number; cursor?:string } = {}) => {
+  list: (params: { tenant_id?:string; category_id?:string; status_filter?:string; city?:string; zipcode?:string; limit?:number; cursor?:string } = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v !== undefined) qs.set(k, String(v)); });
     return apiFetch<{ requests: ServiceAreaRequest[]; total:number; next_cursor?:string }>(
