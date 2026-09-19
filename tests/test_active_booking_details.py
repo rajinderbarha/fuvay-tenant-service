@@ -8,7 +8,7 @@ test_level5_booking_confirmation_receipt.py rather than mocking away
 serialization behavior.
 """
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -47,6 +47,7 @@ def _job(booking_id, tenant_id, **overrides):
         scheduled_date=None, scheduled_time_window=None, updated_at=None,
         service_job_workflow_id=None, completion_data=None,
         warranty_days_snapshot=None, warranty_expires_at=None,
+        warranty_certificate_number=None, warranty_certificate_issued_at=None,
     )
     defaults.update(overrides)
     job = MagicMock()
@@ -183,6 +184,46 @@ async def test_optional_photo_and_schedule_fields_may_be_null():
     result = await _run(booking, job, staff)
     assert result.data["job"]["technician"]["photo_url"] is None
     assert result.data["job"]["scheduled_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_expired_warranty_is_hidden_from_customer_job_detail():
+    customer_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    booking = _booking(customer_id)
+    job = _job(
+        booking.id, tenant_id,
+        status="completed", assignment_status="accepted",
+        warranty_days_snapshot=5,
+        warranty_expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        warranty_certificate_number="WR-EXPIRED",
+        warranty_certificate_issued_at=datetime.now(timezone.utc) - timedelta(days=5),
+    )
+
+    result = await _run(booking, job)
+
+    assert result.data["job"]["warranty_active"] is False
+    assert result.data["job"]["warranty_certificate"] is None
+
+
+@pytest.mark.asyncio
+async def test_active_warranty_remains_visible_to_customer():
+    customer_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    booking = _booking(customer_id)
+    job = _job(
+        booking.id, tenant_id,
+        status="completed", assignment_status="accepted",
+        warranty_days_snapshot=30,
+        warranty_expires_at=datetime.now(timezone.utc) + timedelta(days=20),
+        warranty_certificate_number="WR-ACTIVE",
+        warranty_certificate_issued_at=datetime.now(timezone.utc) - timedelta(days=10),
+    )
+
+    result = await _run(booking, job)
+
+    assert result.data["job"]["warranty_active"] is True
+    assert result.data["job"]["warranty_certificate"]["certificate_number"] == "WR-ACTIVE"
 
 
 @pytest.mark.asyncio

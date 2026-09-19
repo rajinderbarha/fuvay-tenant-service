@@ -127,6 +127,36 @@ async def test_a_technician_not_on_the_job_gets_no_number_and_no_record():
 
 
 @pytest.mark.asyncio
+async def test_completed_job_contact_remains_available_until_warranty_expiry():
+    from app.database import get_session_factory, init_db
+
+    await init_db()
+    async with get_session_factory()() as db:
+        ids = await _seed_job(db)
+        job_id = ids["job"]
+        _act_as(ids)
+        try:
+            await db.execute(text(
+                "UPDATE service_jobs SET status='completed', "
+                "warranty_expires_at=now() + interval '1 day' WHERE id=:jid"
+            ), {"jid": job_id})
+            await db.commit()
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                detail = (await client.get(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-detail", headers=HEADERS
+                )).json()["data"]
+                assert detail["customer"]["phone_call_available"] is True
+
+                response = await client.post(
+                    f"/v1/staff/service-jobs/{job_id}/customer-call", headers=HEADERS
+                )
+                assert response.status_code == 200, response.text
+                assert response.json()["data"]["customer_phone"] == PHONE
+        finally:
+            await _cleanup(db, ids)
+
+
+@pytest.mark.asyncio
 async def test_missing_number_and_closed_job_refuse_without_recording_a_tap():
     from app.database import get_session_factory, init_db
 
@@ -150,12 +180,20 @@ async def test_missing_number_and_closed_job_refuse_without_recording_a_tap():
                     "UPDATE service_bookings SET customer_phone=:phone WHERE id=:bid"
                 ), {"phone": PHONE, "bid": ids["booking"]})
                 await db.execute(text(
-                    "UPDATE service_jobs SET status='completed' WHERE id=:jid"), {"jid": job_id})
+                    "UPDATE service_jobs SET status='completed', "
+                    "warranty_expires_at=now() - interval '1 minute' WHERE id=:jid"
+                ), {"jid": job_id})
                 await db.commit()
                 closed = await client.post(f"/v1/staff/service-jobs/{job_id}/customer-call", headers=HEADERS)
                 assert closed.status_code == 409, closed.text
                 assert closed.json()["error_code"] == "MASKED_CALLING_JOB_NOT_CALLABLE"
                 assert PHONE[-10:] not in closed.text
+
+                customer = (await client.get(
+                    f"/v1/staff/service-jobs/{job_id}/mobile-detail", headers=HEADERS
+                )).json()["data"]["customer"]
+                assert customer["phone_call_available"] is False
+                assert customer["phone_call_reason"] == "MASKED_CALLING_JOB_NOT_CALLABLE"
 
             assert await _dial_events(db, job_id) == []
         finally:

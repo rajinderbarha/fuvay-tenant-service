@@ -49,7 +49,8 @@ ERR_CALLER_NOT_ASSIGNED = "MASKED_CALLING_CALLER_NOT_ASSIGNED"
 ERR_PROVIDER_FAILED = "MASKED_CALLING_PROVIDER_FAILED"
 ERR_WEBHOOK_UNAUTHORIZED = "MASKED_CALLING_WEBHOOK_UNAUTHORIZED"
 
-# A job in a terminal state has no legitimate reason for a fresh call binding.
+# These outcomes permanently close the contact window. A completed job is
+# handled separately: contact stays available only until its warranty expires.
 NON_CALLABLE_JOB_STATUSES = {
-    "completed", "cancelled", "failed", "closed_estimate_declined",
+    "cancelled", "failed", "closed_estimate_declined",
 }

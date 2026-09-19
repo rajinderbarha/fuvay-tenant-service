@@ -40,9 +40,58 @@ def customer_display_alias(customer_id) -> str:
     return f"Customer HS-{str(customer_id).replace('-', '')[:4].upper()}"
 
 
+def _job_value(job, key: str):
+    """Read a field from either a SQL mapping or a ServiceJob instance."""
+    if hasattr(job, "get"):
+        return job.get(key)
+    return getattr(job, key, None)
+
+
+def contact_window_open(job, *, at: datetime | None = None) -> bool:
+    """Whether job-scoped contact access is still legitimate.
+
+    Active jobs remain contactable. Completed jobs remain contactable only
+    during their explicit warranty period. Cancellation/failure permanently
+    closes access. This is the backend authority used by every contact route.
+    """
+    status = str(_job_value(job, "status") or "").lower()
+    if status in c.NON_CALLABLE_JOB_STATUSES:
+        return False
+    if status != "completed":
+        return True
+
+    expires_at = _job_value(job, "warranty_expires_at")
+    if not expires_at:
+        return False
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    moment = at or _now()
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return expires_at >= moment
+
+
+def _contact_window_expiry(job) -> str | None:
+    expires_at = _job_value(job, "warranty_expires_at")
+    return expires_at.isoformat() if expires_at else None
+
+
+def _assert_contact_window_open(job) -> None:
+    if contact_window_open(job):
+        return
+    status = str(_job_value(job, "status") or "").lower()
+    message = (
+        "Customer contact access ended when this job's warranty expired."
+        if status == "completed"
+        else "This job is closed, so a new call cannot be placed for it."
+    )
+    raise ServiceOSException(c.ERR_JOB_NOT_CALLABLE, message, status_code=409)
+
+
 async def _load_job(db: AsyncSession, job_id: uuid.UUID, tenant_id: uuid.UUID):
     row = (await db.execute(text(
-        "SELECT id, booking_id, tenant_id, customer_id, status, assigned_staff_id "
+        "SELECT id, booking_id, tenant_id, customer_id, status, assigned_staff_id, "
+        "warranty_expires_at "
         "FROM service_jobs WHERE id=:jid AND tenant_id=:tid"
     ), {"jid": str(job_id), "tid": str(tenant_id)})).fetchone()
     if not row:
@@ -57,7 +106,7 @@ async def _load_customer_job(
     customer's booking exists."""
     row = (await db.execute(text(
         "SELECT sj.id, sj.booking_id, sj.tenant_id, sj.customer_id, "
-        "sj.status, sj.assigned_staff_id "
+        "sj.status, sj.assigned_staff_id, sj.warranty_expires_at "
         "FROM service_jobs sj "
         "JOIN service_bookings sb ON sb.id = sj.booking_id "
         "WHERE sb.id=:bid AND sb.customer_id=:cid"
@@ -122,11 +171,12 @@ async def describe_customer_contact(
         await _provider_number(db, job["tenant_id"])
     )
     provider = get_provider()
+    window_open = contact_window_open(job)
     reason = None
-    if not provider.configured:
-        reason = c.ERR_CALLING_NOT_CONFIGURED
-    elif str(job["status"]) in c.NON_CALLABLE_JOB_STATUSES:
+    if not window_open:
         reason = c.ERR_JOB_NOT_CALLABLE
+    elif not provider.configured:
+        reason = c.ERR_CALLING_NOT_CONFIGURED
     elif not target_number:
         reason = c.ERR_NO_STAFF_NUMBER
     return {
@@ -134,6 +184,8 @@ async def describe_customer_contact(
         "contact_display": "Assigned technician" if target == "technician" else "Service provider",
         "contact_role": target, "phone_number_visible": False,
         "phone_number_policy": "The platform connects the call and keeps both numbers private.",
+        "contact_window_open": window_open,
+        "contact_available_until": _contact_window_expiry(job),
         "can_call": reason is None, "cannot_call_reason": reason,
         "connected_before": await has_connected_call(db, job["id"]),
     }
@@ -149,13 +201,13 @@ async def describe_contact(db: AsyncSession, job_id: uuid.UUID, tenant_id: uuid.
     job = await _load_job(db, job_id, tenant_id)
     provider = get_provider()
     has_number = await _customer_number(db, job) is not None
-    job_callable = str(job["status"]) not in c.NON_CALLABLE_JOB_STATUSES
+    window_open = contact_window_open(job)
 
     reason = None
-    if not provider.configured:
-        reason = c.ERR_CALLING_NOT_CONFIGURED
-    elif not job_callable:
+    if not window_open:
         reason = c.ERR_JOB_NOT_CALLABLE
+    elif not provider.configured:
+        reason = c.ERR_CALLING_NOT_CONFIGURED
     elif not has_number:
         reason = c.ERR_NO_CUSTOMER_NUMBER
 
@@ -175,6 +227,8 @@ async def describe_contact(db: AsyncSession, job_id: uuid.UUID, tenant_id: uuid.
             "Calls are connected through the platform. Neither you nor the "
             "customer sees the other's number."
         ),
+        "contact_window_open": window_open,
+        "contact_available_until": _contact_window_expiry(job),
         "can_call": reason is None,
         "cannot_call_reason": reason,
         "connected_before": await has_connected_call(db, job_id),
@@ -221,12 +275,7 @@ async def place_call(
                 c.ERR_CALLER_NOT_ASSIGNED,
                 "This job is not assigned to you.", status_code=403,
             )
-    if str(job["status"]) in c.NON_CALLABLE_JOB_STATUSES:
-        raise ServiceOSException(
-            c.ERR_JOB_NOT_CALLABLE,
-            "This job is closed, so a new call cannot be placed for it.",
-            status_code=409,
-        )
+    _assert_contact_window_open(job)
 
     provider = get_provider()
     if not provider.configured:
@@ -302,12 +351,7 @@ async def place_customer_call(
     party receives the other's number. An unassigned booking cannot be called.
     """
     job = await _load_customer_job(db, booking_id, customer_id)
-    if str(job["status"]) in c.NON_CALLABLE_JOB_STATUSES:
-        raise ServiceOSException(
-            c.ERR_JOB_NOT_CALLABLE,
-            "This job is closed, so a new call cannot be placed for it.",
-            status_code=409,
-        )
+    _assert_contact_window_open(job)
 
     provider = get_provider()
     settings = get_settings()

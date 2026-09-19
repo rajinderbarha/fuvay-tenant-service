@@ -12,6 +12,7 @@ would be both expensive and wrong.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import text as sa_text
@@ -79,6 +80,22 @@ def test_the_session_row_never_persists_either_real_number():
         assert forbidden not in columns, f"{forbidden} must not be stored on a call session"
     # The platform's own caller id IS safe to keep -- both sides see it anyway.
     assert "caller_id_used" in columns
+
+
+def test_contact_window_stays_open_through_warranty_then_closes():
+    now = datetime(2026, 9, 19, 10, 0, tzinfo=timezone.utc)
+
+    assert svc.contact_window_open({"status": "assigned"}, at=now) is True
+    assert svc.contact_window_open({
+        "status": "completed",
+        "warranty_expires_at": now + timedelta(seconds=1),
+    }, at=now) is True
+    assert svc.contact_window_open({
+        "status": "completed",
+        "warranty_expires_at": now - timedelta(seconds=1),
+    }, at=now) is False
+    assert svc.contact_window_open({"status": "completed"}, at=now) is False
+    assert svc.contact_window_open({"status": "cancelled"}, at=now) is False
 
 
 @pytest.mark.asyncio

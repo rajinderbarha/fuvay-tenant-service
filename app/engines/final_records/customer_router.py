@@ -85,9 +85,16 @@ async def _customer_safe_job(db: AsyncSession, job: ServiceJob) -> dict:
     # from turning a customer booking-detail read into a 500.
     if not isinstance(warranty_expires_at, datetime):
         warranty_expires_at = None
+    elif warranty_expires_at.tzinfo is None:
+        warranty_expires_at = warranty_expires_at.replace(tzinfo=timezone.utc)
     warranty_days = getattr(job, "warranty_days_snapshot", None)
     if not isinstance(warranty_days, int):
         warranty_days = None
+
+    warranty_active = bool(
+        warranty_expires_at
+        and warranty_expires_at >= datetime.now(timezone.utc)
+    )
 
     return {
         # ARRIVAL-INSPECTION-QUOTE-APPROVAL phase: the job's own id is not
@@ -108,13 +115,13 @@ async def _customer_safe_job(db: AsyncSession, job: ServiceJob) -> dict:
         "completion":            completion,
         "warranty_days":         warranty_days,
         "warranty_expires_at":   warranty_expires_at.isoformat() if warranty_expires_at else None,
-        "warranty_active":       bool(warranty_expires_at and warranty_expires_at >= datetime.now(timezone.utc)),
+        "warranty_active":       warranty_active,
         "warranty_certificate": ({
             "certificate_number": job.warranty_certificate_number,
             "issued_at": (job.warranty_certificate_issued_at.isoformat()
                           if job.warranty_certificate_issued_at else None),
             "download_path": f"/v1/customer/my-activity/jobs/{job.id}/warranty-certificate",
-        } if job.warranty_certificate_number else None),
+        } if warranty_active and job.warranty_certificate_number else None),
     }
 
 
@@ -192,7 +199,20 @@ async def list_my_bookings(
     derived from a paginated fetch of one bucket would be wrong.
     """
     customer_id = uuid.UUID(user.user_id)
-    mine = ServiceBooking.customer_id == customer_id
+    # The customer workspace is an actionable view, not an indefinite archive.
+    # Once a completed job's explicit warranty window has ended, hide its
+    # booking from the normal list and every tab count. The records themselves
+    # remain intact for invoices, disputes, audit and an authorized direct
+    # lookup; this is presentation retention, never data deletion.
+    expired_warranty_bookings = select(ServiceJob.booking_id).where(
+        ServiceJob.status == "completed",
+        ServiceJob.warranty_expires_at.is_not(None),
+        ServiceJob.warranty_expires_at < datetime.now(timezone.utc),
+    )
+    mine = (
+        (ServiceBooking.customer_id == customer_id)
+        & ServiceBooking.id.notin_(expired_warranty_bookings)
+    )
 
     def _bucket_filter(q, which: str | None):
         if which == "active":
@@ -549,7 +569,7 @@ async def get_my_job(
         return ok({"error": "FINAL_JOB_NOT_FOUND"}, _RID(r), "final_records")
     if job.customer_id and job.customer_id != customer_id:
         return ok({"error": ERR_ACCESS_DENIED}, _RID(r), "final_records")
-    return ok(job.to_dict(), _RID(r), "final_records")
+    return ok(await _customer_safe_job(db, job), _RID(r), "final_records")
 
 
 # ── GET /appointments ─────────────────────────────────────────────────────────

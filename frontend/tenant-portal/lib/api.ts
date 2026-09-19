@@ -3394,6 +3394,8 @@ export interface MaskedContact {
   contact_role?: "provider" | "technician";
   phone_number_visible: false;
   phone_number_policy: string;
+  contact_window_open: boolean;
+  contact_available_until?: string | null;
   can_call: boolean;
   cannot_call_reason: string | null;
   connected_before: boolean;

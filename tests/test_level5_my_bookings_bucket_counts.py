@@ -83,3 +83,25 @@ async def test_default_ordering_is_deterministic_by_created_at_then_id():
     assert "ORDER BY" in compiled.upper()
     order_clause = compiled.upper().split("ORDER BY")[1]
     assert order_clause.index("CREATED_AT") < order_clause.index("ID")
+
+
+@pytest.mark.asyncio
+async def test_expired_warranty_jobs_are_hidden_from_customer_list_and_counts():
+    customer_id = uuid.uuid4()
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=_rows([]))
+    db.scalar = AsyncMock(return_value=0)
+    request = MagicMock()
+    request.state.request_id = "req-1"
+    user = MagicMock(user_id=str(customer_id))
+
+    await list_my_bookings(
+        r=request, bucket="all", status=None, limit=20, offset=0,
+        user=user, db=db,
+    )
+
+    main_sql = str(db.execute.call_args_list[0].args[0]).lower()
+    assert "service_jobs.warranty_expires_at" in main_sql
+    assert "not in" in main_sql
+    for scalar_call in db.scalar.call_args_list:
+        assert "service_jobs.warranty_expires_at" in str(scalar_call.args[0]).lower()

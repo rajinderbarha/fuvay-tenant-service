@@ -5,14 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Activity, AlertTriangle, CheckCircle2, ChevronRight, Clock3, Download,
   Columns3, ExternalLink, Filter, LayoutList, MapPin, RefreshCw, Search, ShieldAlert,
-  SlidersHorizontal, Truck, UserX, Users, X,
+  SlidersHorizontal, Truck, UserX, Users, X, PhoneCall,
 } from "lucide-react";
 import {
   Alert, Button, Card, Input, KpiGrid, Modal, PageHeader, PageShell, Pagination,
   Select, Skeleton, StatusBadge, SummaryCard,
 } from "@serviceos/design-system";
 import {
-  bookingsJobsApi, type BJAddress, type BJDetail, type BJItem, type BJListResponse,
+  bookingsJobsApi, serviceJobAssignmentApi, type BJAddress, type BJDetail,
+  type BJItem, type BJListResponse,
 } from "../../../../lib/api";
 import { useAction, useApi } from "../../../../hooks/useApi";
 import { BookingsLifecycleBoard } from "../../../../components/bookings/BookingsLifecycleBoard";
@@ -223,6 +224,14 @@ function EmptyResults({ filtered, onClear }: { filtered: boolean; onClear: () =>
 
 function JobPreview({ jobId, detail, loading, error, onClose, onChanged }: { jobId: string; detail: BJDetail | null; loading: boolean; error: string | null; onClose: () => void; onChanged: () => void }) {
   const router = useRouter(); const [confirmOpen, setConfirmOpen] = useState(false); const [cancelOpen, setCancelOpen] = useState(false); const [address, setAddress] = useState<BJAddress | null>(null); const [addressLoading, setAddressLoading] = useState(false); const [addressError, setAddressError] = useState<string | null>(null);
+  const contact = useApi(useCallback(
+    () => serviceJobAssignmentApi.getContact(jobId), [jobId],
+  ), [jobId]);
+  const callCustomer = useAction(useCallback(
+    () => serviceJobAssignmentApi.callCustomer(jobId), [jobId],
+  ), {
+    onSuccess: () => { contact.refetch(); },
+  });
   async function revealAddress() { setAddressLoading(true); setAddressError(null); try { setAddress(await bookingsJobsApi.address(jobId)); } catch (e) { setAddressError(e instanceof Error ? e.message : "Could not load the service address."); } finally { setAddressLoading(false); } }
   const nextAction = detail?.stage.next_action; const providerOwnsAction = nextAction ? PROVIDER_ACTIONS.has(nextAction.action_key) : false; const resolvedId = String(detail?.job.id ?? jobId);
   const dispatchUrl = `/home-services/dispatch?${new URLSearchParams({ ...(detail?.job.scheduled_date ? { date: detail.job.scheduled_date } : {}), job_id: resolvedId }).toString()}`;
@@ -239,7 +248,7 @@ function JobPreview({ jobId, detail, loading, error, onClose, onChanged }: { job
     <div style={{ position: "sticky", top: 0, zIndex: 2, padding: "18px 20px", background: "var(--surface)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 12 }}><div><div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-tertiary)", textTransform: "uppercase" }}>{detail?.job.job_number ?? "Job preview"}</div><h2 style={{ margin: "3px 0 0", fontSize: 20, color: "var(--text-primary)" }}>{detail?.service_name ?? "Loading job"}</h2></div><button type="button" onClick={onClose} aria-label="Close job preview" style={{ ...toolbarButtonStyle, width: 36, height: 36, padding: 0, justifyContent: "center" }}><X size={17} /></button></div>
     <div style={{ padding: 20, display: "grid", gap: 14 }}>{loading || !detail ? error ? <Alert tone="danger">{error}</Alert> : <><Skeleton height={70} /><Skeleton height={180} /><Skeleton height={240} /></> : <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}><StatusBadge status={detail.stage.stage} /><SlaLabel status={detail.sla.sla_status} remaining={detail.sla.minutes_remaining} overdue={detail.sla.minutes_overdue} /></div>
-      <Card padding="sm"><PanelTitle title="Customer & visit" /><Field label="Customer" value={String(detail.booking.customer_alias ?? "Private customer")} />{detail.customer_health && <Field label="Customer health" value={`${Math.round(detail.customer_health.score)}/100 · ${detail.customer_health.band.replace(/_/g, " ")}`} />}<Field label="Locality" value={String(detail.booking.locality ?? "Unavailable")} />{address ? <AddressView address={address} /> : <Button variant="secondary" size="sm" leftIcon={<MapPin size={13} />} onClick={revealAddress} loading={addressLoading} style={{ marginTop: 10 }}>View service address</Button>}{addressError && <div style={{ marginTop: 8 }}><Alert tone="danger">{addressError}</Alert></div>}</Card>
+      <Card padding="sm"><PanelTitle title="Customer & visit" /><Field label="Customer" value={String(detail.booking.customer_alias ?? "Private customer")} />{detail.customer_health && <Field label="Customer health" value={`${Math.round(detail.customer_health.score)}/100 · ${detail.customer_health.band.replace(/_/g, " ")}`} />}<Field label="Locality" value={String(detail.booking.locality ?? "Unavailable")} />{contact.data?.contact_window_open && <><Button variant="secondary" size="sm" leftIcon={<PhoneCall size={13} />} onClick={() => callCustomer.execute()} loading={callCustomer.loading} disabled={!contact.data.can_call} style={{ marginTop: 10, width: "100%" }}>Call customer securely</Button>{callCustomer.error && <div style={{ marginTop: 8 }}><Alert tone="danger">{callCustomer.error}</Alert></div>}{contact.data.connected_before && !callCustomer.error && <div style={{ marginTop: 7, color: "var(--text-tertiary)", fontSize: 11 }}>A connected call is recorded for this job.</div>}{!contact.data.can_call && contact.data.cannot_call_reason && <div style={{ marginTop: 7, color: "var(--text-tertiary)", fontSize: 11 }}>Secure calling is unavailable for this job.</div>}</>}{address ? <AddressView address={address} /> : <Button variant="secondary" size="sm" leftIcon={<MapPin size={13} />} onClick={revealAddress} loading={addressLoading} style={{ marginTop: 10 }}>View service address</Button>}{addressError && <div style={{ marginTop: 8 }}><Alert tone="danger">{addressError}</Alert></div>}</Card>
       <Card padding="sm"><PanelTitle title="Service context" /><Field label="Job type" value={detail.job_type_label ?? "Unresolved"} /><Field label="Schedule" value={detail.job.scheduled_date ? `${formatDate(detail.job.scheduled_date)} · ${detail.job.scheduled_time_window ?? "Time pending"}` : "Not scheduled"} /><Field label="Visit fee" value={detail.visit_fee ? formatMoney(detail.visit_fee) : "—"} /><Field label="Estimate" value={detail.quote ? `${formatMoney(detail.quote.customer_payable_amount)} · ${String(detail.quote.status ?? "created").replace(/_/g, " ")}` : "No estimate yet"} /><Field label="Payment" value={detail.invoice ? String(detail.invoice.payment_status ?? "Pending").replace(/_/g, " ") : "No invoice yet"} /></Card>
       <Card padding="sm"><PanelTitle title={detail.workflow_stages.length ? "Workflow" : "Lifecycle"} />{detail.workflow_stages.length ? <Workflow stages={detail.workflow_stages} /> : <Lifecycle current={detail.stage.stage} />}</Card>
       <Card padding="sm" style={{ background: "var(--accent-muted)" }}><div style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700 }}>Next required action</div><div style={{ margin: "5px 0 11px", fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>{nextAction?.label ?? "No action · workflow complete"}</div>{nextAction && !providerOwnsAction && <div style={{ marginBottom: 10, fontSize: 12, color: "var(--text-secondary)" }}>This step belongs to the assigned technician in the native staff app. Monitor it here; the provider workspace does not duplicate field execution controls.</div>}{actionButton()}</Card>

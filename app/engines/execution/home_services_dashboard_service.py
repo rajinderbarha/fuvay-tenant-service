@@ -37,6 +37,13 @@ _PIPELINE_GROUPS = [
 ]
 _STATUS_TO_GROUP = {s: key for key, _, statuses in _PIPELINE_GROUPS for s in statuses}
 
+# Cancelled work remains available in the full Bookings & Jobs history, where
+# the provider can audit why it ended. It is not live operational work and must
+# not occupy the dashboard pipeline or today's schedule.
+_DASHBOARD_HIDDEN_STATUSES = frozenset({
+    "cancelled", "failed", "closed_estimate_declined",
+})
+
 
 async def _safe(coro, module_key: str, errors: list[str]) -> dict | list | None:
     try:
@@ -155,14 +162,20 @@ def _age_hours(ts) -> float | None:
 
 async def _job_pipeline(db: AsyncSession, tid: uuid.UUID) -> list[dict]:
     rows = (await db.execute(text(
-        "SELECT status, count(*) FROM service_jobs WHERE tenant_id=:tid GROUP BY status"
+        "SELECT status, count(*) FROM service_jobs WHERE tenant_id=:tid "
+        "AND status NOT IN ('cancelled','failed','closed_estimate_declined') "
+        "GROUP BY status"
     ), {"tid": str(tid)})).fetchall()
     counts = {key: 0 for key, _, _ in _PIPELINE_GROUPS}
     for status, cnt in rows:
         group = _STATUS_TO_GROUP.get(status)
         if group:
             counts[group] += int(cnt)
-    return [{"key": key, "label": label, "count": counts[key]} for key, label, _ in _PIPELINE_GROUPS]
+    return [
+        {"key": key, "label": label, "count": counts[key]}
+        for key, label, statuses in _PIPELINE_GROUPS
+        if not statuses.issubset(_DASHBOARD_HIDDEN_STATUSES)
+    ]
 
 
 async def _todays_jobs(db: AsyncSession, tid: uuid.UUID, limit: int = 20) -> list[dict]:
@@ -178,6 +191,7 @@ async def _todays_jobs(db: AsyncSession, tid: uuid.UUID, limit: int = 20) -> lis
         "LEFT JOIN master_services ms ON ms.id = ts.master_service_id "
         "LEFT JOIN provider_team_members ptm ON ptm.id = sj.assigned_staff_id "
         "WHERE sj.tenant_id=:tid AND sj.scheduled_date = CURRENT_DATE "
+        "AND sj.status NOT IN ('cancelled','failed','closed_estimate_declined') "
         "ORDER BY sj.scheduled_time_window NULLS LAST, sj.created_at DESC LIMIT :lim"
     ), {"tid": str(tid), "lim": limit})).fetchall()
     return [{
@@ -185,7 +199,7 @@ async def _todays_jobs(db: AsyncSession, tid: uuid.UUID, limit: int = 20) -> lis
         "service_name": r.service_name, "scheduled_time": r.scheduled_time_window,
         "technician_name": r.technician_name, "city": r.city, "status": r.status,
         "pipeline_group": _STATUS_TO_GROUP.get(r.status, r.status),
-    } for r in rows]
+    } for r in rows if str(r.status) not in _DASHBOARD_HIDDEN_STATUSES]
 
 
 _JOBS_TAB_GROUPS = [("all", "All", None)] + [(k, l, s) for k, l, s in _PIPELINE_GROUPS]
@@ -271,7 +285,7 @@ async def get_job_detail(db: AsyncSession, tid: uuid.UUID, job_id: uuid.UUID) ->
         "SELECT sj.id, sj.job_number, sj.status, sj.assignment_status, sj.scheduled_date, "
         "sj.scheduled_time_window, sj.city, sj.zipcode, sj.address_snapshot, sj.assigned_staff_id, "
         "sj.completion_data, sj.failure_reason, sj.created_at, sj.updated_at, "
-        "COALESCE(t.full_name, 'Customer') AS customer_name, t.phone AS customer_phone, "
+        "COALESCE(t.full_name, 'Customer') AS customer_name, "
         "COALESCE(ts.tenant_display_name, ms.service_name, 'Service') AS service_name, "
         "ptm.full_name AS technician_name, ptm.phone AS technician_phone "
         "FROM service_jobs sj "
@@ -508,7 +522,8 @@ async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
     ) or []
     today_total = (await db.execute(text(
         "SELECT count(*) FROM service_jobs WHERE tenant_id=:tid "
-        "AND scheduled_date=CURRENT_DATE"
+        "AND scheduled_date=CURRENT_DATE "
+        "AND status NOT IN ('cancelled','failed','closed_estimate_declined')"
     ), {"tid": str(tid)})).scalar() or 0
     active_jobs = sum(
         int(item["count"]) for item in pipeline

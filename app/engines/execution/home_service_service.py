@@ -577,12 +577,17 @@ class HomeServiceJobExecutionService:
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
         from app.engines.masked_calling import constants as calling
-        from app.engines.masked_calling.service import _customer_number
+        from app.engines.masked_calling.service import _customer_number, contact_window_open
 
-        if str(job.status) in calling.NON_CALLABLE_JOB_STATUSES:
+        if not contact_window_open(job):
+            message = (
+                "Customer contact access ended when this job's warranty expired."
+                if str(job.status) == "completed"
+                else "This job is closed, so the customer cannot be called from it."
+            )
             raise ServiceOSException(
                 calling.ERR_JOB_NOT_CALLABLE,
-                "This job is closed, so the customer cannot be called from it.",
+                message,
                 status_code=409,
             )
         phone = await _customer_number(

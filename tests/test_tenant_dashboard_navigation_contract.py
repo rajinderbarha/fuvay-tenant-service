@@ -107,6 +107,14 @@ def test_dashboard_capacity_metric_distinguishes_ready_from_available():
     assert 'label="Available technicians"' not in DASHBOARD_PAGE
 
 
+def test_provider_job_drawer_uses_backend_masked_calling_not_a_raw_number():
+    assert "serviceJobAssignmentApi.getContact(jobId)" in BOOKINGS_PAGE
+    assert "serviceJobAssignmentApi.callCustomer(jobId)" in BOOKINGS_PAGE
+    assert "Call customer securely" in BOOKINGS_PAGE
+    assert "contact.data?.contact_window_open" in BOOKINGS_PAGE
+    assert "customer_phone" not in BOOKINGS_PAGE
+
+
 def test_every_rendered_tenant_sidebar_destination_has_page_metadata():
     routes = [
         "/dashboard", "/profile", "/business/coverage-hours",

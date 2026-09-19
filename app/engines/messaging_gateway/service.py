@@ -993,6 +993,7 @@ class MessagingGatewayService:
                 WarrantyClaim.customer_id == thread.customer_id,
             )
         )).scalars().all())
+        now = datetime.now(timezone.utc)
         rows = (await self.db.execute(
             select(ServiceJob, ServiceBooking, MasterService)
             .join(ServiceBooking, ServiceBooking.id == ServiceJob.booking_id)
@@ -1001,11 +1002,11 @@ class MessagingGatewayService:
                 ServiceBooking.customer_id == thread.customer_id,
                 ServiceJob.status == "completed",
                 ServiceJob.warranty_expires_at.is_not(None),
+                ServiceJob.warranty_expires_at >= now,
             )
             .order_by(ServiceJob.updated_at.desc())
             .limit(20)
         )).all()
-        now = datetime.now(timezone.utc)
         result = []
         for job, booking, offering in rows:
             expiry = job.warranty_expires_at

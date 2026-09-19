@@ -41,7 +41,8 @@ Deliberately NOT fabricated (disclosed in the Phase J report, not hidden):
   - Relay call: no telephony/relay engine exists anywhere in this repo
     (audited) -- `call_relay_available` is always false with reason
     CONTACT_RELAY_UNAVAILABLE, never a fake working button.
-  - Phone call: the technician calls from their own phone dialer.
+  - Phone call: the technician calls from their own phone dialer during the
+    active job and its explicit warranty window.
     `phone_call_available` says whether POST .../customer-call can return a
     number, and every recorded tap is listed (`last_called_at`,
     `recent_call_times`). The number itself is never in this projection.
@@ -93,7 +94,7 @@ class TechnicianJobDetailService:
         )
         from app.engines.home_service_assignment.service import _next_required_action
         from app.engines.home_service_assignment.staff_model import ProviderTeamMember
-        from app.engines.masked_calling.service import _customer_number
+        from app.engines.masked_calling.service import _customer_number, contact_window_open
 
         staff_id = await self._resolve_staff_member_id(db, user_id)
 
@@ -132,6 +133,7 @@ class TechnicianJobDetailService:
             }
 
         is_terminal = job.status in _TERMINAL_STATUSES
+        contact_open = contact_window_open(job)
         # The number itself is released only by POST .../customer-call, which
         # records the tap; this projection says whether that call can succeed.
         has_customer_number = await _customer_number(
@@ -165,9 +167,9 @@ class TechnicianJobDetailService:
                 "call_relay_reason": "CONTACT_RELAY_UNAVAILABLE",
                 "message_relay_available": False,
                 "message_relay_reason": "CONTACT_RELAY_UNAVAILABLE",
-                "phone_call_available": has_customer_number and not is_terminal,
+                "phone_call_available": has_customer_number and contact_open,
                 "phone_call_reason": (
-                    "MASKED_CALLING_JOB_NOT_CALLABLE" if is_terminal
+                    "MASKED_CALLING_JOB_NOT_CALLABLE" if not contact_open
                     else None if has_customer_number
                     else "MASKED_CALLING_NO_CUSTOMER_NUMBER"
                 ),
