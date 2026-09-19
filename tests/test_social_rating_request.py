@@ -456,6 +456,11 @@ async def test_completing_the_job_asks_for_a_rating_after_the_response(monkeypat
     job_id = uuid.uuid4()
     monkeypatch.setattr(router_mod._svc, "finalize_job",
                         AsyncMock(return_value={"id": str(job_id), "status": "completed"}))
+    monkeypatch.setattr(
+        router_mod.MobileCustomerAssessmentService,
+        "get_status",
+        AsyncMock(return_value={"eligible": True, "show_prompt": True}),
+    )
     tasks = BackgroundTasks()
     await router_mod.finalize_mobile_direct_payment(
         job_id, NS(state=NS(request_id="rid-1")), tasks, user=_staff(), db=AsyncMock(),

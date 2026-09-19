@@ -484,12 +484,12 @@ async def test_instagram_problem_step_uses_service_artwork_as_visual_cards():
     assert turn.picker["presentation"] == "carousel"
     assert turn.picker["rows"][0] == {
         "id": "pb|cooling",
-        "title": "❄️ AC not cooling",
+        "title": "AC not cooling",
         "description": "Air is warm or cooling is weak",
         "image_url": "https://cdn.example/ac-card.png",
         "button_title": "AC not cooling",
     }
-    assert turn.picker["rows"][1]["title"] == "💧 Water leakage"
+    assert turn.picker["rows"][1]["title"] == "Water leakage"
     assert "experiencing" in turn.picker["rows"][1]["description"]
     assert all(not row["id"].startswith("rs|") for row in turn.picker["rows"])
 
@@ -2318,7 +2318,7 @@ async def test_instagram_uses_stacked_buttons_for_durable_actions(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_a_plain_http_card_image_is_dropped_rather_than_sent(monkeypatch):
+async def test_a_plain_http_card_image_uses_public_fallback(monkeypatch):
     """Meta fetches card artwork itself and accepts only public https, so a
     local-disk upload served over http can never render. It must not be sent
     as if it could."""
@@ -2350,7 +2350,7 @@ async def test_a_plain_http_card_image_is_dropped_rather_than_sent(monkeypatch):
     ], channel=CHANNEL_INSTAGRAM, config=ig, presentation="carousel")
 
     element = calls[0]["message"]["attachment"]["payload"]["elements"][0]
-    assert "image_url" not in element
+    assert element["image_url"].startswith("https://res.cloudinary.com/")
     assert element["title"] == "Air Conditioner"
 
 
@@ -3352,8 +3352,11 @@ async def test_whatsapp_combines_address_and_location_in_one_prompt(monkeypatch)
         zipcode = "140412"
         city = "Bassi Pathana"
 
-    draft = {"id": "d-1", "job_type_id": "j-1", "zipcode": "140412",
-             "address_snapshot": {}}
+    draft = {
+        "id": "d-1", "job_type_id": "j-1", "zipcode": "140412",
+        "selected_tenant_id": "tenant-1", "preferred_date": "2026-09-20",
+        "preferred_time_window": "10:00-12:00", "address_snapshot": {},
+    }
 
     async def no_picker(*args, **kwargs):
         return None

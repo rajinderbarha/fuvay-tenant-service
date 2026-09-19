@@ -50,7 +50,6 @@ from app.engines.messaging_gateway.constants import (
 )
 from app.engines.messaging_gateway.pickers import _join
 from app.engines.messaging_gateway.dev_identity import instagram_phone_bypass_enabled
-from app.engines.messaging_gateway.problem_cards import problem_card_symbol
 
 logger = structlog.get_logger(__name__)
 
@@ -1925,12 +1924,21 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     # Coverage is decided on the PINCODE alone, so it is decided before any
     # other question — including the city, which is only ever asked as a
     # fallback for a covered area whose row does not name one.
-    categories = await _serviceable_categories(db, thread.zipcode)
-    if not categories:
-        # An uncovered pincode has no coverage row, so there is no city name
-        # to use — naming the pincode is the only honest thing to say.
-        return Turn(NOT_IN_CITY.format(
-            area=f"{thread.city} ({thread.zipcode})" if thread.city else thread.zipcode))
+    # Run the broad coverage gate once, while the customer is entering their
+    # PINCODE and before a booking draft exists. The chosen service's exact
+    # serviceability result is stored on its draft, so repeating this broad
+    # query after later answers (especially the street address) adds no safety.
+    # Provider and real-slot matching still happens silently before
+    # ASK_ADDRESS below, once the requested service/type/brand are known.
+    categories = None
+    if not draft:
+        categories = await _serviceable_categories(db, thread.zipcode)
+        if not categories:
+            # An uncovered pincode has no coverage row, so there is no city
+            # name to use — naming the pincode is the only honest response.
+            return Turn(NOT_IN_CITY.format(
+                area=(f"{thread.city} ({thread.zipcode})"
+                      if thread.city else thread.zipcode)))
 
     if not thread.city:
         return Turn(ASK_CITY)
@@ -1941,7 +1949,8 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
         # whole send rather than dropping it.
         live_bookings = await identity.live_bookings(thread) if identity is not None else []
         tracking = bool(live_bookings)
-        step = _category_step(categories, channel, page, reserve=1 if tracking else 0)
+        step = _category_step(categories or [], channel, page,
+                              reserve=1 if tracking else 0)
         if step.picker and tracking:
             # Someone with a booking in progress is at least as likely to want
             # to check on it as to book something new, so the option leads.
@@ -1984,12 +1993,10 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     if picker:  # a catalog question, or the slot grid once a provider is matched
         return Turn(None, picker)
 
-    if not _valid_address_line(
-        (draft.get("address_snapshot") or {}).get("address_line_1")
-    ):
-        return Turn(ASK_ADDRESS_WHATSAPP if channel == CHANNEL_WHATSAPP else ASK_ADDRESS)
-
     if not draft.get("selected_tenant_id"):
+        # Match against the verified ZIP and real capacity before collecting
+        # a street address. A customer should never disclose their full
+        # address and only then learn that this selection has no provider.
         return await _match_step(db, thread, executor, draft, channel, page)
 
     if (
@@ -2002,6 +2009,11 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     ):
         # A provider is matched but has no bookable capacity in the horizon.
         return Turn(NO_SLOTS)
+
+    if not _valid_address_line(
+        (draft.get("address_snapshot") or {}).get("address_line_1")
+    ):
+        return Turn(ASK_ADDRESS_WHATSAPP if channel == CHANNEL_WHATSAPP else ASK_ADDRESS)
 
     # The number is asked for HERE — after the booking is otherwise complete,
     # immediately before confirmation. WhatsApp needs none of this (Meta has
@@ -2392,9 +2404,9 @@ async def _problem_step(executor, draft: dict, channel: str, page: int) -> Turn:
         name = str(problem["name"])
         row = {
             "id": f"{PICK_PROBLEM}{PICKER_SEP}{problem['id']}",
-            "title": (
-                f"{problem_card_symbol(name)} {name}" if cards else name
-            ),
+            # Artwork already identifies the card visually; a second emoji
+            # beside the name makes the problem label look duplicated.
+            "title": name,
             "description": (
                 problem.get("description")
                 or "Select this if it matches what you are experiencing."

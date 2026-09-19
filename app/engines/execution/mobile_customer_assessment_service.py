@@ -78,6 +78,9 @@ class MobileCustomerAssessmentService:
         job, staff_id = await self._assigned(db, user_id, tenant_id, job_id)
         if job.status != "completed":
             raise ServiceOSException("JOB_NOT_COMPLETED", "Customer feedback is available after job completion.", status_code=409)
+        allowed_behaviors = {choice["code"] for choice in BEHAVIOR_CHOICES}
+        if behavior_code not in allowed_behaviors:
+            raise ServiceOSException("ASSESSMENT_BEHAVIOR_INVALID", "Choose one of the available behaviour options.", status_code=422)
         negative = behavior_code in {"difficult", "unsafe"}
         reasons = {choice["code"] for choice in NEGATIVE_REASONS}
         if negative and (reason_code not in reasons or not note):

@@ -1,6 +1,8 @@
 """Reusable Instagram artwork and labels for admin-authored service problems."""
 from __future__ import annotations
 
+from urllib.parse import urlsplit, urlunsplit
+
 # Public, non-sensitive project assets. Keeping this unversioned means an art
 # correction can be published without changing the booking service; Cloudinary
 # invalidation controls the cache when that happens.
@@ -8,6 +10,8 @@ ASSET_BASE_URL = (
     "https://res.cloudinary.com/dr1b4ezct/image/upload/"
     "serviceos/social-problem-cards"
 )
+
+INSTAGRAM_CARD_TRANSFORMATION = "c_fill,g_auto,h_960,w_960,q_auto:good,f_jpg"
 
 _FAMILIES = (
     (("cool", "cold", "temperature", "freez"), "cooling", "❄️"),
@@ -38,3 +42,23 @@ def problem_card_image(name: str) -> str:
 def problem_card_symbol(name: str) -> str:
     _, symbol = problem_card_family(name)
     return symbol
+
+
+def instagram_card_image_url(value: object, *, fallback_name: str = "") -> str:
+    """Return small, square artwork that Meta can fetch reliably."""
+    raw = str(value or "").strip()
+    if not raw.startswith("https://"):
+        raw = problem_card_image(fallback_name)
+    parsed = urlsplit(raw)
+    if (
+        (parsed.hostname or "").lower() == "res.cloudinary.com"
+        and "/image/upload/" in parsed.path
+        and f"/{INSTAGRAM_CARD_TRANSFORMATION}/" not in parsed.path
+    ):
+        path = parsed.path.replace(
+            "/image/upload/",
+            f"/image/upload/{INSTAGRAM_CARD_TRANSFORMATION}/",
+            1,
+        )
+        return urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment))
+    return raw

@@ -722,6 +722,8 @@ async def send_options(
         # the same list picker that would have been sent with Flows disabled.
 
     if channel == CHANNEL_INSTAGRAM and presentation == "status_card" and card:
+        from app.engines.messaging_gateway.problem_cards import instagram_card_image_url
+
         # A single generic-template element gives tracking a visual identity
         # and keeps the actions attached to the booking they operate on.
         element: dict[str, Any] = {
@@ -737,9 +739,9 @@ async def send_options(
                 for row in rows[:MAX_WA_BUTTONS]
             ],
         }
-        image_url = str(card.get("image_url") or "").strip()
-        if image_url.startswith("https://"):
-            element["image_url"] = image_url
+        element["image_url"] = instagram_card_image_url(
+            card.get("image_url"), fallback_name=str(card.get("title") or ""),
+        )
         return await _post(url, token, {
             "recipient": {"id": to},
             "message": {"attachment": {"type": "template", "payload": {
@@ -750,6 +752,8 @@ async def send_options(
         })
 
     if channel == CHANNEL_INSTAGRAM and presentation == "carousel":
+        from app.engines.messaging_gateway.problem_cards import instagram_card_image_url
+
         elements = []
         for row in rows[:MAX_IG_GENERIC_ELEMENTS]:
             title = _clip(str(row.get("title") or "Choose"), IG_GENERIC_TITLE_CHARS)
@@ -768,9 +772,10 @@ async def send_options(
                 }],
             }
             image_url = str(row.get("image_url") or "").strip()
-            if image_url.startswith("https://"):
-                element["image_url"] = image_url
-            elif image_url:
+            element["image_url"] = instagram_card_image_url(
+                image_url, fallback_name=title,
+            )
+            if image_url and not image_url.startswith("https://"):
                 # Meta fetches card artwork from its own servers and accepts
                 # only public https. A local-disk upload served over plain http
                 # would be dropped here and the card would render blank with no
