@@ -532,9 +532,26 @@ class BackendToolExecutor:
             if not draft:
                 return {"error": "Draft not found", "problems": []}
 
+            eligible_job_types = None
+            if getattr(draft, "zipcode", None):
+                # The postcode catalog has already run the production matcher.
+                # Reuse that answer here so a problem whose exact job type has
+                # no healthy provider/technician/slot is never offered after
+                # the customer has selected the parent service.
+                from app.engines.home_service_booking.offering_catalog_service import (
+                    booking_ready_service_matches,
+                )
+                ready = await booking_ready_service_matches(self.db, draft.zipcode)
+                service_readiness = ready.get(draft.offering_id)
+                eligible_job_types = (
+                    set(service_readiness["job_type_ids"])
+                    if service_readiness is not None else set()
+                )
+
             rows = (await self.db.execute(
                 select(MasterIssueType.id, MasterIssueType.name, MasterIssueType.description,
-                       MasterIssueType.icon_url, MasterIssueType.image_url)
+                       MasterIssueType.icon_url, MasterIssueType.image_url,
+                       ServiceIssueMapping.job_type_id.label("job_type_id"))
                 .join(ServiceIssueMapping, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
                 .where(
                     ServiceIssueMapping.master_service_id == draft.offering_id,
@@ -547,6 +564,11 @@ class BackendToolExecutor:
                 )
                 .order_by(ServiceIssueMapping.display_order)
             )).all()
+            if eligible_job_types is not None:
+                rows = [
+                    r for r in rows
+                    if getattr(r, "job_type_id", None) in eligible_job_types
+                ]
             return {
                 "problems": [
                     {

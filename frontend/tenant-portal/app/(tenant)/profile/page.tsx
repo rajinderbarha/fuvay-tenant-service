@@ -131,6 +131,7 @@ function BusinessProfileReadOnly() {
   const [profile, setProfile] = useState<BusinessProfileOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [logoFailed, setLogoFailed] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -147,6 +148,7 @@ function BusinessProfileReadOnly() {
   // no longer set one in Business Profile, so the band below is purely the
   // branded gradient defined in .profile-read-cover.
   const logoUrl = resolveMediaUrl(profile?.logo_url);
+  useEffect(() => { setLogoFailed(false); }, [logoUrl]);
   const verifiedLocked = !!profile && ["verified", "approved", "active", "changes_pending_review"].includes(profile.verification_status);
 
   // The provider does not manage documents day to day -- approval verifies the
@@ -240,7 +242,9 @@ function BusinessProfileReadOnly() {
           <Card padding={0} style={{ overflow: "hidden" }}>
             <div className="profile-read-identity">
               <div className="profile-read-logo">
-                {logoUrl ? <img src={logoUrl} alt="" /> : initials(profile.business_name)}
+                {logoUrl && !logoFailed
+                  ? <img src={logoUrl} alt={`${profile.business_name || "Business"} logo`} onError={() => setLogoFailed(true)} />
+                  : initials(profile.business_name)}
               </div>
               <div className="profile-read-title">
                 <h1>{display(profile.business_name)}</h1>
@@ -249,6 +253,7 @@ function BusinessProfileReadOnly() {
                   {verificationBadge(profile.verification_status)}
                   <Badge variant={profile.status === "active" ? "success" : "muted"}>{statusLabel(profile.status)}</Badge>
                   <Badge variant="info">Home Services</Badge>
+                  {(profile.logo_needs_reupload || logoFailed) && <Badge variant="warning">Upload a new business logo</Badge>}
                   {verifiedLocked && <Badge variant="warning">Protected fields require review</Badge>}
                 </div>
               </div>

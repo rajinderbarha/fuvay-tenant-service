@@ -4161,6 +4161,7 @@ export interface BusinessProfile {
   zipcode: string | null;
   logo_url: string | null;
   business_logo_media_id: string | null;
+  logo_needs_reupload?: boolean;
   shop_photo_media_id: string | null;
   shop_photo_url?: string | null;
   verification_status: string;

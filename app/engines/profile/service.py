@@ -124,23 +124,22 @@ class ProfileService:
 
     # ── Business profile ──────────────────────────────────────────────────────
 
-    # The eleven things a Home Services business profile needs before it is complete.
-    # Lifted verbatim from the tenant portal's own `computeCompletion()`, which had been
-    # deciding this in the browser -- so the percentage the provider saw was a number the
-    # server had never agreed to, and nothing else (admin review, readiness gates) could
-    # reuse it. Same definition, now answered once, server-side.
+    # Required identity, contact and registered-address fields. Optional public
+    # presentation fields must not reduce readiness: GST does not apply to every
+    # business, a description/logo is optional, and the storefront-photo product
+    # was retired. Keeping those in this denominator made an already-approved,
+    # operational provider look only 73% complete.
     _COMPLETENESS_FIELDS: tuple[tuple[str, str], ...] = (
         ("owner_name", "Owner Full Name"),
         ("phone", "Business Phone"),
         ("business_name", "Business Name"),
+        ("legal_name", "Legal Business Name"),
+        ("business_type", "Business Type"),
         ("email", "Business Email"),
-        ("gst_number", "GST Number"),
         ("address_line1", "Business Address"),
         ("city", "City"),
         ("state", "State"),
-        ("logo_url", "Business Logo"),
-        ("description", "Business Description"),
-        ("shop_photo_media_id", "Storefront Photo"),
+        ("zipcode", "Pincode"),
     )
 
     async def get_business_profile(self) -> dict:
@@ -155,6 +154,36 @@ class ProfileService:
         tenant = await self._load_tenant()
         data = self._serialize_tenant(tenant)
         tid = str(tenant.id)
+
+        # Tenant.logo_url predates the canonical media table and can outlive a
+        # deleted local file or media row. Resolve the current asset instead of
+        # returning a dangling /uploads URL that renders as a broken image. A
+        # missing asset is reported as needing replacement and the UI falls
+        # back to branded initials; newly uploaded logos remain Cloudinary URLs.
+        data["logo_needs_reupload"] = False
+        if tenant.business_logo_media_id:
+            logo_asset = (await self.db.execute(
+                select(MediaAsset).where(
+                    MediaAsset.id == tenant.business_logo_media_id,
+                    MediaAsset.tenant_id == tenant.id,
+                    MediaAsset.owner_type == "tenant",
+                    MediaAsset.owner_id == tenant.id,
+                    MediaAsset.media_context == "provider_business_logo",
+                    MediaAsset.is_public == True,  # noqa: E712 - public <img> contract
+                    MediaAsset.status != "deleted",
+                    MediaAsset.deleted_at.is_(None),
+                )
+            )).scalar_one_or_none()
+            if logo_asset:
+                data["logo_url"] = (
+                    logo_asset.public_url
+                    if logo_asset.public_url
+                    else f"/v1/media/{logo_asset.id}/view"
+                )
+            else:
+                data["logo_url"] = None
+                data["business_logo_media_id"] = None
+                data["logo_needs_reupload"] = bool(tenant.logo_url)
 
         data["shop_photo_url"] = None
         if tenant.shop_photo_media_id:
@@ -431,33 +460,16 @@ class ProfileService:
 
     # ── Submit for review ────────────────────────────────────────────────────
 
-    # Mirrors the tenant portal's computeCompletion() required-field list
-    # (business name, phone, email, GST, address, city+state, logo,
-    # description, storefront photo) — kept in sync manually since there is
-    # no shared schema between frontend and backend for this checklist.
-    REQUIRED_FOR_REVIEW = (
-        ("business_name", "Business Name"),
-        ("phone", "Business Phone"),
-        ("email", "Business Email"),
-        ("gst_number", "GST Number"),
-        ("address_line1", "Business Address"),
-        ("city", "City"),
-        ("state", "State"),
-        ("logo_url", "Business Logo"),
-        ("description", "Business Description"),
-        ("shop_photo_media_id", "Storefront Photo"),
-    )
+    # Review and displayed completeness share one definition so the portal can
+    # never call a profile incomplete after the server accepted it for review.
+    REQUIRED_FOR_REVIEW = _COMPLETENESS_FIELDS
 
     async def submit_business_profile_for_review(self) -> dict:
         tenant = await self._load_tenant()
-        meta = tenant.meta or {}
 
         missing = []
         for field, label in self.REQUIRED_FOR_REVIEW:
-            if field == "description":
-                value = meta.get("description")
-            else:
-                value = getattr(tenant, field, None)
+            value = getattr(tenant, field, None)
             if not value:
                 missing.append({"field": field, "label": label})
 

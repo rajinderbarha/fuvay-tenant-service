@@ -83,6 +83,11 @@ NOT_IN_CITY = (
     "Send a different 6-digit pincode to check another area, "
     "or send /fuvay to start again."
 )
+NO_READY_SERVICE = (
+    "Providers cover {area}, but no service has both an eligible provider "
+    "and an open slot right now. Please try again later or send a different "
+    "6-digit pincode."
+)
 SERVICE_NOT_IN_CITY = "That service is not available in {city} yet."
 #: Punjabi/English mix, matching the catalog questions: the sentence is
 #: Punjabi and the things a customer reads off a door plate or an app stay in
@@ -1934,6 +1939,18 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     if not draft:
         categories = await _serviceable_categories(db, thread.zipcode)
         if not categories:
+            # Coverage and readiness are different facts. If providers do
+            # cover the postcode but all currently fail health, credits,
+            # technician, pricing or slot capacity, do not incorrectly tell
+            # the customer that the area itself is unsupported.
+            if db is not None and await _has_published_service_coverage(
+                db, thread.zipcode,
+            ):
+                area = (
+                    f"{thread.city} ({thread.zipcode})"
+                    if thread.city else thread.zipcode
+                )
+                return Turn(NO_READY_SERVICE.format(area=area))
             # An uncovered pincode has no coverage row, so there is no city
             # name to use — naming the pincode is the only honest response.
             return Turn(NOT_IN_CITY.format(
@@ -2157,21 +2174,23 @@ async def _serviceable_categories(db, zipcode: str) -> list:
     from app.engines.admin_catalog.models import (
         MasterService, ServiceCategory, ServiceIssueMapping,
     )
-    from app.engines.home_service_booking.offering_catalog_service import _publisher_filter
+    from app.engines.home_service_booking.offering_catalog_service import (
+        booking_ready_service_matches,
+    )
 
-    covered = (
-        select(MasterService.category_id)
-        .where(
-            MasterService.is_active.is_(True),
-            _publisher_filter(zipcode),
-            MasterService.id.in_(
-                select(ServiceIssueMapping.master_service_id)
-                .where(
-                    ServiceIssueMapping.status == "active",
-                    ServiceIssueMapping.deleted_at.is_(None),
-                )
-            ),
-        )
+    ready = await booking_ready_service_matches(db, zipcode)
+    if not ready:
+        return []
+    covered = select(MasterService.category_id).where(
+        MasterService.is_active.is_(True),
+        MasterService.id.in_(list(ready)),
+        MasterService.id.in_(
+            select(ServiceIssueMapping.master_service_id)
+            .where(
+                ServiceIssueMapping.status == "active",
+                ServiceIssueMapping.deleted_at.is_(None),
+            )
+        ),
     )
     return list((await db.execute(
         select(ServiceCategory)
@@ -2180,6 +2199,29 @@ async def _serviceable_categories(db, zipcode: str) -> list:
                ServiceCategory.id.in_(covered))
         .order_by(ServiceCategory.name)
     )).scalars().all())
+
+
+async def _has_published_service_coverage(db, zipcode: str) -> bool:
+    """Whether the ZIP is covered before live health/capacity gates."""
+    from app.engines.admin_catalog.models import MasterService, ServiceIssueMapping
+    from app.engines.home_service_booking.offering_catalog_service import _publisher_filter
+
+    service_id = (await db.execute(
+        select(MasterService.id)
+        .where(
+            MasterService.is_active.is_(True),
+            _publisher_filter(zipcode),
+            MasterService.id.in_(
+                select(ServiceIssueMapping.master_service_id).where(
+                    ServiceIssueMapping.status == "active",
+                    ServiceIssueMapping.deleted_at.is_(None),
+                    ServiceIssueMapping.customer_visible.is_(True),
+                )
+            ),
+        )
+        .limit(1)
+    )).scalar_one_or_none()
+    return service_id is not None
 
 
 def _category_artwork(category) -> str | None:

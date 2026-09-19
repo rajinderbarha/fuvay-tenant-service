@@ -17,10 +17,181 @@ tenant whose actual service area doesn't cover the given zipcode (the
 from __future__ import annotations
 import uuid
 
-from sqlalchemy import select
+import structlog
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.provider_portal.bookability_query import latest_provider_bookable
+
+
+logger = structlog.get_logger("home_service_booking.ready_catalog")
+
+
+_READY_CATALOG_CACHE_PREFIX = "home_services.booking_ready_catalog"
+
+
+def _request_cache(db: AsyncSession) -> dict:
+    """A request/session-local cache; never survives into another customer request."""
+    info = getattr(db, "info", None)
+    return info if isinstance(info, dict) else {}
+
+
+async def _booking_candidate_pairs(db: AsyncSession, zipcode: str):
+    """Exact service/job-type pairs that have a published provider in the ZIP.
+
+    This is deliberately only the inexpensive candidate query. The canonical
+    matcher below remains the authority for health, trust, credits, skills,
+    pricing, hours and live slot capacity.
+    """
+    from app.engines.admin_catalog.models import (
+        MasterService, ServiceIssueMapping, TenantService,
+    )
+    from app.engines.serviceability.models import (
+        TenantServiceArea, TenantServiceAreaService,
+    )
+
+    return (await db.execute(
+        select(
+            MasterService.category_id,
+            TenantService.master_service_id,
+            ServiceIssueMapping.job_type_id,
+        )
+        .join(TenantService, TenantService.master_service_id == MasterService.id)
+        .join(
+            TenantServiceArea,
+            TenantServiceArea.tenant_id == TenantService.tenant_id,
+        )
+        .join(
+            TenantServiceAreaService,
+            and_(
+                TenantServiceAreaService.tenant_service_area_id == TenantServiceArea.id,
+                TenantServiceAreaService.tenant_id == TenantService.tenant_id,
+                TenantServiceAreaService.service_id == TenantService.master_service_id,
+            ),
+        )
+        .join(
+            ServiceIssueMapping,
+            ServiceIssueMapping.master_service_id == MasterService.id,
+        )
+        .where(
+            TenantServiceArea.zipcode == str(zipcode),
+            TenantServiceArea.is_active.is_(True),
+            TenantServiceAreaService.is_available.is_(True),
+            TenantServiceAreaService.status == "ACTIVE",
+            TenantService.is_enabled.is_(True),
+            TenantService.is_active.is_(True),
+            TenantService.setup_status == "published",
+            MasterService.is_active.is_(True),
+            ServiceIssueMapping.status == "active",
+            ServiceIssueMapping.deleted_at.is_(None),
+            ServiceIssueMapping.customer_visible.is_(True),
+            latest_provider_bookable(TenantService.tenant_id),
+        )
+        .distinct()
+        .order_by(
+            MasterService.category_id,
+            TenantService.master_service_id,
+            ServiceIssueMapping.job_type_id,
+        )
+    )).all()
+
+
+async def booking_ready_service_matches(
+    db: AsyncSession, zipcode: str,
+) -> dict[uuid.UUID, dict]:
+    """Services with at least one provider the real matcher can book now.
+
+    The postcode is checked before the customer chooses a service or shares a
+    street address. A service enters the catalog only when at least one
+    provider passes the same production gates used for final allocation and
+    has real future slot capacity for an exact problem/job type.
+    """
+    normalized_zip = str(zipcode or "").strip()
+    if not normalized_zip:
+        return {}
+
+    cache = _request_cache(db)
+    cache_key = f"{_READY_CATALOG_CACHE_PREFIX}:{normalized_zip}"
+    if cache_key in cache:
+        return cache[cache_key]
+
+    pairs = await _booking_candidate_pairs(db, normalized_zip)
+    if not pairs:
+        cache[cache_key] = {}
+        return {}
+
+    from app.engines.home_service_booking.matching_engine import select_best_provider
+
+    # ZIP is authoritative. City is presentation/fallback data only, but the
+    # matcher accepts it as a required argument for older non-ZIP callers.
+    city = ""
+    try:
+        from app.engines.serviceability.models import TenantServiceArea
+        city = str((await db.execute(
+            select(TenantServiceArea.city)
+            .where(
+                TenantServiceArea.zipcode == normalized_zip,
+                TenantServiceArea.is_active.is_(True),
+            )
+            .order_by(TenantServiceArea.city)
+            .limit(1)
+        )).scalar_one_or_none() or "")
+    except Exception:
+        # Matching still uses the exact ZIP; an absent display city must not
+        # widen or invalidate coverage.
+        city = ""
+
+    ready: dict[uuid.UUID, dict] = {}
+    for category_id, service_id, job_type_id in pairs:
+        try:
+            async with db.begin_nested():
+                match = await select_best_provider(
+                    db,
+                    category_id=category_id,
+                    offering_id=service_id,
+                    city=city,
+                    zipcode=normalized_zip,
+                    job_type_id=job_type_id,
+                )
+        except Exception as exc:  # one malformed service must not hide the rest
+            logger.warning(
+                "booking_ready_catalog.match_failed",
+                zipcode=normalized_zip,
+                service_id=str(service_id),
+                job_type_id=str(job_type_id) if job_type_id else None,
+                error=str(exc),
+            )
+            continue
+        if not match or match.get("signals") is None:
+            continue
+
+        current = ready.setdefault(service_id, {
+            "category_id": category_id,
+            "job_type_ids": set(),
+            "best_score": None,
+            "earliest_slot": None,
+        })
+        current["job_type_ids"].add(job_type_id)
+        score = match.get("score")
+        if current["best_score"] is None or (score is not None and score > current["best_score"]):
+            current["best_score"] = score
+        slot = match.get("earliest_slot")
+        if slot and (
+            current["earliest_slot"] is None
+            or str(slot.get("starts_at") or "")
+            < str(current["earliest_slot"].get("starts_at") or "")
+        ):
+            current["earliest_slot"] = slot
+
+    logger.info(
+        "booking_ready_catalog.resolved",
+        zipcode=normalized_zip,
+        candidate_service_job_types=len(pairs),
+        ready_services=len(ready),
+        ready_job_types=sum(len(item["job_type_ids"]) for item in ready.values()),
+    )
+    cache[cache_key] = ready
+    return ready
 
 
 async def _resolve_category(db: AsyncSession, category_slug: str):
@@ -129,6 +300,15 @@ async def list_serviceable_offerings(
         .order_by(MasterService.display_order, MasterService.service_name)
     )).scalars().all()
 
+    # Publication and coverage are necessary, but they are not enough to ask
+    # a customer to continue. At the postcode step require a healthy/bookable
+    # provider with exact job support, valid pricing, an assignable technician
+    # and real future capacity. This is the production matcher, not a second
+    # catalog-specific approximation.
+    if zipcode and rows:
+        ready = await booking_ready_service_matches(db, zipcode)
+        rows = [row for row in rows if row.id in ready]
+
     return {
         "category": cat.name,
         "category_slug": cat.slug,
@@ -212,6 +392,12 @@ async def list_serviceable_issues(
             MasterService.id == master_service_id
         )
     serviceable_ms_ids = (await db.execute(serviceable_services)).scalars().all()
+    if zipcode and serviceable_ms_ids:
+        ready = await booking_ready_service_matches(db, zipcode)
+        serviceable_ms_ids = [
+            service_id for service_id in serviceable_ms_ids
+            if service_id in ready
+        ]
     if not serviceable_ms_ids:
         return {
             "category": cat.name,
