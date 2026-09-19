@@ -1949,6 +1949,29 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
         # whole send rather than dropping it.
         live_bookings = await identity.live_bookings(thread) if identity is not None else []
         tracking = bool(live_bookings)
+
+        # When this ZIP has only one serviceable category (currently Home
+        # Services), do not make the customer tap a category card that cannot
+        # change the result: open its real, ZIP-filtered service cards
+        # directly. This remains dynamic, so the category chooser returns
+        # automatically whenever the ZIP has more than one category.
+        if len(categories or []) == 1:
+            category = categories[0]
+            step = await _offering_step(
+                db, executor, category.slug, channel, page, thread,
+                reserve=1 if tracking else 0,
+            )
+            if step.picker and tracking:
+                booking = live_bookings[0]
+                step.picker["rows"] = [{
+                    "id": f"{PICK_TRACK}{PICKER_SEP}",
+                    "title": TRACK_ROW,
+                    "button_title": "Track booking",
+                    "description": _booking_line(booking),
+                    "image_url": booking.get("image_url") or _category_artwork(category),
+                }] + step.picker["rows"]
+            return step
+
         step = _category_step(categories or [], channel, page,
                               reserve=1 if tracking else 0)
         if step.picker and tracking:
@@ -2225,7 +2248,7 @@ def _category_step(categories: list, channel: str, page: int,
 
 
 async def _offering_step(db, executor, category_slug: str, channel: str, page: int,
-                         thread=None) -> Turn:
+                         thread=None, *, reserve: int = 0) -> Turn:
     result = await executor._tool_get_category_offerings(category_slug=category_slug)
     options = [
         {"id": PICKER_SEP.join((PICK_OFFERING, category_slug, o["slug"])),
@@ -2240,6 +2263,7 @@ async def _offering_step(db, executor, category_slug: str, channel: str, page: i
                                kind=PICK_OFFERING, list_button="Choose",
                                section_title="Services", more_context=category_slug,
                                presentation="carousel",
+                               reserve=reserve,
                                capacity_override=(MAX_IG_GENERIC_ELEMENTS
                                                   if channel == CHANNEL_INSTAGRAM else None))
     if picker:

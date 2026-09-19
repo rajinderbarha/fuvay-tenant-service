@@ -11,6 +11,7 @@ WORKSPACE = (
 API = (PORTAL / "lib/api.ts").read_text(encoding="utf-8-sig")
 SERVICE = (ROOT / "app/engines/serviceability/service.py").read_text(encoding="utf-8-sig")
 CATALOG = (ROOT / "app/engines/admin_catalog/tenant_service.py").read_text(encoding="utf-8-sig")
+BACKFILL = (ROOT / "alembic/versions/371_backfill_published_service_area_mappings.py").read_text(encoding="utf-8-sig")
 NAV = (ROOT / "app/engines/tenant_engine/portal_router.py").read_text(encoding="utf-8-sig")
 
 
@@ -48,6 +49,13 @@ def test_publish_maps_service_to_all_active_areas():
     assert "select(TenantServiceArea.id)" in publish_block
     assert "TenantServiceAreaService(" in publish_block
     assert "existing_mapping.status = \"ACTIVE\"" in publish_block
+
+
+def test_existing_published_services_are_backfilled_to_active_areas():
+    assert "INSERT INTO tenant_service_area_services" in BACKFILL
+    assert "service.setup_status = 'published'" in BACKFILL
+    assert "area.is_active IS TRUE" in BACKFILL
+    assert "mapping.is_available IS TRUE" in BACKFILL
 
 
 def test_home_services_navigation_uses_only_canonical_coverage_route():

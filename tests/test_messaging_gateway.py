@@ -339,6 +339,48 @@ async def test_category_tap_shows_that_category_and_pages_without_state():
 
 
 @pytest.mark.asyncio
+async def test_single_serviceable_category_opens_services_without_category_tap(monkeypatch):
+    """While Home Services is the sole category, ZIP entry goes directly to
+    the service cards. The category chooser returns automatically once more
+    than one customer-facing category exists."""
+    from app.engines.messaging_gateway import flow
+
+    class Category:
+        slug = "home-services"
+        name = "Home Services"
+
+    class Thread:
+        zipcode = "140412"
+        city = "Bassi Pathana"
+        customer_id = None
+        channel = CHANNEL_INSTAGRAM
+
+    class Executor:
+        customer_id = None
+
+        async def _tool_get_category_offerings(self, category_slug):
+            assert category_slug == "home-services"
+            return {"offerings": [{
+                "slug": "geyser-repair",
+                "name": "Geyser / Water Heater",
+                "description": "Repair and installation",
+            }]}
+
+    coverage = AsyncMock(return_value=[Category()])
+    monkeypatch.setattr(flow, "_serviceable_categories", coverage)
+
+    turn = await flow._next_step(
+        None, Thread(), Executor(), None, CHANNEL_INSTAGRAM, 0,
+    )
+
+    assert turn.text == flow.ASK_OFFERING
+    assert [row["id"] for row in turn.picker["rows"]] == [
+        "of|home-services|geyser-repair",
+    ]
+    assert all(not row["id"].startswith("cat|") for row in turn.picker["rows"])
+
+
+@pytest.mark.asyncio
 async def test_the_area_is_settled_before_anything_else_and_stays_changeable():
     """The pincode is asked first and lives on the THREAD, because it is asked
     before a draft exists. A 6-digit number stays a pincode change until a
@@ -1974,10 +2016,19 @@ async def test_a_live_booking_is_trackable_from_the_chat_on_both_channels():
             description = "Repairs and maintenance"
         return [Category()]
 
+    class Executor:
+        customer_id = None
+
+        async def _tool_get_category_offerings(self, category_slug):
+            return {"offerings": [{
+                "slug": "ac-repair", "name": "AC Repair",
+                "description": "Diagnosis and repair",
+            }]}
+
     original, flow._serviceable_categories = flow._serviceable_categories, _categories
     try:
         for channel in (CHANNEL_WHATSAPP, CHANNEL_INSTAGRAM):
-            step = await flow._next_step(None, Thread(), None, None, channel, 0,
+            step = await flow._next_step(None, Thread(), Executor(), None, channel, 0,
                                          Identity(one))
             assert step.picker["rows"][0]["id"] == "tr|"
             if channel == CHANNEL_INSTAGRAM:
@@ -1988,7 +2039,7 @@ async def test_a_live_booking_is_trackable_from_the_chat_on_both_channels():
                 assert step.picker["rows"][0]["button_title"] == "Track booking"
 
             # Nothing live: the option is not offered, because it would be noise.
-            quiet = await flow._next_step(None, Thread(), None, None, channel, 0,
+            quiet = await flow._next_step(None, Thread(), Executor(), None, channel, 0,
                                           Identity([]))
             assert all(not r["id"].startswith("tr|") for r in quiet.picker["rows"])
     finally:
