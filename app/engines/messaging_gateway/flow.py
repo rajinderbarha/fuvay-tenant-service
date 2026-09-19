@@ -2259,7 +2259,31 @@ async def _offering_step(db, executor, category_slug: str, channel: str, page: i
          "button_title": o["name"]}
         for o in (result.get("offerings") or []) if o.get("slug")
     ]
-    picker = pickers._paginate(options, ASK_OFFERING, channel, page,
+    prompt = ASK_OFFERING
+    if channel == CHANNEL_INSTAGRAM and len(options) > 1:
+        # Instagram displays only the first generic-template card at rest.
+        # Without an explicit count customers understandably read that as the
+        # complete catalog and never discover the horizontally-hidden cards.
+        # Keep the choices card-only (no numbered text fallback), but make the
+        # carousel and its size unambiguous both above and inside every card.
+        total = len(options)
+        prompt = (
+            f"{total} services are available. Swipe left through the cards, "
+            "then tap the service you need."
+        )
+        for index, option in enumerate(options, start=1):
+            description = str(option.get("description") or "Tap below to choose this service.")
+            option["description"] = f"Card {index} of {total} · {description}"
+
+    logger.info(
+        "messaging_gateway.offerings.rendered",
+        channel=channel,
+        category_slug=category_slug,
+        zipcode=str(getattr(thread, "zipcode", "") or ""),
+        offering_count=len(options),
+        offering_slugs=[str(row["id"]).rsplit(PICKER_SEP, 1)[-1] for row in options],
+    )
+    picker = pickers._paginate(options, prompt, channel, page,
                                kind=PICK_OFFERING, list_button="Choose",
                                section_title="Services", more_context=category_slug,
                                presentation="carousel",
@@ -2269,7 +2293,7 @@ async def _offering_step(db, executor, category_slug: str, channel: str, page: i
     if picker:
         # Generic templates have no outer prompt text. Send the prompt as the
         # preceding message on Instagram; WhatsApp still carries it in its list.
-        return Turn(ASK_OFFERING if channel == CHANNEL_INSTAGRAM else None, picker)
+        return Turn(prompt if channel == CHANNEL_INSTAGRAM else None, picker)
     # The category itself is covered somewhere, just not at this pincode — so
     # send them back to the list that IS covered rather than to a dead end.
     categories = await _serviceable_categories(db, thread.zipcode or "")

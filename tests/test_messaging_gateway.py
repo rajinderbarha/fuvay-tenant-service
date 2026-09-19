@@ -503,6 +503,46 @@ async def test_instagram_offering_step_uses_catalog_cards_without_guessing_price
 
 
 @pytest.mark.asyncio
+async def test_instagram_offering_carousel_makes_all_140412_services_discoverable():
+    """Instagram shows one carousel card at rest, so a multi-service catalog
+    must state the real total and mark each card without adding a numbered
+    text list that invites customers to type 1/2/3 instead of tapping."""
+    from app.engines.messaging_gateway import flow
+
+    class Thread:
+        zipcode = "140412"
+        city = "Bassi Pathana"
+
+    class Executor:
+        async def _tool_get_category_offerings(self, category_slug):
+            assert category_slug == "home_services"
+            return {"offerings": [
+                {"slug": "air-conditioner", "name": "Air Conditioner",
+                 "description": "Repair and service", "image_url": "https://cdn.example/ac.jpg"},
+                {"slug": "kitchen-chimney", "name": "Kitchen Chimney",
+                 "description": "Repair and cleaning", "image_url": "https://cdn.example/chimney.jpg"},
+                {"slug": "microwave-oven", "name": "Microwave Oven",
+                 "description": "Diagnosis and repair", "image_url": "https://cdn.example/microwave.jpg"},
+            ]}
+
+    turn = await flow._offering_step(
+        None, Executor(), "home_services", CHANNEL_INSTAGRAM, 0, Thread(),
+    )
+
+    assert turn.text == (
+        "3 services are available. Swipe left through the cards, "
+        "then tap the service you need."
+    )
+    assert [row["title"] for row in turn.picker["rows"]] == [
+        "Air Conditioner", "Kitchen Chimney", "Microwave Oven",
+    ]
+    assert [row["description"].split(" · ", 1)[0] for row in turn.picker["rows"]] == [
+        "Card 1 of 3", "Card 2 of 3", "Card 3 of 3",
+    ]
+    assert all(not row["id"].startswith("rs|") for row in turn.picker["rows"])
+
+
+@pytest.mark.asyncio
 async def test_instagram_problem_step_uses_service_artwork_as_visual_cards():
     """Problems stay text-first while reusable colored art makes them cards."""
     from app.engines.messaging_gateway import flow

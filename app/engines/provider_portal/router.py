@@ -322,6 +322,7 @@ async def create_team_member(
         after={"full_name": str(payload.get("full_name")).strip(), "member_type": member_type,
                "designation": designation, "status": payload.get("status") or "active"},
     )
+    await _refresh_provider_bookability_projection(db, tid)
     await db.commit()
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id"), {"id": new_id})
     member = _member_row(row.fetchone())
@@ -639,6 +640,7 @@ async def update_team_member(
             "full_name", "member_type", "designation", "status", "can_receive_assignment", "supported_offering_ids"
         )},
     )
+    await _refresh_provider_bookability_projection(db, tid)
     await db.commit()
     return ok(member, request_id=rid)
 
@@ -665,6 +667,7 @@ async def delete_team_member(
         tenant_id=tid, entity_type="provider_team_member", entity_id=str(member_id),
         actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
     )
+    await _refresh_provider_bookability_projection(db, tid)
     await db.commit()
     return ok({"deleted": True}, request_id=rid)
 
@@ -725,6 +728,7 @@ async def activate_team_member(
         actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
         after={"status": "active"},
     )
+    await _refresh_provider_bookability_projection(db, tid)
     await db.commit()
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
                             {"id": str(member_id), "tid": str(tid)})
@@ -784,6 +788,7 @@ async def deactivate_team_member(
         actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
         after={"status": "inactive", "sessions_revoked": bool(member.user_id)},
     )
+    await _refresh_provider_bookability_projection(db, tid)
     await db.commit()
     row = await db.execute(text("SELECT * FROM provider_team_members WHERE id=:id AND tenant_id=:tid"),
                             {"id": str(member_id), "tid": str(tid)})
@@ -1136,6 +1141,7 @@ async def create_availability(
         "tz": payload.get("timezone", "Asia/Kolkata"),
         "emergency": payload.get("emergency_available", False),
     })
+    await _refresh_provider_bookability_projection(db, tid)
     await db.commit()
     row = await db.execute(text("SELECT * FROM provider_availability_rules WHERE id=:id"), {"id": new_id})
     return ok(dict(row.fetchone()._mapping), request_id=rid)
@@ -1182,6 +1188,7 @@ async def save_business_schedule(
         tenant_id=tid, entity_type="business_schedule", entity_id=str(tid),
         actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
         after={"open_days": [r["day_of_week"] for r in result["rules"] if r["is_active"]]})
+    await _refresh_provider_bookability_projection(db, tid)
     await db.commit()
     return ok(result, request_id=rid)
 
@@ -1243,6 +1250,7 @@ async def update_availability(
         params["id"] = str(rule_id)
         params["tid"] = str(tid)
         await db.execute(text(f"UPDATE provider_availability_rules SET {sets}, updated_at=now() WHERE id=:id AND tenant_id=:tid"), params)
+        await _refresh_provider_bookability_projection(db, tid)
         await db.commit()
     row = await db.execute(text("SELECT * FROM provider_availability_rules WHERE id=:id AND tenant_id=:tid"),
                             {"id": str(rule_id), "tid": str(tid)})
@@ -1261,6 +1269,7 @@ async def delete_availability(
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     await db.execute(text("DELETE FROM provider_availability_rules WHERE id=:id AND tenant_id=:tid"), {"id": str(rule_id), "tid": str(tid)})
+    await _refresh_provider_bookability_projection(db, tid)
     await db.commit()
     return ok({"deleted": True}, request_id=rid)
 
@@ -2296,6 +2305,19 @@ async def refresh_provider_status(
     data["failed_checks"] = result["bookability_blockers"]
     data["warnings"] = []
     return ok(data, request_id=rid)
+
+
+async def _refresh_provider_bookability_projection(
+    db: AsyncSession, tid: uuid.UUID,
+) -> dict:
+    """Refresh the shared customer-bookability projection transactionally.
+
+    Discovery, Instagram and matching all read this persisted projection.
+    Mutations that change technician capacity or business hours therefore
+    must update it before committing instead of leaving an obsolete blocker.
+    """
+    evaluated = await _evaluate_provider_bookability(db, tid)
+    return await _persist_provider_bookability(db, tid, evaluated)
 
 
 # ── Matching Input Readiness (HS5B) ───────────────────────────────────────────

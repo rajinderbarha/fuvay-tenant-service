@@ -309,7 +309,17 @@ async def get_blueprint_update_status(tenant_service_id: uuid.UUID, r: Request,
 async def publish_tenant_service(tenant_service_id: uuid.UUID, r: Request,
                                   u: UserContext = Depends(require_tenant_mutation_permission(P.TENANT_UPDATE)),
                                   s: TenantCatalogService = Depends(_svc)):
-    return ok(await s.publish_service(tenant_service_id), _rid(r), ENGINE_ID)
+    result = await s.publish_service(tenant_service_id)
+    # Publishing changes the inputs to the shared provider status consumed by
+    # Instagram discovery and matching. Keep that projection in the same
+    # transaction instead of requiring a later manual status refresh.
+    from app.engines.provider_portal.router import (
+        _refresh_provider_bookability_projection,
+    )
+    await _refresh_provider_bookability_projection(
+        s.db, uuid.UUID(str(result["tenant_id"])),
+    )
+    return ok(result, _rid(r), ENGINE_ID)
 
 
 @router.post("/enabled-services/{tenant_service_id}/save-draft", response_model=ApiResponse[dict],
