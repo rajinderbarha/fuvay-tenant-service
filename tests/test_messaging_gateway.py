@@ -4450,12 +4450,14 @@ class _DimensionDB:
     on the table being read survives that.
     """
 
-    def __init__(self, *, dimensions=None, types=None, brands=None, job_types=None):
+    def __init__(self, *, dimensions=None, types=None, brands=None,
+                 brand_artwork=None, job_types=None):
         self.dimensions = dimensions if dimensions is not None else [
             ("type", "Type"), ("brand", "Brand"),
         ]
         self.types = types if types is not None else [("t-1", "Window AC"), ("t-2", "Split AC")]
         self.brands = brands if brands is not None else [("b-1", "Voltas")]
+        self.brand_artwork = brand_artwork if brand_artwork is not None else []
         self.job_types = job_types if job_types is not None else [("job-1",)]
 
     async def execute(self, clause, params=None):
@@ -4468,6 +4470,8 @@ class _DimensionDB:
             rows = self.types
         elif "master_service_brands" in sql:
             rows = self.brands
+        elif "FROM brands" in sql:
+            rows = self.brand_artwork
         else:
             rows = []
         return type("R", (), {"all": lambda _self, r=rows: list(r)})()
@@ -4519,6 +4523,32 @@ async def test_instagram_type_and_brand_dimensions_use_uploaded_images():
     brand_turn = await flow._dimension_step(db, draft, CHANNEL_INSTAGRAM, 0)
     assert brand_turn.picker["presentation"] == "carousel"
     assert _dimension_rows(brand_turn)[0]["image_url"] == "https://cdn.example/voltas.png"
+
+
+@pytest.mark.asyncio
+async def test_instagram_brand_uses_artwork_from_case_only_duplicate():
+    """Keep the service's mapped brand id, but do not lose artwork uploaded
+    against a historical case-only duplicate such as `LG` versus `lg`."""
+    from app.engines.messaging_gateway import flow
+
+    db = _DimensionDB(
+        dimensions=[("brand", "Brand")],
+        brands=[("mapped-lg", "lg", None, None)],
+        brand_artwork=[(
+            "LG", "lg", "https://res.cloudinary.com/fuvay/image/upload/lg.webp", None,
+        )],
+    )
+
+    turn = await flow._dimension_step(
+        db, {"id": "d-1", "offering_id": "svc-1"}, CHANNEL_INSTAGRAM, 0,
+    )
+
+    assert _dimension_rows(turn)[0] == {
+        "id": "dim|brand|mapped-lg",
+        "title": "lg",
+        "button_title": "lg",
+        "image_url": "https://res.cloudinary.com/fuvay/image/upload/lg.webp",
+    }
 
 
 @pytest.mark.asyncio

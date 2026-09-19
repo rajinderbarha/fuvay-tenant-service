@@ -2355,6 +2355,38 @@ async def _dimension_step(db, draft: dict, channel: str, page: int) -> Turn | No
             ) if candidate.startswith("https://")
         ), None)
         normalized.append((value_id, name, image_url))
+    if key == "brand" and any(not image_url for _, _, image_url in normalized):
+        # Historical imports created a few case-only duplicate brands (for
+        # example both "lg" and "LG"). The service can still be mapped to the
+        # older row while an admin correctly uploads Instagram artwork on the
+        # newer row. Keep the mapped brand id for matching, but reuse artwork
+        # from its same-name sibling so the customer does not get a blank card.
+        artwork_rows = (await db.execute(text(
+            "SELECT name, normalized_name, image_url, logo_url FROM brands "
+            "WHERE is_active IS TRUE AND deleted_at IS NULL "
+            "AND (NULLIF(BTRIM(image_url), '') IS NOT NULL "
+            "OR NULLIF(BTRIM(logo_url), '') IS NOT NULL)"
+        ))).all()
+
+        def identity(value) -> str:
+            return " ".join(str(value or "").casefold().split())
+
+        sibling_artwork: dict[str, str] = {}
+        for sibling_name, sibling_normalized, sibling_image, sibling_logo in artwork_rows:
+            public = next((
+                candidate for candidate in (
+                    str(raw or "").strip() for raw in (sibling_image, sibling_logo)
+                ) if candidate.startswith("https://")
+            ), None)
+            if public:
+                sibling_artwork.setdefault(
+                    identity(sibling_normalized) or identity(sibling_name), public,
+                )
+                sibling_artwork.setdefault(identity(sibling_name), public)
+        normalized = [
+            (value_id, name, image_url or sibling_artwork.get(identity(name)))
+            for value_id, name, image_url in normalized
+        ]
     # Type and brand are always native cards on Instagram. A temporarily
     # missing image must not downgrade the entire step to a numbered text
     # list; uploaded artwork appears automatically as soon as it is present.
