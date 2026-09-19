@@ -17,6 +17,10 @@ is a penalty they cannot defend.
 The clock runs from the SCHEDULED SLOT. `sla_due_at` is stamped when the job is
 scheduled, so a breach is decided by that timestamp and never by when this
 sweep happened to run: a late sweep reaches the same outcome as a punctual one.
+
+After verified arrival, `enforce_stalled_provider_stage` applies the same
+two-step financial rule only when a provider-owned stage also exceeds its own
+deadline. Customer-owned waits are never charged to the provider.
 """
 from __future__ import annotations
 
@@ -37,6 +41,14 @@ logger = structlog.get_logger("execution.sla_breach")
 BREACHABLE_STATUSES = (
     "pending_assignment", "assigned", "accepted", "scheduled", "on_the_way",
 )
+
+# Post-arrival stages where the next move is owned by the technician/provider.
+# Customer-owned waits are intentionally absent: a provider is not charged
+# because a customer has not approved an estimate or was unavailable.
+PROVIDER_PROGRESS_STATUSES = frozenset({
+    "reached_site", "inspection_started", "inspection_done",
+    "service_started", "work_done",
+})
 
 _HS_KEY = "home_services"
 
@@ -403,6 +415,167 @@ async def _reconcile_enforced_deadlines(db: AsyncSession, policy, *, limit: int)
             "UPDATE service_jobs SET sla_due_at=:first_due, sla_next_penalty_at=:next_due, "
             "updated_at=now() WHERE id=:id"
         ), {"first_due": first_due, "next_due": next_due, "id": str(row.id)})
+
+
+async def enforce_stalled_provider_stage(
+    db: AsyncSession, *, job, entered_at: dt.datetime, stage_limit_minutes: int,
+    now: dt.datetime | None = None,
+) -> dict:
+    """Charge and close a provider-owned stage that stopped progressing.
+
+    The first deadline is the later of the promised slot deadline and the
+    stage's own operational limit.  That prevents a long legitimate visit
+    from being penalised before its booked window ends, while still ensuring
+    that tapping "Reached site" cannot permanently escape the SLA.
+
+    Each stage entry has its own idempotency key. Overlapping workers therefore
+    cannot double-charge, and moving to the next stage immediately disarms the
+    old entry because its timestamp no longer matches the watchdog candidate.
+    """
+    if job.status not in PROVIDER_PROGRESS_STATUSES:
+        return {"eligible": False, "penalised": False, "closed": False}
+
+    policy = await _policy(db)
+    if policy is None or policy.sla_breach_hours is None:
+        return {"eligible": False, "penalised": False, "closed": False}
+
+    current = now or dt.datetime.now(dt.timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=dt.timezone.utc)
+    if entered_at.tzinfo is None:
+        entered_at = entered_at.replace(tzinfo=dt.timezone.utc)
+    slot_due = compute_due_at(
+        job.scheduled_date, job.scheduled_time_window, policy.sla_breach_hours,
+    )
+    if slot_due is None:
+        return {"eligible": False, "penalised": False, "closed": False}
+    first_due = max(
+        slot_due,
+        entered_at + dt.timedelta(minutes=max(1, int(stage_limit_minutes))),
+    )
+    if current < first_due:
+        return {"eligible": True, "penalised": False, "closed": False,
+                "first_due_at": first_due.isoformat()}
+
+    token = f"{job.status}:{int(entered_at.timestamp())}"
+    first_source = f"stage_sla:{token}"
+    first_row = (await db.execute(text(
+        "SELECT metadata->>'amount' AS amount FROM service_job_execution_events "
+        "WHERE job_id=:job_id AND event_type='job_stage_sla_penalty' "
+        "AND metadata->>'stage_entry_token'=:token LIMIT 1"
+    ), {"job_id": str(job.id), "token": token})).first()
+
+    enabled, override = await _job_type_override(
+        db, policy_id=policy.id, job_type_id=job.job_type_id,
+    )
+    initial_amount = resolve_penalty(
+        policy,
+        job_value=(Decimal(str(job.job_value or 0)) or None),
+        job_type_override=override,
+    ) if enabled else Decimal("0")
+    cap = (Decimal(str(policy.sla_penalty_debt_cap))
+           if policy.sla_penalty_debt_cap is not None else None)
+    penalised = False
+    first_taken = abs(Decimal(str(first_row.amount or 0))) if first_row else Decimal("0")
+    if first_row is None:
+        first_taken = await _charge_penalty(
+            db, tenant_id=job.tenant_id, job_id=job.id,
+            amount=initial_amount, cap=cap, day_number=1, source=first_source,
+        )
+        penalised = first_taken > 0
+        if first_taken > 0:
+            await db.execute(text(
+                "UPDATE service_jobs SET "
+                "sla_breached_at=COALESCE(sla_breached_at, now()), "
+                "sla_penalty_charged=COALESCE(sla_penalty_charged,0)+:amount, "
+                "updated_at=now() WHERE id=:id"
+            ), {"amount": first_taken, "id": str(job.id)})
+            if policy.sla_notify_provider:
+                await _notify_provider(db, job=job, amount=first_taken, cancelled=False)
+
+        from app.engines.execution.models import ServiceJobExecutionEvent
+        db.add(ServiceJobExecutionEvent(
+            booking_id=job.booking_id, job_id=job.id, tenant_id=job.tenant_id,
+            staff_member_id=job.assigned_staff_id,
+            actor_role="platform", event_type="job_stage_sla_penalty",
+            old_status=job.status, new_status=job.status,
+            notes=(f"Provider-owned stage exceeded its deadline after the slot; "
+                   f"Rs.{first_taken:,.2f} deducted."),
+            event_metadata={
+                "status": job.status, "entered_at": entered_at.isoformat(),
+                "first_due_at": first_due.isoformat(), "amount": float(first_taken),
+                "waiting_on": "provider", "stage_entry_token": token,
+            },
+            request_id="job:stage_sla",
+        ))
+
+    close_hours = max(1, min(168, int(policy.sla_close_after_hours or 24)))
+    final_due = first_due + dt.timedelta(hours=close_hours)
+    if current < final_due:
+        return {"eligible": True, "penalised": penalised, "closed": False,
+                "first_due_at": first_due.isoformat(), "final_due_at": final_due.isoformat()}
+
+    final_source = f"stage_sla_final:{token}"
+    final_exists = (await db.execute(text(
+        "SELECT 1 FROM service_job_execution_events "
+        "WHERE job_id=:job_id AND event_type='job_stage_sla_closed' "
+        "AND metadata->>'stage_entry_token'=:token LIMIT 1"
+    ), {"job_id": str(job.id), "token": token})).first()
+    if final_exists is not None:
+        return {"eligible": True, "penalised": penalised, "closed": False,
+                "first_due_at": first_due.isoformat(), "final_due_at": final_due.isoformat()}
+
+    top_up = final_penalty_top_up(
+        charged_so_far=first_taken,
+        total_penalty=Decimal(str(policy.sla_total_penalty_amount or 0)),
+    ) if enabled else Decimal("0")
+    final_taken = await _charge_penalty(
+        db, tenant_id=job.tenant_id, job_id=job.id,
+        amount=top_up, cap=cap, day_number=2, source=final_source,
+    ) if top_up > 0 else Decimal("0")
+    if final_taken > 0:
+        await db.execute(text(
+            "UPDATE service_jobs SET "
+            "sla_penalty_charged=COALESCE(sla_penalty_charged,0)+:amount, "
+            "updated_at=now() WHERE id=:id"
+        ), {"amount": final_taken, "id": str(job.id)})
+        if policy.sla_notify_provider:
+            await _notify_provider(
+                db, job=job, amount=final_taken,
+                cancelled=bool(policy.sla_auto_cancel),
+            )
+
+    from app.engines.execution.models import ServiceJobExecutionEvent
+    db.add(ServiceJobExecutionEvent(
+        booking_id=job.booking_id, job_id=job.id, tenant_id=job.tenant_id,
+        staff_member_id=job.assigned_staff_id,
+        actor_role="platform", event_type="job_stage_sla_closed",
+        old_status=job.status,
+        new_status="cancelled" if policy.sla_auto_cancel else job.status,
+        notes=(f"No provider action for {close_hours} hours after the stage SLA; "
+               f"cumulative target Rs.{Decimal(str(policy.sla_total_penalty_amount or 0)):,.2f}."),
+        event_metadata={
+            "status": job.status, "entered_at": entered_at.isoformat(),
+            "first_due_at": first_due.isoformat(), "final_due_at": final_due.isoformat(),
+            "amount": float(final_taken), "waiting_on": "provider",
+            "stage_entry_token": token,
+        },
+        request_id="job:stage_sla",
+    ))
+    closed = False
+    if policy.sla_auto_cancel:
+        await _close_breached_job(
+            db, job_id=job.id, booking_id=job.booking_id,
+            reason=(f"No technician or provider action for {close_hours} hours "
+                    f"after the {job.status.replace('_', ' ')} deadline"),
+        )
+        await _notify_customer(
+            db, job=job, compensated=False, amount=first_taken + final_taken,
+        )
+        closed = True
+    return {"eligible": True, "penalised": penalised or final_taken > 0,
+            "closed": closed, "first_due_at": first_due.isoformat(),
+            "final_due_at": final_due.isoformat()}
 
 
 async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:

@@ -62,6 +62,13 @@ def policy(monkeypatch):
         "app.engines.vertical_monetization.runtime_operations."
         "get_home_services_operations_policy", _policy,
     )
+    async def _no_stage_penalty(*_args, **_kwargs):
+        return {"eligible": True, "penalised": False, "closed": False}
+
+    monkeypatch.setattr(
+        "app.engines.execution.sla_breach_service.enforce_stalled_provider_stage",
+        _no_stage_penalty,
+    )
     return stub
 
 
@@ -83,6 +90,20 @@ def test_watches_every_status_no_other_timer_covers():
             f"{status} is covered elsewhere -- this sweep would double-alert"
         )
         assert status in watchdog.STALL_LIMIT_MINUTES
+
+
+def test_travel_is_watched_by_provider_buffer_as_well_as_slot_sla():
+    """Slot SLA and journey duration answer different questions: a future
+    slot can still have a technician who started travelling far too early and
+    then disappeared, while an overdue slot needs the financial close rule."""
+    from app.engines.execution.sla_breach_service import BREACHABLE_STATUSES
+
+    assert "on_the_way" in BREACHABLE_STATUSES
+    assert "on_the_way" in watchdog.STALL_LIMIT_MINUTES
+    provider_timer = SimpleNamespace(
+        status="on_the_way", travel_minutes=55, stage_metadata=None,
+    )
+    assert watchdog._limit_minutes("on_the_way", policy=SimpleNamespace(), job=provider_timer) == 55
 
 
 def test_never_watches_a_terminal_status():

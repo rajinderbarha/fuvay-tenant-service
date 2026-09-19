@@ -504,6 +504,12 @@ function MonetizationTab() {
       false_arrival_auto_close: true,
       false_arrival_penalty_amount: 150,
       false_arrival_health_weight: 3,
+      job_stall_watchdog_enabled: true,
+      job_stall_limit_minutes: {
+        reached_site: 45, inspection_started: 120, inspection_done: 120,
+        quote_required: 2880, service_started: 480, work_done: 1440,
+        customer_not_available: 240,
+      },
     });
     setErrors([]); setPreviewResult(null);
     setShowDraftDrawer(true);
@@ -1280,6 +1286,43 @@ function MonetizationTab() {
                 onChange={e => setForm({ ...form, false_arrival_auto_close: e.target.checked })} />
               Close the job and charge the penalty when verified location is outside the radius
             </label>
+          </div>
+
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
+              Active-stage deadlock protection
+            </label>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+              Warn the technician and provider when a live stage stops moving. Travel uses each provider&apos;s own travel-buffer setting; the remaining limits are controlled here. Timers never claim that field work happened automatically.
+            </p>
+            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <input type="checkbox" checked={form.job_stall_watchdog_enabled !== false}
+                onChange={e => setForm({ ...form, job_stall_watchdog_enabled: e.target.checked })} />
+              Enable stage deadlines and escalations
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+              {[
+                ["reached_site", "Reached site → start inspection"],
+                ["inspection_started", "Inspection in progress"],
+                ["inspection_done", "Inspection done → next action"],
+                ["quote_required", "Customer estimate decision"],
+                ["service_started", "Service in progress"],
+                ["work_done", "Work done → completion"],
+                ["customer_not_available", "Customer unavailable follow-up"],
+              ].map(([key, label]) => (
+                <div key={key}>
+                  <label style={{ fontSize: 11 }}>{label} (minutes)</label>
+                  <Input type="number" value={String(form.job_stall_limit_minutes?.[key] ?? "")}
+                    onChange={v => setForm({
+                      ...form,
+                      job_stall_limit_minutes: {
+                        ...(form.job_stall_limit_minutes ?? {}),
+                        [key]: v === "" ? 1 : Number(v),
+                      },
+                    })} />
+                </div>
+              ))}
+            </div>
           </div>
 
           </section>

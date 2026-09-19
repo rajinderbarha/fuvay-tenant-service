@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import datetime as dt
 import inspect
+import uuid
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -314,3 +317,70 @@ class TestAutoCancelIsOptional:
         auto_cancel = src.index("if policy.sla_auto_cancel")
         notify = src.index("_notify_customer")
         assert auto_cancel < notify
+
+
+class TestPostArrivalDeadlockEnforcement:
+    @pytest.mark.asyncio
+    async def test_provider_owned_stage_gets_50_then_100_top_up_and_closes(self, monkeypatch):
+        from app.engines.execution import sla_breach_service as sla
+
+        policy = SimpleNamespace(
+            id=uuid.uuid4(), sla_breach_hours=0, sla_penalty_amount=Decimal("50"),
+            sla_penalty_type="fixed", sla_penalty_percentage=None,
+            sla_penalty_min=None, sla_penalty_max=None,
+            sla_penalty_debt_cap=None, sla_total_penalty_amount=Decimal("150"),
+            sla_close_after_hours=24, sla_auto_cancel=True,
+            sla_notify_provider=True,
+        )
+        monkeypatch.setattr(sla, "_policy", AsyncMock(return_value=policy))
+        monkeypatch.setattr(sla, "_job_type_override", AsyncMock(return_value=(True, None)))
+        charge = AsyncMock(side_effect=[Decimal("50"), Decimal("100")])
+        monkeypatch.setattr(sla, "_charge_penalty", charge)
+        close = AsyncMock()
+        monkeypatch.setattr(sla, "_close_breached_job", close)
+        monkeypatch.setattr(sla, "_notify_provider", AsyncMock())
+        monkeypatch.setattr(sla, "_notify_customer", AsyncMock())
+
+        result = MagicMock()
+        result.first.return_value = None
+        db = SimpleNamespace(execute=AsyncMock(return_value=result), add=MagicMock())
+        entered = dt.datetime(2026, 9, 10, 6, 0, tzinfo=dt.timezone.utc)
+        job = SimpleNamespace(
+            id=uuid.uuid4(), tenant_id=uuid.uuid4(), booking_id=uuid.uuid4(),
+            customer_id=uuid.uuid4(), assigned_staff_id=uuid.uuid4(),
+            job_type_id=uuid.uuid4(), job_value=Decimal("500"),
+            status="inspection_started", scheduled_date=dt.date(2026, 9, 10),
+            scheduled_time_window="09:00-11:00",
+        )
+
+        outcome = await sla.enforce_stalled_provider_stage(
+            db, job=job, entered_at=entered, stage_limit_minutes=120,
+            now=dt.datetime(2026, 9, 12, 12, 0, tzinfo=dt.timezone.utc),
+        )
+
+        assert outcome["penalised"] is True
+        assert outcome["closed"] is True
+        assert [call.kwargs["amount"] for call in charge.await_args_list] == [
+            Decimal("50"), Decimal("100"),
+        ]
+        close.assert_awaited_once()
+        event_types = [item.event_type for item in db.add.call_args_list[0].args + ()]
+        assert event_types == ["job_stage_sla_penalty"]
+        assert any(
+            call.args[0].event_type == "job_stage_sla_closed"
+            for call in db.add.call_args_list
+        )
+
+    @pytest.mark.asyncio
+    async def test_customer_owned_wait_is_never_charged(self):
+        from app.engines.execution import sla_breach_service as sla
+
+        db = SimpleNamespace(execute=AsyncMock(), add=MagicMock())
+        outcome = await sla.enforce_stalled_provider_stage(
+            db,
+            job=SimpleNamespace(status="quote_required"),
+            entered_at=dt.datetime.now(dt.timezone.utc),
+            stage_limit_minutes=1,
+        )
+        assert outcome == {"eligible": False, "penalised": False, "closed": False}
+        db.execute.assert_not_awaited()

@@ -6,7 +6,7 @@ have a published Home Services policy.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -28,6 +28,13 @@ class HomeServicesOperationsPolicy:
     false_arrival_auto_close: bool = True
     false_arrival_penalty_amount: Decimal = Decimal("150.00")
     false_arrival_health_weight: Decimal = Decimal("3.00")
+    job_stall_watchdog_enabled: bool = True
+    job_stall_limit_minutes: dict[str, int] = field(default_factory=lambda: {
+        "reached_site": 45, "inspection_started": 120,
+        "inspection_done": 120, "quote_required": 2880,
+        "service_started": 480, "work_done": 1440,
+        "customer_not_available": 240,
+    })
 
 
 async def get_home_services_operations_policy(
@@ -40,7 +47,8 @@ async def get_home_services_operations_policy(
         "p.customer_reschedule_limit, p.arrival_verification_enabled, "
         "p.arrival_radius_meters, p.arrival_location_max_age_seconds, "
         "p.arrival_max_accuracy_meters, p.false_arrival_auto_close, "
-        "p.false_arrival_penalty_amount, p.false_arrival_health_weight "
+        "p.false_arrival_penalty_amount, p.false_arrival_health_weight, "
+        "p.job_stall_watchdog_enabled, p.job_stall_limit_minutes "
         "FROM vertical_monetization_policies p "
         "JOIN verticals v ON v.id=p.vertical_id "
         "WHERE v.key='home_services' AND p.status='published' "
@@ -90,4 +98,11 @@ async def get_home_services_operations_policy(
             if row["false_arrival_health_weight"] is not None
             else defaults.false_arrival_health_weight
         )),
+        job_stall_watchdog_enabled=(
+            bool(row["job_stall_watchdog_enabled"])
+            if row.get("job_stall_watchdog_enabled") is not None else True
+        ),
+        job_stall_limit_minutes=(
+            dict(row.get("job_stall_limit_minutes") or defaults.job_stall_limit_minutes)
+        ),
     )

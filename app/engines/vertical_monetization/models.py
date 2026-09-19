@@ -122,6 +122,19 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     false_arrival_health_weight: Mapped[Decimal] = mapped_column(
         Numeric(6, 2), default=Decimal("3"), nullable=False,
     )
+    job_stall_watchdog_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False,
+    )
+    job_stall_limit_minutes: Mapped[dict] = mapped_column(
+        JSONB,
+        default=lambda: {
+            "reached_site": 45, "inspection_started": 120,
+            "inspection_done": 120, "quote_required": 2880,
+            "service_started": 480, "work_done": 1440,
+            "customer_not_available": 240,
+        },
+        nullable=False,
+    )
 
     # ── Health suspension: when a provider is stopped, and what they return at
     health_suspension_threshold: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
@@ -209,6 +222,8 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "false_arrival_auto_close": self.false_arrival_auto_close,
             "false_arrival_penalty_amount": float(self.false_arrival_penalty_amount),
             "false_arrival_health_weight": float(self.false_arrival_health_weight),
+            "job_stall_watchdog_enabled": self.job_stall_watchdog_enabled,
+            "job_stall_limit_minutes": self.job_stall_limit_minutes,
             "health_suspension_threshold": float(self.health_suspension_threshold) if self.health_suspension_threshold is not None else None,
             "health_suspension_days": self.health_suspension_days,
             "health_reinstatement_score": float(self.health_reinstatement_score) if self.health_reinstatement_score is not None else None,

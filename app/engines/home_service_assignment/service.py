@@ -1616,9 +1616,12 @@ class HomeServiceJobAssignmentService:
             work_start_status,
             customer_contacted=customer_contacted,
         )
+        from app.engines.execution.stage_timer_service import describe_stage_timer
+        stage_timer = await describe_stage_timer(self.db, job)
         return {
             "job":        {**job.to_dict(), **work_start_status,
-                           "next_required_action": next_action},
+                           "next_required_action": next_action,
+                           "stage_timer": stage_timer},
             "assignment": assignment.to_dict() if assignment else None,
             "booking":    _safe_booking_view(booking) if booking else None,
         }

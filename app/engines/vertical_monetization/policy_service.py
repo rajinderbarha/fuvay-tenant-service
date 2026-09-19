@@ -48,6 +48,7 @@ _DRAFT_FIELDS = {
     "arrival_radius_meters", "arrival_location_max_age_seconds",
     "arrival_max_accuracy_meters", "false_arrival_auto_close",
     "false_arrival_penalty_amount", "false_arrival_health_weight",
+    "job_stall_watchdog_enabled", "job_stall_limit_minutes",
     # Health: when a provider is stopped, for how long, and what they come back at.
     "health_suspension_threshold", "health_suspension_days", "health_reinstatement_score",
     # Media retention: how long each kind of job photo is kept.
@@ -349,11 +350,30 @@ class VerticalMonetizationPolicyService:
         decimal_field(
             "false_arrival_health_weight", minimum=Decimal("0"), maximum=Decimal("20")
         )
+        stall_limits = payload.get("job_stall_limit_minutes")
+        if stall_limits is not None:
+            from app.engines.execution.stage_timer_service import DEFAULT_STAGE_LIMIT_MINUTES
+            configurable = set(DEFAULT_STAGE_LIMIT_MINUTES) - {"on_the_way"}
+            if not isinstance(stall_limits, dict):
+                errors.append("job_stall_limit_minutes must be an object keyed by job status")
+            else:
+                unknown = set(stall_limits) - configurable
+                if unknown:
+                    errors.append("Unknown job-stage timer statuses: " + ", ".join(sorted(unknown)))
+                for status, raw in stall_limits.items():
+                    try:
+                        value = Decimal(str(raw))
+                        if (not value.is_finite() or value != value.to_integral_value()
+                                or int(value) < 1 or int(value) > 10080):
+                            raise ValueError
+                    except (TypeError, ValueError, ArithmeticError):
+                        errors.append(f"Timer for {status} must be a whole number between 1 and 10080")
         for name in (
             "assignment_timeout_enabled", "assignment_auto_assign_enabled",
             "arrival_verification_enabled",
             "false_arrival_auto_close", "sla_auto_cancel",
             "sla_notify_provider", "sla_penalty_to_customer",
+            "job_stall_watchdog_enabled",
         ):
             if name in payload and not isinstance(payload[name], bool):
                 errors.append(f"{name} must be true or false")

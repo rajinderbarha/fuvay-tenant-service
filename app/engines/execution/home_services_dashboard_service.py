@@ -113,6 +113,35 @@ async def _attention_queue(
             "destination": "/home-services/bookings-jobs?sla=ATTENTION",
         })
 
+    stalled = (await db.execute(text("""
+        SELECT count(*), min(last_alert.created_at)
+          FROM service_jobs j
+          JOIN LATERAL (
+            SELECT e.created_at
+              FROM service_job_execution_events e
+             WHERE e.job_id=j.id AND e.new_status=j.status
+               AND e.event_type IN ('job_stalled','job_stage_critical')
+             ORDER BY e.created_at DESC LIMIT 1
+          ) last_alert ON true
+          JOIN LATERAL (
+            SELECT e.created_at
+              FROM service_job_execution_events e
+             WHERE e.job_id=j.id AND e.new_status=j.status
+               AND e.old_status IS DISTINCT FROM e.new_status
+             ORDER BY e.created_at DESC LIMIT 1
+          ) entered ON true
+         WHERE j.tenant_id=:tid
+           AND j.status NOT IN ('completed','cancelled','failed','closed_estimate_declined')
+           AND last_alert.created_at >= entered.created_at
+    """), {"tid": str(tid)})).fetchone()
+    if stalled and stalled[0]:
+        items.append({
+            "key": "STALLED_JOB_STAGES", "label": "Active jobs requiring intervention",
+            "count": int(stalled[0]), "severity": "danger",
+            "oldest_age_hours": _age_hours(stalled[1]),
+            "destination": "/home-services/bookings-jobs",
+        })
+
     open_complaints = (await db.execute(text(
         "SELECT count(*), min(created_at) FROM customer_complaints "
         "WHERE tenant_id=:tid AND status IN ('open','in_progress')"

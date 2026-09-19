@@ -184,6 +184,9 @@ class TechnicianMobileHomeService:
                 "message": work_start_status.get("start_work_block_message") or next_action.get("blocked_message"),
             }
 
+        from app.engines.execution.stage_timer_service import describe_stage_timer
+        stage_timer = await describe_stage_timer(db, job)
+
         return {
             "job_id": str(job.id),
             "job_reference": job.job_number,
@@ -202,6 +205,7 @@ class TechnicianMobileHomeService:
                 "allowed": next_action.get("allowed", False),
             },
             "blocker": blocker,
+            "stage_timer": stage_timer,
             "entity_version": None,   # ServiceJob has no version column (audited) -- never fabricated.
             "workflow_version": None,
         }

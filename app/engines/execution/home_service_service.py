@@ -435,13 +435,21 @@ class HomeServiceJobExecutionService:
             )
             await assert_customer_platform_fee_paid_if_required(db, job)
             await self._assert_checklist_satisfied(db, job)
+        transition_time = _now()
         job.status = new_status
-        job.updated_at = _now()
+        job.updated_at = transition_time
         db.add(job)
+        from app.engines.execution.stage_timer_service import build_stage_timer_snapshot
+        stage_timer = await build_stage_timer_snapshot(
+            db, job, new_status, entered_at=transition_time,
+        )
+        event_metadata = dict(metadata or {})
+        if stage_timer is not None:
+            event_metadata["stage_timer"] = stage_timer
         await self._log_event(
             db, job, event_type, old, new_status,
             actor_user_id=actor_user_id, actor_role=actor_role,
-            notes=notes, request_id=request_id, metadata=metadata,
+            notes=notes, request_id=request_id, metadata=event_metadata or None,
         )
         await self.sync_booking_status(db, job.booking_id, new_status)
 
@@ -523,6 +531,11 @@ class HomeServiceJobExecutionService:
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
         await self._set_status(db, job, JS_ON_THE_WAY, EV_ON_THE_WAY, user_id, "staff", request_id=request_id)
+        # Repair/enrol the scheduled-arrival SLA at the moment travel starts.
+        # This protects legacy jobs that predate assignment-time SLA stamping.
+        if job.sla_due_at is None and job.sla_enforcement_started_at is None:
+            from app.engines.execution.sla_breach_service import stamp_due_at
+            await stamp_due_at(db, job.id)
         await db.flush()
         return job.to_dict()
 

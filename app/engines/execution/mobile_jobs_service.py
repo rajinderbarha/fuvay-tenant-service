@@ -216,6 +216,8 @@ class TechnicianMobileJobsService:
             }
 
         allowed_actions = [next_action["action_type"]] if next_action.get("allowed") and next_action.get("action_type") else []
+        from app.engines.execution.stage_timer_service import describe_stage_timer
+        stage_timer = await describe_stage_timer(db, job)
 
         return {
             "job_id": str(job.id),
@@ -234,6 +236,7 @@ class TechnicianMobileJobsService:
                 "allowed": next_action.get("allowed", False),
             },
             "allowed_actions": allowed_actions,
+            "stage_timer": stage_timer,
             "blocker": blocker,
             "payment_confirmation_state": payment_row,
             "entity_version": None,

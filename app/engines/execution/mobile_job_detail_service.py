@@ -143,6 +143,8 @@ class TechnicianJobDetailService:
 
         from app.engines.execution.mobile_customer_assessment_service import MobileCustomerAssessmentService
         customer_assessment = await MobileCustomerAssessmentService().get_status(db, user_id, tenant_id, job_id)
+        from app.engines.execution.stage_timer_service import describe_stage_timer
+        stage_timer = await describe_stage_timer(db, job)
 
         return {
             "job": {
@@ -179,6 +181,7 @@ class TechnicianJobDetailService:
             },
             "customer_assessment": customer_assessment,
             "workflow": {"stages": workflow_stages},
+            "stage_timer": stage_timer,
             "next_required_action": {
                 "key": next_action.get("action_type"), "label": next_action.get("action_label"),
                 "allowed": next_action.get("allowed", False), "route_key": next_action.get("action_type"),

@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { StaffLayout } from "../../../../../components/layout/StaffLayout";
 import { Card, Badge, Skeleton, Btn } from "../../../../../components/shared/ui";
@@ -103,9 +103,10 @@ export default function StaffHomeServiceJobDetailPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <Card>
                 <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>Status Action</h3>
-                <div style={{ marginBottom: 12 }}>
+                {j.stage_timer?.active && <StageCountdown timer={j.stage_timer} />}
+                {contact.data?.can_call && <div style={{ marginBottom: 12 }}>
                   <Btn variant="secondary" loading={callAction.loading}
-                    disabled={contact.loading || !contact.data?.can_call}
+                    disabled={contact.loading}
                     onClick={() => callAction.execute()}>
                     <PhoneCall size={15} style={{ marginRight: 6 }} /> Call customer
                   </Btn>
@@ -115,7 +116,7 @@ export default function StaffHomeServiceJobDetailPage() {
                       Last tracked call: {contact.data.last_call.status.replaceAll("_", " ")}
                     </p>
                   )}
-                </div>
+                </div>}
                 {isCompleted ? (
                   <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>Job completed. No further status actions available.</p>
                 ) : nextAction ? (
@@ -249,6 +250,50 @@ export default function StaffHomeServiceJobDetailPage() {
         </>
       ) : null}
     </StaffLayout>
+  );
+}
+
+function StageCountdown({ timer }: { timer: NonNullable<import("../../../../../lib/api").HomeServiceJobItem["stage_timer"]> }) {
+  const deadlineMs = timer.deadline_at ? new Date(timer.deadline_at).getTime() : null;
+  const serverMs = new Date(timer.server_time).getTime();
+  const [seconds, setSeconds] = useState(() => timer.remaining_seconds ?? 0);
+
+  useEffect(() => {
+    if (!deadlineMs || Number.isNaN(deadlineMs) || Number.isNaN(serverMs)) return;
+    const localStarted = Date.now();
+    const update = () => setSeconds(Math.floor((deadlineMs - (serverMs + Date.now() - localStarted)) / 1000));
+    update();
+    const id = window.setInterval(update, 1000);
+    return () => window.clearInterval(id);
+  }, [deadlineMs, serverMs]);
+
+  const overdue = seconds < 0;
+  const absolute = Math.abs(seconds);
+  const hours = Math.floor(absolute / 3600);
+  const minutes = Math.floor((absolute % 3600) / 60);
+  const secs = absolute % 60;
+  const clock = `${hours ? `${hours}h ` : ""}${String(minutes).padStart(2, "0")}m ${String(secs).padStart(2, "0")}s`;
+  const severe = overdue || timer.state === "critical";
+  return (
+    <div role="timer" aria-live="polite" style={{
+      marginBottom: 14, padding: "12px 14px", borderRadius: 10,
+      border: `1px solid ${severe ? "var(--danger-text)" : timer.state === "warning" ? "#d97706" : "var(--border)"}`,
+      background: severe ? "rgba(220,38,38,.08)" : timer.state === "warning" ? "rgba(217,119,6,.08)" : "var(--surface-subtle, var(--card-bg))",
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: severe ? "var(--danger-text)" : "var(--text-secondary)" }}>
+        {timer.status.replaceAll("_", " ")} deadline
+      </div>
+      <div style={{ fontSize: 24, fontWeight: 850, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+        {overdue ? `${clock} overdue` : clock}
+      </div>
+      <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-secondary)" }}>
+        {overdue
+          ? "This stage is late. Update the job now or contact your provider for intervention."
+          : timer.source === "provider_travel_buffer"
+            ? `Based on your provider's ${timer.limit_minutes}-minute travel setting.`
+            : `Complete this stage within ${timer.limit_minutes} minutes.`}
+      </p>
+    </div>
   );
 }
 

@@ -207,6 +207,8 @@ export interface MonetizationPolicy {
   false_arrival_auto_close?: boolean;
   false_arrival_penalty_amount?: number;
   false_arrival_health_weight?: number;
+  job_stall_watchdog_enabled?: boolean;
+  job_stall_limit_minutes?: Record<string, number>;
   health_suspension_threshold?: number | null;
   health_suspension_days?: number | null;
   health_reinstatement_score?: number | null;

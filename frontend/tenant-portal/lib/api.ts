@@ -4672,6 +4672,13 @@ export interface HomeServiceJobItem {
     action_type: string | null; action_label: string | null;
     allowed: boolean; blocked_message: string | null;
   };
+  stage_timer?: {
+    active: boolean; status: string; state: "inactive" | "on_track" | "warning" | "breached" | "critical";
+    entered_at?: string; warning_at?: string; deadline_at?: string; critical_at?: string;
+    limit_minutes?: number; remaining_seconds?: number; overdue_seconds?: number;
+    waiting_on?: "provider" | "customer"; source?: string;
+    requires_provider_intervention?: boolean; server_time: string;
+  };
 }
 export interface PartsRequestItem {
   parts_request_id: string; job_id: string; tenant_id: string; technician_id: string;
