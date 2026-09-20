@@ -484,6 +484,32 @@ async def _tenant_bookability(db: AsyncSession, tid: uuid.UUID) -> dict:
     return {"is_bookable": bool(row.is_bookable), "blockers": row.bookability_blockers or []}
 
 
+def _resolve_exact_service_bookability(
+    tenant_bookable: dict | None,
+    coverage: list[dict],
+) -> dict | None:
+    """Reconcile a tenant-wide snapshot with exact service capacity.
+
+    An older snapshot may say ``READY_TECHNICIAN_MISSING`` because one service
+    has no technician. The provider can still accept jobs for another service
+    that has a ready technician; per-service rows remain blocked when their
+    own ready count is zero.
+    """
+    if tenant_bookable is None or tenant_bookable.get("is_bookable"):
+        return tenant_bookable
+    from app.engines.provider_portal.bookability_query import (
+        allows_exact_service_matching,
+    )
+    has_ready_service = any(
+        row.get("ready_technician_count", 0) > 0 for row in coverage
+    )
+    if has_ready_service and allows_exact_service_matching(
+        False, tenant_bookable.get("blockers"),
+    ):
+        return {"is_bookable": True, "blockers": []}
+    return tenant_bookable
+
+
 async def _recent_activity(db: AsyncSession, tid: uuid.UUID, limit: int = 8) -> list[dict]:
     rows = (await db.execute(text(
         "SELECT event_type, job_id, created_at FROM service_job_execution_events "
@@ -525,6 +551,7 @@ async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
     activity = await _safe(_recent_activity(db, tid), "recent_activity", errors) or []
 
     tenant_bookable = await _safe(_tenant_bookability(db, tid), "service_bookability", errors)
+    tenant_bookable = _resolve_exact_service_bookability(tenant_bookable, coverage)
 
     ready = team_summary["counts"].get("ready", 0)
     active_members = (await db.execute(text(

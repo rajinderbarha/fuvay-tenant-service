@@ -1968,7 +1968,9 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
       suspended/rejected, at least one published service with a
       configured provider price range, at least one active service area,
       at least one availability rule, sufficient usage credits, and at
-      least one ready technician who covers every published offering.
+      least one published offering with a ready technician. Exact-service
+      matching still proves technician skill and live capacity for the
+      service the customer actually selected.
       is_visible is a lighter bar: tenant not suspended/rejected, business
       profile complete, and at least one service published — a tenant can
       be visible (discoverable) before being fully bookable.
@@ -2121,17 +2123,18 @@ async def _evaluate_provider_bookability(db: AsyncSession, tid: uuid.UUID) -> di
             "severity": "critical", "route": "/home-services/availability"})
 
     # Business approval is intentionally allowed before an optional seat
-    # top-up, but customer bookability must still fail closed until every
-    # enabled offering has a genuinely ready technician.  Matching already
-    # enforces this per request; exposing the same truth here prevents the
-    # dashboard from claiming that an unstaffed provider is bookable.
+    # top-up, but customer bookability still needs at least one genuinely
+    # staffed published offering. Exact service readiness is enforced again by
+    # the matcher and slot-capacity service. Requiring EVERY service here made
+    # one draft/new service disable unrelated live services across the whole
+    # provider account.
     from app.engines.home_service_assignment.team_readiness_service import (
         compute_service_coverage,
         compute_team_summary,
     )
     team_summary = await compute_team_summary(db, tid)
     service_coverage = await compute_service_coverage(db, tid, team_summary)
-    staff_capacity_ready = bool(service_coverage) and all(
+    staff_capacity_ready = bool(service_coverage) and any(
         row["ready_technician_count"] > 0 for row in service_coverage
     )
     if staff_capacity_ready:

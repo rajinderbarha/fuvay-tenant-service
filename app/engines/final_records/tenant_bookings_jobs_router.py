@@ -54,6 +54,13 @@ from app.engines.tenant_engine.access_audit import record_address_access
 
 _pay_svc = ServicePaymentService()
 
+# The provider workspace is an operational board, not the cancellation
+# archive.  Keep cancelled work available to admin/audit projections and the
+# job-specific detail endpoint, but never return it in this paginated list.
+# A tuple is intentional here so SQLAlchemy produces a stable ``NOT IN``
+# predicate for both the data and count queries.
+PROVIDER_LIST_HIDDEN_STATUSES = ("cancelled",)
+
 
 class ConfirmDirectPaymentRequest(BaseModel):
     payment_mode: Literal["onsite_cash", "onsite_upi", "onsite_card", "bank_transfer"] = "onsite_cash"
@@ -127,13 +134,21 @@ async def list_bookings_jobs(
     q = (
         select(ServiceJob, ServiceBooking)
         .join(ServiceBooking, ServiceBooking.id == ServiceJob.booking_id)
-        .where(ServiceJob.tenant_id == tenant_id, ServiceBooking.tenant_id == tenant_id)
+        .where(
+            ServiceJob.tenant_id == tenant_id,
+            ServiceBooking.tenant_id == tenant_id,
+            ServiceJob.status.notin_(PROVIDER_LIST_HIDDEN_STATUSES),
+        )
     )
     count_q = (
         select(func.count())
         .select_from(ServiceJob)
         .join(ServiceBooking, ServiceBooking.id == ServiceJob.booking_id)
-        .where(ServiceJob.tenant_id == tenant_id, ServiceBooking.tenant_id == tenant_id)
+        .where(
+            ServiceJob.tenant_id == tenant_id,
+            ServiceBooking.tenant_id == tenant_id,
+            ServiceJob.status.notin_(PROVIDER_LIST_HIDDEN_STATUSES),
+        )
     )
 
     if stage:
@@ -372,7 +387,11 @@ async def list_bookings_jobs(
     available_job_type_rows = (await db.execute(
         select(ServiceJob.job_type_id, JobTypeDefinition.label)
         .join(JobTypeDefinition, JobTypeDefinition.id == ServiceJob.job_type_id)
-        .where(ServiceJob.tenant_id == tenant_id, ServiceJob.job_type_id.is_not(None))
+        .where(
+            ServiceJob.tenant_id == tenant_id,
+            ServiceJob.job_type_id.is_not(None),
+            ServiceJob.status.notin_(PROVIDER_LIST_HIDDEN_STATUSES),
+        )
         .distinct()
         .order_by(JobTypeDefinition.label.asc())
     )).all()

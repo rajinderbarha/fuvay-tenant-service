@@ -9,6 +9,28 @@ from __future__ import annotations
 from sqlalchemy import column, select, table
 
 
+# Provider bookability is stored tenant-wide, while technician skill/capacity
+# is resolved per exact service at match time. A historical snapshot blocked
+# only by this coarse readiness code may therefore enter the exact matcher;
+# that matcher must still prove the requested service has a qualified
+# technician and a real slot. Every other blocker remains fail-closed.
+EXACT_MATCH_SOFT_BLOCKERS = frozenset({"READY_TECHNICIAN_MISSING"})
+
+
+def allows_exact_service_matching(
+    is_bookable: bool,
+    blockers: list[dict] | tuple[dict, ...] | None,
+) -> bool:
+    if is_bookable:
+        return True
+    codes = {
+        str(item.get("code"))
+        for item in (blockers or [])
+        if isinstance(item, dict) and item.get("code")
+    }
+    return bool(codes) and codes.issubset(EXACT_MATCH_SOFT_BLOCKERS)
+
+
 _PROVIDER_VISIBILITY_STATUSES = table(
     "provider_visibility_statuses",
     column("id"),

@@ -105,6 +105,15 @@ function BookingsJobsWorkspace() {
     if (page > lastPage) updateParams({ page: String(lastPage), job_id: null });
   }, [list.data?.total, page, pageSize, updateParams]);
 
+  // Cancelled jobs belong to audit/history, not this operational workspace.
+  // The API removes them from the paginated list; also close a stale or
+  // manually deep-linked preview after a cancellation completes.
+  useEffect(() => {
+    if (selectedJobId && detail.data?.job.status === "cancelled") {
+      updateParams({ job_id: null });
+    }
+  }, [detail.data?.job.status, selectedJobId, updateParams]);
+
   // A technician can advance the job from the staff app while this workspace
   // remains open. Keep the list and open drawer on the same lifecycle snapshot
   // so a payment-ready job cannot remain displayed under "Awaiting estimate".

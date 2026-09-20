@@ -85,7 +85,6 @@ async def _booking_candidate_pairs(db: AsyncSession, zipcode: str):
             ServiceIssueMapping.status == "active",
             ServiceIssueMapping.deleted_at.is_(None),
             ServiceIssueMapping.customer_visible.is_(True),
-            latest_provider_bookable(TenantService.tenant_id),
         )
         .distinct()
         .order_by(
@@ -236,8 +235,11 @@ def _publisher_filter(zipcode: str | None):
     """A MasterService.id filter expression: real, published, enabled
     tenant offering -- and, when `zipcode` is given, actually covered by a
     published tenant's real service area at that exact zipcode. Shared by
-    both offering- and issue-level catalog queries so neither can ever
-    disagree about what's genuinely bookable."""
+    both offering- and issue-level catalog queries. ZIP-aware callers then
+    intersect this coverage set with ``booking_ready_service_matches`` so a
+    stale tenant-wide technician blocker cannot hide unrelated staffed
+    services, while every returned service still passes exact live matching.
+    """
     from app.engines.admin_catalog.models import MasterService, TenantService
     from app.engines.serviceability.models import TenantServiceArea, TenantServiceAreaService
 
@@ -265,7 +267,6 @@ def _publisher_filter(zipcode: str | None):
                     TenantService.is_enabled == True,  # noqa: E712
                     TenantService.is_active == True,  # noqa: E712
                     TenantService.setup_status == "published",
-                    latest_provider_bookable(TenantService.tenant_id),
                 )
             ),
         )

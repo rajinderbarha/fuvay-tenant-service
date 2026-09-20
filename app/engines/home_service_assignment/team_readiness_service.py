@@ -217,7 +217,8 @@ async def compute_service_coverage(
         "true AS technician_required "
         "FROM tenant_services ts "
         "JOIN master_services ms ON ms.id = ts.master_service_id "
-        "WHERE ts.tenant_id=:tid AND ts.is_enabled=true AND ts.deleted_at IS NULL"
+        "WHERE ts.tenant_id=:tid AND ts.is_enabled=true AND ts.is_active=true "
+        "AND ts.setup_status='published' AND ts.deleted_at IS NULL"
     ), {"tid": str(tenant_id)})).fetchall()
 
     members_rows = (await db.execute(text(

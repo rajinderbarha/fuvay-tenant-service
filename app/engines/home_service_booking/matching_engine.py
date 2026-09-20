@@ -824,7 +824,7 @@ async def _passes_full_eligibility_gate(
     (eligible, reason_code) — reason_code is one of ELIGIBILITY_GATE_CODES
     when eligible is False, surfaced to admin diagnostics; None otherwise.
 
-    1. Bookability: reads ONLY provider_visibility_statuses.is_bookable,
+    1. Bookability: reads the canonical provider_visibility_statuses snapshot,
        computed by _evaluate_provider_bookability() (HS4B — the same
        function POST /v1/provider/status/refresh calls). Previously this
        gate ALSO independently re-derived bookability-adjacent signals
@@ -837,8 +837,9 @@ async def _passes_full_eligibility_gate(
        provider_enabled_offerings.status='pending_approval' (an
        unrelated admin-approval workflow state) which would have
        excluded it from matching even though HS4B's canonical
-       is_bookable was already true. Removed; is_bookable is now the
-       single, canonical bookability answer.
+       is_bookable was already true. The sole exception is a snapshot whose
+       only blocker is tenant-wide technician coverage: exact technician skill
+       and live capacity are proven below for the requested service instead.
     2. Area/service/type/brand coverage: reads HS5B's normalized
        tenant_service_area_services table (service_type_id/brand_id
        columns added in migration 121) instead of the old, disconnected
@@ -924,11 +925,21 @@ async def _passes_full_eligibility_gate(
             return False, "BRAND_NOT_SUPPORTED"
 
     # 1. Canonical bookability (HS4B) — single source of truth.
+    # The provider snapshot is tenant-wide, while technician coverage is
+    # exact-service data. A snapshot blocked only by missing technician
+    # coverage may enter the exact skill/capacity gates below; every other
+    # provider blocker still fails closed.
     bookable_row = (await db.execute(text(
         "SELECT is_bookable, bookability_blockers FROM provider_visibility_statuses WHERE tenant_id=:tid "
         "AND category_id IS NULL ORDER BY created_at DESC, id DESC LIMIT 1"
     ), {"tid": str(tenant_id)})).fetchone()
-    if not bookable_row or not bookable_row.is_bookable:
+    from app.engines.provider_portal.bookability_query import (
+        allows_exact_service_matching,
+    )
+    if not bookable_row or not allows_exact_service_matching(
+        bool(bookable_row.is_bookable),
+        bookable_row.bookability_blockers,
+    ):
         # HS9B — surface the more specific INSUFFICIENT_USAGE_CREDITS
         # reason when that's the actual root cause of non-bookability,
         # rather than the generic NOT_BOOKABLE_CANONICAL_STATUS, so a
