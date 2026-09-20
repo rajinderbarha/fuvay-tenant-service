@@ -8,6 +8,8 @@ import { ServiceMatchingDisclosure } from "./ServiceMatchingDisclosure";
 export interface InlinePriceType {
   id: string;
   name: string;
+  parentId?: string | null;
+  parentName?: string | null;
   price: number | null;
   enabled?: boolean;
   brandCoverage?: { mode: "all" | "selected"; brand_ids: string[] } | null;
@@ -232,20 +234,33 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                 <div className="pricing-dimension-choice-block">
                   <p>Which types do you actually service? Unselected types stay hidden from customers.</p>
                   <div className="pricing-choice-chips">
-                    {types.map(type => (
-                      <button key={type.id} type="button" aria-pressed={activeTypeIds.includes(type.id)} disabled={loading || saving}
-                        onClick={() => toggleType(type.id)}>{type.name}</button>
+                    {types.map((type, index) => (
+                      <React.Fragment key={type.id}>
+                        {type.parentName && type.parentName !== types[index - 1]?.parentName && (
+                          <span style={{ flexBasis: "100%", marginTop: index ? 6 : 0, fontSize: 11, fontWeight: 700, color: "var(--text-secondary)" }}>
+                            ↳ {type.parentName} variants
+                          </span>
+                        )}
+                        <button type="button" aria-pressed={activeTypeIds.includes(type.id)} disabled={loading || saving}
+                          onClick={() => toggleType(type.id)}>{type.name}</button>
+                      </React.Fragment>
                     ))}
                   </div>
                 </div>
 
                 <div className="pricing-type-card-list">
-                  {activeTypes.map(type => {
+                  {activeTypes.map((type, index) => {
                     const mode = brandModes[type.id] ?? "all";
                     const selected = selectedBrands[type.id] ?? [];
                     const inheritedPrice = varyByType ? positiveNumber(typeValues[type.id]) ?? basePrice : basePrice;
                     return (
-                      <section className="pricing-type-card" key={type.id}>
+                      <React.Fragment key={type.id}>
+                      {type.parentName && type.parentName !== activeTypes[index - 1]?.parentName && (
+                        <div style={{ margin: "10px 0 -2px", fontSize: 12, fontWeight: 700, color: "var(--text-secondary)" }}>
+                          {type.parentName} variants
+                        </div>
+                      )}
+                      <section className="pricing-type-card">
                         <div className="pricing-type-card-head">
                           <strong>{type.name}</strong>
                           {varyByType && <span className="pricing-compact-money"><span>₹</span><input aria-label={`${type.name} price`} type="number" min={1}
@@ -296,6 +311,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                           </>
                         )}
                       </section>
+                      </React.Fragment>
                     );
                   })}
                 </div>

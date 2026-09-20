@@ -31,8 +31,9 @@ PLATFORM_ACTOR = None  # system-authored catalog content; no specific admin user
 #   in the global Types/Brands libraries), issues (name, severity),
 #   questions (key, label, input_type, [options]), checklist (label, item_type, required).
 
-def q(key, label, input_type="single_select", options=None, required=True):
-    return {"key": key, "label": label, "input_type": input_type, "options": options, "required": required}
+def q(key, label, input_type="single_select", options=None, required=True, show_when=None):
+    return {"key": key, "label": label, "input_type": input_type,
+            "options": options, "required": required, "show_when": show_when}
 
 
 APPLIANCE_BRANDS_GENERAL = ["LG", "Samsung", "Whirlpool", "Godrej", "Haier", "Panasonic", "Voltas", "IFB", "Bosch"]
@@ -328,7 +329,9 @@ HOME_SERVICES = {
                            ("Parts replaced (if any)", "SHORT_TEXT", False), ("Customer sign-off", "SIGNATURE", True)]},
             {"key": "installation", "pricing_behavior": "fixed", "type_required": True,
              "exact_type_pricing": True,
-             "types": ["Tap change", "Wash basin installation", "Commode installation", "Other fixture installation"],
+             "types": ["Tap change", "Wash basin installation", "Commode installation",
+                       "Western / English commode", "Indian-style commode",
+                       "Other fixture installation"],
              "brand_required": False,
              "issues": [("New tap / fixture installation", "low"), ("New pipeline for appliance", "medium")],
              "questions": [q("fixture_type", "What needs to be installed?", options=[
@@ -336,7 +339,10 @@ HOME_SERVICES = {
                  ("plumbing-wash-basin-installation", "Wash basin installation"),
                  ("plumbing-commode-installation", "Commode installation"),
                  ("plumbing-other-fixture-installation", "Other fixture installation"),
-             ])],
+             ]), q("commode_type", "Which commode type?", options=[
+                 ("plumbing-western-commode-installation", "Western / English commode"),
+                 ("plumbing-indian-commode-installation", "Indian-style commode"),
+             ], show_when=("fixture_type", "plumbing-commode-installation"))],
              "checklist": [("Water supply isolated before starting", "YES_NO", True), ("Fixture fitted and sealed", "YES_NO", True),
                            ("Leak-tested under running water", "YES_NO", True), ("Photo of installed fixture", "PHOTO", True),
                            ("Customer sign-off", "SIGNATURE", True)]},
@@ -597,6 +603,7 @@ async def build_job_type(db, admin_svc, jt_svc, question_svc, checklist_svc_modu
             "issue_type_id": issue_id, "job_type_id": str(job_type_id), "customer_visible": True,
         })
 
+    created_questions = {}
     for qspec in jt_spec["questions"]:
         has_options = bool(qspec.get("options"))
         created = await question_svc.create_question({
@@ -609,6 +616,14 @@ async def build_job_type(db, admin_svc, jt_svc, question_svc, checklist_svc_modu
         if has_options:
             for i, (code, label) in enumerate(qspec["options"]):
                 await question_svc.add_option(uuid.UUID(created["id"]), {"code": code, "label": label, "display_order": i})
+        created_questions[qspec["key"]] = created["id"]
+        if qspec.get("show_when"):
+            parent_key, expected_value = qspec["show_when"]
+            await question_svc.add_rule(uuid.UUID(created["id"]), {
+                "condition_type": "answer_equals",
+                "ref_id": created_questions[parent_key],
+                "expected_value": expected_value,
+            })
 
     template = await checklist_svc_module.create_template(
         db, name=f"{jt_spec['_service_name']} {jt_spec['_job_type_label']} - Job Completion",
@@ -692,19 +707,28 @@ async def run():
 
         home_cat = (await db.execute(select(ServiceCategory).where(ServiceCategory.slug == HOME_SERVICES_CATEGORY_SLUG))).scalar_one()
         plumbing_types = (
-            ("Tap change", "plumbing-tap-change", "PLUMBING_TAP_CHANGE", 10),
-            ("Wash basin installation", "plumbing-wash-basin-installation", "PLUMBING_WASH_BASIN_INSTALLATION", 20),
-            ("Commode installation", "plumbing-commode-installation", "PLUMBING_COMMODE_INSTALLATION", 30),
-            ("Other fixture installation", "plumbing-other-fixture-installation", "PLUMBING_OTHER_FIXTURE_INSTALLATION", 40),
+            ("Tap change", "plumbing-tap-change", "PLUMBING_TAP_CHANGE", 10, None),
+            ("Wash basin installation", "plumbing-wash-basin-installation", "PLUMBING_WASH_BASIN_INSTALLATION", 20, None),
+            ("Commode installation", "plumbing-commode-installation", "PLUMBING_COMMODE_INSTALLATION", 30, None),
+            ("Western / English commode", "plumbing-western-commode-installation", "PLUMBING_WESTERN_COMMODE_INSTALLATION", 31, "plumbing-commode-installation"),
+            ("Indian-style commode", "plumbing-indian-commode-installation", "PLUMBING_INDIAN_COMMODE_INSTALLATION", 32, "plumbing-commode-installation"),
+            ("Other fixture installation", "plumbing-other-fixture-installation", "PLUMBING_OTHER_FIXTURE_INSTALLATION", 40, None),
         )
-        for name, slug, code, display_order in plumbing_types:
+        for name, slug, code, display_order, parent_slug in plumbing_types:
             existing_type = (await db.execute(select(ServiceType).where(ServiceType.slug == slug))).scalar_one_or_none()
             if existing_type is None:
+                parent_id = None
+                if parent_slug:
+                    parent_id = (await db.execute(select(ServiceType.id).where(
+                        ServiceType.slug == parent_slug,
+                    ))).scalar_one()
                 db.add(ServiceType(
                     category_id=home_cat.id, name=name, slug=slug, code=code,
                     type_family="Appliance Type", customer_visible=True,
                     status="active", display_order=display_order, is_active=True,
+                    parent_type_id=parent_id,
                 ))
+                await db.flush()
         await db.flush()
         type_name_to_id = dict((await db.execute(select(ServiceType.name, ServiceType.id))).all())
         print(f"Home Services category: {home_cat.id}")

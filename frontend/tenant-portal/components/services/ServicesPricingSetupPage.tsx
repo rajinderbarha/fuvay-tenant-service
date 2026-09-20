@@ -908,6 +908,8 @@ function SetupDimensionsInlineEditor({ editorRef, selectedService, enrolled, isI
           types={types.map(type => ({
             id: type.service_type_id,
             name: type.name,
+            parentId: type.parent_type_id,
+            parentName: type.parent_name,
             enabled: type.is_enabled,
             brandCoverage: type.brand_coverage,
             price: typePricing.find(priced => priced.service_type_id === type.service_type_id)?.tenant_min_price ?? null,

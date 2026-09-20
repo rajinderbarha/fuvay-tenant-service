@@ -997,11 +997,24 @@ class TenantCatalogService:
             .order_by(ServiceType.display_order, ServiceType.name)
         )
         rows = res.all()
+        # Parent Types are customer navigation groups, never provider-priced
+        # capabilities. Return only leaves while retaining their parent label
+        # so the setup UI can render a real tree.
+        mapped_types = {st.id: st for _, st, _ in rows}
+        parent_ids = {
+            st.parent_type_id for _, st, _ in rows if st.parent_type_id is not None
+        }
         return {"types": [
             {"id": str(tst.id if tst else mst.id),
              "mapping_id": str(tst.id if tst else mst.id),
              "service_type_id": str(mst.service_type_id),
              "name": st.name, "is_enabled": bool(tst and tst.is_enabled),
+             "parent_type_id": str(st.parent_type_id) if st.parent_type_id else None,
+             "parent_name": (
+                 mapped_types[st.parent_type_id].name
+                 if st.parent_type_id in mapped_types else None
+             ),
+             "is_price_leaf": True,
              "brand_coverage": tst.brand_coverage if tst else None,
              "is_required": bool(mst.is_required),
              "is_default": bool(mst.is_default),
@@ -1009,7 +1022,7 @@ class TenantCatalogService:
                  float(tst.tenant_price_adjustment)
                  if tst and tst.tenant_price_adjustment is not None else None
              )}
-            for mst, st, tst in rows
+            for mst, st, tst in rows if st.id not in parent_ids
         ]}
 
     async def set_tenant_service_types(self, tenant_service_id: uuid.UUID, type_ids: list[str],
@@ -1027,6 +1040,17 @@ class TenantCatalogService:
                 ServiceType.is_active.is_(True),
                 ServiceType.deleted_at.is_(None)))
         allowed_type_ids = {str(m.service_type_id) for m in admin_types_res.scalars().all()}
+
+        parent_type_ids = {
+            str(parent_id) for parent_id in (await self.db.execute(
+                select(ServiceType.parent_type_id).where(
+                    ServiceType.parent_type_id.is_not(None),
+                    ServiceType.is_active.is_(True),
+                    ServiceType.deleted_at.is_(None),
+                ).distinct()
+            )).scalars().all()
+        }
+        allowed_type_ids -= parent_type_ids
 
         for tid in type_ids:
             if tid not in allowed_type_ids:
@@ -1510,6 +1534,13 @@ class TenantCatalogService:
         return self._ts_dict(ts)
 
     async def is_type_supported(self, ts: TenantService, service_type_id: uuid.UUID) -> bool:
+        has_children = bool((await self.db.execute(select(ServiceType.id).where(
+            ServiceType.parent_type_id == service_type_id,
+            ServiceType.is_active.is_(True),
+            ServiceType.deleted_at.is_(None),
+        ).limit(1))).scalar_one_or_none())
+        if has_children:
+            return False
         if ts.type_coverage_mode == "all":
             return True
         r = await self.db.execute(select(TenantServiceType.id).where(

@@ -456,6 +456,14 @@ class ServiceType(ServiceOSBase):
     customer_visible: Mapped[bool]            = mapped_column(Boolean, default=True, nullable=False)
     status:           Mapped[str]             = mapped_column(String(20), default="active", nullable=False)
     display_order:    Mapped[int]             = mapped_column(Integer, default=0, nullable=False)
+    # Optional one-level catalog hierarchy. Parent rows are navigation groups
+    # (for example Commode installation); only leaf rows are provider-priced
+    # and written to booking.offering_type_id.
+    parent_type_id:   Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("service_types.id", name="fk_service_types_parent_type", ondelete="RESTRICT"),
+        nullable=True,
+    )
 
 
 # ── Service Type Mappings (076) ────────────────────────────────────────────────

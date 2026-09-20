@@ -3757,6 +3757,7 @@ export interface BrandRow { brand_id:string; name:string; slug:string; category_
 export interface ServiceTypeMaster {
   type_id:string; name:string; code?:string|null; slug:string; description?:string|null;
   type_family?:string|null; customer_visible:boolean; status:string; display_order:number;
+  parent_type_id?:string|null;
   is_active:boolean; category_count:number; service_count:number; mapping_count:number;
   created_at:string; updated_at:string; deleted_at?:string|null; mappings?:ServiceTypeMapRecord[]; icon_url?:string|null; image_url?:string|null;
 }

@@ -46,15 +46,22 @@ def test_plumbing_fixture_answer_selects_the_exact_mapped_price_type():
     tap = SimpleNamespace(id=uuid.uuid4(), slug="tap-change", name="Tap change")
 
     class Result:
+        def __init__(self, rows):
+            self.rows = rows
+
         def scalars(self):
             return self
 
         def all(self):
-            return [tap, basin]
+            return self.rows
 
     class DB:
+        def __init__(self):
+            self.calls = 0
+
         async def execute(self, *args, **kwargs):
-            return Result()
+            self.calls += 1
+            return Result([tap, basin] if self.calls == 1 else [])
 
     draft = SimpleNamespace(offering_id=uuid.uuid4(), offering_type_id=None)
     service = QuestionFlowService.__new__(QuestionFlowService)
@@ -86,5 +93,5 @@ def test_page_and_client_cover_the_customer_charge():
     assert "customer_charge_pct" in api
     page = open(os.path.join(root, "frontend", "super-admin", "app", "admin", "home-services",
                 "finance", "page.tsx"), encoding="utf-8").read()
-    assert "customer charge" in page.lower()
+    assert "platform charge" in page.lower()
     assert "provider commission" in page.lower()

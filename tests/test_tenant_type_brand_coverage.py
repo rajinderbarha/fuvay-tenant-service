@@ -36,6 +36,7 @@ def catalog():
         session.add_all([MasterServiceBrand(master_service_id=ts.master_service_id, brand_id=row.id) for row in brands])
         session.flush()
         db = MagicMock(execute=AsyncMock(side_effect=session.execute), flush=AsyncMock(side_effect=session.flush))
+        db.get = AsyncMock(return_value=None)
         db.add = session.add
         service = TenantCatalogService(db, actor_tenant_id=ts.tenant_id)
         service._load_tenant_service = AsyncMock(return_value=ts)
@@ -65,6 +66,35 @@ async def test_save_reload_and_exact_pair_support(catalog):
     assert not await service.is_brand_supported(ts, brands[1].id, types[0].id)
     assert await service.is_brand_supported(ts, brands[1].id, types[1].id)
     assert not await service.is_brand_supported(ts, uuid.uuid4(), types[1].id)
+
+
+@pytest.mark.asyncio
+async def test_nested_parent_is_navigation_only_and_children_are_provider_priced(catalog):
+    service, session, ts, types, _brands = catalog
+    parent = ServiceType(
+        id=uuid.uuid4(), name="Commode installation", slug="commode",
+        status="active", is_active=True,
+    )
+    child = ServiceType(
+        id=uuid.uuid4(), name="Western / English commode", slug="western-commode",
+        status="active", is_active=True, parent_type_id=parent.id,
+    )
+    session.add_all([parent, child])
+    session.add_all([
+        MasterServiceType(master_service_id=ts.master_service_id, service_type_id=parent.id),
+        MasterServiceType(master_service_id=ts.master_service_id, service_type_id=child.id),
+    ])
+    session.flush()
+
+    result = await service.get_tenant_service_types(ts.id)
+    by_name = {row["name"]: row for row in result["types"]}
+    assert "Commode installation" not in by_name
+    assert by_name["Western / English commode"]["parent_name"] == "Commode installation"
+    assert by_name["Western / English commode"]["is_price_leaf"] is True
+
+    with pytest.raises(ServiceOSException) as caught:
+        await service.set_tenant_service_types(ts.id, [str(parent.id)])
+    assert caught.value.error_code == "SERVICE_TYPE_NOT_SUPPORTED"
 
 
 @pytest.mark.asyncio

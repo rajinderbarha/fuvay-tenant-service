@@ -255,7 +255,20 @@ class QuestionFlowService:
                     select(model).where(func.lower(model.name) == needle)
                 )).scalars().first()
         if row:
-            setattr(draft, column, row.id)
+            if source == "service_types":
+                has_children = bool((await self.db.execute(
+                    select(ServiceType.id).where(
+                        ServiceType.parent_type_id == row.id,
+                        ServiceType.is_active.is_(True),
+                        ServiceType.deleted_at.is_(None),
+                    ).limit(1)
+                )).scalars().all())
+                # A parent is a navigation answer, not a billable Type. Clear
+                # a previous leaf selection and let the conditional child
+                # question choose the final offering_type_id.
+                setattr(draft, column, None if has_children else row.id)
+            else:
+                setattr(draft, column, row.id)
 
     async def _answer_target(
         self, draft: HomeServiceBookingDraft, question_key: str,

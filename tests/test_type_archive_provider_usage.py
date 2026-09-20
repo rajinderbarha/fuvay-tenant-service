@@ -5,6 +5,7 @@ import uuid
 import pytest
 
 from app.engines.admin_catalog.types_service import TypesService
+from app.exceptions import ServiceOSException
 
 
 def _single(value):
@@ -45,6 +46,7 @@ async def test_archive_type_disables_live_dependencies_and_preserves_rows():
         _many([mapping]),
         _many([service_link]),
     ])
+    db.scalar = AsyncMock(return_value=0)
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.commit = AsyncMock()
@@ -96,6 +98,7 @@ async def test_archive_unused_type_does_not_draft_unrelated_provider_services():
     db.execute = AsyncMock(side_effect=[
         _single(service_type), _many([]), _many([]), _many([]), _many([service_link]),
     ])
+    db.scalar = AsyncMock(return_value=0)
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.commit = AsyncMock()
@@ -112,6 +115,28 @@ async def test_archive_unused_type_does_not_draft_unrelated_provider_services():
     bump_revision.assert_awaited_once_with(
         db, service_id, affected_tenant_service_ids=set()
     )
+
+
+@pytest.mark.asyncio
+async def test_archive_parent_type_requires_active_variants_to_be_handled_first():
+    type_id = uuid.uuid4()
+    service_type = SimpleNamespace(
+        id=type_id, name="Commode installation", status="active", is_active=True,
+        deleted_at=None, updated_at=None,
+    )
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=_single(service_type))
+    db.scalar = AsyncMock(return_value=2)
+    db.commit = AsyncMock()
+
+    with pytest.raises(ServiceOSException) as caught:
+        await TypesService(db).archive_type(
+            type_id, "Parent type is no longer required in the catalog"
+        )
+
+    assert caught.value.error_code == "TYPE_PARENT_HAS_ACTIVE_VARIANTS"
+    assert caught.value.context["active_variant_count"] == 2
+    db.commit.assert_not_awaited()
 
 
 def test_type_archive_dialog_explains_automatic_cleanup():

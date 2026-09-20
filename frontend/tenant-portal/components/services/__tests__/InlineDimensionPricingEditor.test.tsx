@@ -192,4 +192,30 @@ describe("InlineDimensionPricingEditor", () => {
     await act(async () => { await editorRef.current!.save(); });
     expect(onSaveType).toHaveBeenCalledWith("commode", 300);
   });
+
+  it("renders child variants beneath their catalog parent", () => {
+    render(
+      <InlineDimensionPricingEditor
+        basePrice={null}
+        exactTypePrices
+        types={[
+          { id: "tap", name: "Tap change", price: 80, enabled: true },
+          { id: "western", name: "Western / English commode", parentId: "commode", parentName: "Commode installation", price: 300, enabled: true },
+          { id: "indian", name: "Indian-style commode", parentId: "commode", parentName: "Commode installation", price: 350, enabled: true },
+        ]}
+        brands={[]}
+        exceptions={[]}
+        onSaveType={vi.fn()}
+        onClearType={vi.fn()}
+        onClearTypePrices={vi.fn()}
+        onSaveBrand={vi.fn()}
+        onClearBrand={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("↳ Commode installation variants")).toBeInTheDocument();
+    expect(screen.getByText("Commode installation variants", { selector: "div" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Western / English commode price")).toHaveValue(300);
+    expect(screen.getByLabelText("Indian-style commode price")).toHaveValue(350);
+  });
 });

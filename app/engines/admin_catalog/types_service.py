@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.admin_catalog.models import (
     ServiceType, ServiceTypeMapping, BrandMapping, Brand,
     ServiceCategory, ServiceGroup, MasterService, MasterServiceType, MasterServiceBrand,
-    TenantServiceType, TenantServiceBrand, MasterDataAuditLog,
+    TenantService, TenantServiceType, TenantServiceBrand, MasterDataAuditLog,
 )
 from app.engines.admin_catalog.media_urls import cloudinary_catalog_url
 from app.exceptions import ServiceOSException, NotFoundException
@@ -53,6 +53,7 @@ class TypesService:
             "is_active":        t.is_active,
             "icon_url":         t.icon_url,
             "image_url":        t.image_url,
+            "parent_type_id":   str(t.parent_type_id) if t.parent_type_id else None,
             "category_count":   mc.get("categories", 0),
             "service_count":    mc.get("services", 0),
             "mapping_count":    mc.get("total", 0),
@@ -237,6 +238,7 @@ class TypesService:
             raise ServiceOSException("DUPLICATE", f"Service type slug '{slug}' already exists.",
                                      status_code=409)
 
+        parent_type_id = await self._validated_parent_type(data.get("parent_type_id"))
         t = ServiceType(
             name=name, slug=slug, code=code,
             description=data.get("description"),
@@ -247,9 +249,12 @@ class TypesService:
             status=data.get("status", "active"),
             display_order=data.get("display_order", 0),
             is_active=data.get("status", "active") == "active",
+            parent_type_id=parent_type_id,
         )
         self.db.add(t)
         await self.db.flush()
+        if parent_type_id:
+            await self._demote_parent_to_group(parent_type_id)
 
         # Optional initial mappings
         for m in data.get("mappings", []):
@@ -268,6 +273,14 @@ class TypesService:
         t = r.scalar_one_or_none()
         if not t:
             raise NotFoundException("ServiceType", str(type_id))
+
+        old_parent_type_id = t.parent_type_id
+        if "parent_type_id" in data:
+            t.parent_type_id = await self._validated_parent_type(
+                data.get("parent_type_id"), child_type_id=type_id,
+            )
+            if t.parent_type_id and t.parent_type_id != old_parent_type_id:
+                await self._demote_parent_to_group(t.parent_type_id)
 
         old_name, old_code = t.name, t.code
         for field in ("name", "code", "description", "type_family", "display_order"):
@@ -308,6 +321,71 @@ class TypesService:
         await self.db.refresh(t)
         return self._type_dict(t)
 
+    async def _validated_parent_type(
+        self, parent_type_id, child_type_id: uuid.UUID | None = None,
+    ) -> uuid.UUID | None:
+        """Validate the supported two-level Type tree and prevent cycles."""
+        if not parent_type_id:
+            return None
+        parent_id = uuid.UUID(str(parent_type_id))
+        if child_type_id and parent_id == child_type_id:
+            raise ServiceOSException(
+                "INVALID_TYPE_PARENT", "A service type cannot be its own parent.", status_code=422,
+            )
+        parent = await self.db.scalar(select(ServiceType).where(
+            ServiceType.id == parent_id,
+            ServiceType.deleted_at.is_(None),
+            ServiceType.is_active.is_(True),
+        ))
+        if parent is None:
+            raise ServiceOSException(
+                "TYPE_PARENT_NOT_FOUND", "Choose an active parent service type.", status_code=422,
+            )
+        if parent.parent_type_id is not None:
+            raise ServiceOSException(
+                "TYPE_TREE_DEPTH_EXCEEDED",
+                "Only one nested variant level is supported.", status_code=422,
+            )
+        if child_type_id:
+            has_children = await self.db.scalar(select(func.count(ServiceType.id)).where(
+                ServiceType.parent_type_id == child_type_id,
+                ServiceType.deleted_at.is_(None),
+            ))
+            if has_children:
+                raise ServiceOSException(
+                    "TYPE_PARENT_HAS_CHILDREN",
+                    "A type that already groups variants cannot be nested under another type.",
+                    status_code=422,
+                )
+        return parent_id
+
+    async def _demote_parent_to_group(self, parent_type_id: uuid.UUID) -> None:
+        """Remove billable provider state when a former leaf gains children."""
+        provider_rows = (await self.db.execute(select(TenantServiceType).where(
+            TenantServiceType.service_type_id == parent_type_id,
+        ))).scalars().all()
+        tenant_service_ids = {row.tenant_service_id for row in provider_rows}
+        for row in provider_rows:
+            row.is_enabled = False
+            row.tenant_min_price = None
+            row.tenant_max_price = None
+            row.tenant_price_adjustment = None
+        brand_rows = (await self.db.execute(select(TenantServiceBrand).where(
+            TenantServiceBrand.service_type_id == parent_type_id,
+        ))).scalars().all()
+        for row in brand_rows:
+            row.is_enabled = False
+            row.tenant_min_price = None
+            row.tenant_max_price = None
+        if tenant_service_ids:
+            services = (await self.db.execute(select(TenantService).where(
+                TenantService.id.in_(tenant_service_ids),
+            ))).scalars().all()
+            for service in services:
+                service.setup_status = "draft"
+                service.published_at = None
+                service.last_active_step = "services-pricing"
+
     async def _set_status(self, type_id: uuid.UUID, new_status: str, reason: str | None = None) -> dict:
         r = await self.db.execute(
             select(ServiceType).where(ServiceType.id == type_id,
@@ -315,6 +393,20 @@ class TypesService:
         t = r.scalar_one_or_none()
         if not t:
             raise NotFoundException("ServiceType", str(type_id))
+        if new_status != "active":
+            await self._assert_no_active_variants(type_id)
+        elif getattr(t, "parent_type_id", None):
+            parent_is_active = await self.db.scalar(select(func.count(ServiceType.id)).where(
+                ServiceType.id == t.parent_type_id,
+                ServiceType.deleted_at.is_(None),
+                ServiceType.is_active.is_(True),
+            ))
+            if not parent_is_active:
+                raise ServiceOSException(
+                    "TYPE_PARENT_INACTIVE",
+                    "Activate the parent type before activating this variant.",
+                    status_code=409,
+                )
         t.status = new_status
         t.is_active = new_status == "active"
         t.updated_at = utcnow()
@@ -335,6 +427,7 @@ class TypesService:
             ServiceType.id == type_id, ServiceType.deleted_at.is_(None)))).scalar_one_or_none()
         if not t:
             raise NotFoundException("ServiceType", str(type_id))
+        await self._assert_no_active_variants(type_id)
 
         # Retirement is a controlled soft delete. Provider selections are
         # configuration, not immutable booking history, so stale selections
@@ -403,6 +496,21 @@ class TypesService:
             "catalog_mappings_archived": len(mappings),
             "service_links_disabled": len(service_links),
         }
+
+    async def _assert_no_active_variants(self, type_id: uuid.UUID) -> None:
+        """Keep a public navigation parent available while it owns live leaves."""
+        active_variants = await self.db.scalar(select(func.count(ServiceType.id)).where(
+            ServiceType.parent_type_id == type_id,
+            ServiceType.deleted_at.is_(None),
+            ServiceType.is_active.is_(True),
+        ))
+        if active_variants:
+            raise ServiceOSException(
+                "TYPE_PARENT_HAS_ACTIVE_VARIANTS",
+                "Deactivate, retire, or move this type's active variants first.",
+                status_code=409,
+                context={"type_id": str(type_id), "active_variant_count": int(active_variants)},
+            )
 
     async def restore_type(self, type_id: uuid.UUID, reason: str) -> dict:
         if len(reason.strip()) < 10:

@@ -374,6 +374,7 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
     customer_visible: initial?.customer_visible ?? true,
     status:           initial?.status ?? "active",
     display_order:    initial?.display_order ?? 0,
+    parent_type_id:   initial?.parent_type_id ?? "",
   });
   const [iconUrl, setIconUrl] = useState<string | null>(initial?.icon_url ?? null);
   const [instagramImageUrl, setInstagramImageUrl] = useState<string | null>(initial?.image_url ?? null);
@@ -384,6 +385,10 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
   const createAction = useAction(useCallback((d:object) => typesApi.create(d), []));
   const updateAction = useAction(useCallback((d:object) =>
     typesApi.update(initial!.type_id, d), [initial]));
+  const parentTypes = useApi(useCallback(
+    () => typesApi.list({ status:"active", page:1, page_size:200, sort_by:"name" }),
+    [],
+  ));
 
   async function handleSave() {
     const payload = { ...form, icon_url: iconUrl, image_url: instagramImageUrl };
@@ -430,6 +435,20 @@ function TypeFormModal({ title, initial, onClose, onSaved }:
           {F("Slug (auto-generated, editable)", "slug")}
         </div>
         {F("Description", "description", "textarea")}
+        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+          <label style={{ fontSize:12, fontWeight:600, color:"var(--text-secondary)" }}>Parent type (optional)</label>
+          <select value={form.parent_type_id} onChange={e=>setForm(f=>({...f,parent_type_id:e.target.value}))}
+            style={{ height:36, borderRadius:"var(--radius-md)", border:"1px solid var(--border)", background:"var(--input-bg)",
+              color:"var(--text-primary)", fontSize:13, padding:"0 10px" }}>
+            <option value="">Top-level type</option>
+            {(parentTypes.data?.types ?? [])
+              .filter(type => !type.parent_type_id && type.type_id !== initial?.type_id)
+              .map(type => <option key={type.type_id} value={type.type_id}>{type.name}</option>)}
+          </select>
+          <span style={{ fontSize:11, color:"var(--text-tertiary)" }}>
+            Choose a parent to create a priced child variant. One nested level is supported.
+          </span>
+        </div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))", gap:14 }}>
           <div>
             <IconPicker label="Fuvay app icon" noun="app icon" context="service_icon" value={iconUrl} onChange={setIconUrl}/>

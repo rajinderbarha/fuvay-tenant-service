@@ -254,6 +254,11 @@ class CatalogQuestionService:
             if not dim:
                 return []
             if dim.legacy_source in ("service_types", "brands"):
+                validation = getattr(qn, "validation", None)
+                if validation:
+                    return await self._library_options(
+                        qn.master_service_id, dim.legacy_source, validation,
+                    )
                 return await self._library_options(qn.master_service_id, dim.legacy_source)
             from app.engines.admin_catalog.models import CatalogDimensionValue
             rows = (await self.db.execute(
@@ -267,15 +272,21 @@ class CatalogQuestionService:
         library = (library_for_question_key(qn.question_key)
                    if qn.input_type in CHOICE_INPUT_TYPES else None)
         if library:
+            validation = getattr(qn, "validation", None)
+            if validation:
+                return await self._library_options(qn.master_service_id, library, validation)
             return await self._library_options(qn.master_service_id, library)
         return []
 
-    async def _library_options(self, master_service_id: uuid.UUID, library: str) -> list[dict]:
+    async def _library_options(
+        self, master_service_id: uuid.UUID, library: str,
+        validation: dict | None = None,
+    ) -> list[dict]:
         """The active, customer-visible types or brands mapped to one service."""
         if library == "service_types":
-            rows = (await self.db.execute(
+            query = (
                 select(ServiceType.id, ServiceType.slug, ServiceType.name,
-                       ServiceType.icon_url)
+                       ServiceType.icon_url, ServiceType.parent_type_id)
                 .join(ServiceTypeMapping, ServiceTypeMapping.type_id == ServiceType.id)
                 .where(
                     ServiceTypeMapping.service_id == master_service_id,
@@ -284,13 +295,28 @@ class CatalogQuestionService:
                     ServiceType.is_active.is_(True),
                     ServiceType.deleted_at.is_(None),
                 )
-                .order_by(ServiceTypeMapping.display_order, ServiceType.display_order, ServiceType.name)
-            )).all()
+            )
+            tree_rule = validation if isinstance(validation, dict) else {}
+            if tree_rule.get("type_tree_level") == "root":
+                query = query.where(ServiceType.parent_type_id.is_(None))
+            parent_slug = tree_rule.get("type_parent_slug")
+            if parent_slug:
+                parent_id = select(ServiceType.id).where(
+                    ServiceType.slug == str(parent_slug),
+                    ServiceType.deleted_at.is_(None),
+                ).scalar_subquery()
+                query = query.where(ServiceType.parent_type_id == parent_id)
+            rows = (await self.db.execute(query.order_by(
+                ServiceTypeMapping.display_order,
+                ServiceType.display_order,
+                ServiceType.name,
+            ))).all()
             # Customer/app APIs receive only the compact app icon. The
             # Instagram image is read exclusively by the webhook renderer.
             return [{"id": str(i), "code": slug, "label": name,
-                     "icon_url": icon_url}
-                    for i, slug, name, icon_url in rows]
+                     "icon_url": icon_url,
+                     "parent_type_id": str(parent_id) if parent_id else None}
+                    for i, slug, name, icon_url, parent_id in rows]
         rows = (await self.db.execute(
             select(Brand.id, Brand.slug, Brand.name, Brand.logo_url)
             .join(BrandMapping, BrandMapping.brand_id == Brand.id)
