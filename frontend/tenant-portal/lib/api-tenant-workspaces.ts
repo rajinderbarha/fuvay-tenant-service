@@ -508,6 +508,7 @@ export interface SWOfferingDetail {
     type_mode: "required" | "optional";
     brand_mode: "required" | "optional";
     pricing_behavior?: string;
+    requires_exact_type_price?: boolean;
     requires_issue_type: boolean;
     requires_checklist: boolean;
     requires_estimate_approval: boolean;
@@ -522,7 +523,15 @@ export interface SWOfferingDetail {
     code: string; message: string; step?: string; job_type_id?: string;
     dimension_path?: Record<string, string>;
   }> };
-  types: Array<{ service_type_id: string; name: string }>;
+  types: Array<{
+    service_type_id: string;
+    name: string;
+    is_enabled?: boolean;
+    parent_type_id?: string | null;
+    parent_name?: string | null;
+    is_price_leaf?: boolean;
+    brand_coverage?: { mode: "all" | "selected"; brand_ids: string[] } | null;
+  }>;
   brands: Array<{ brand_id: string; name: string }>;
   effective_pricing: {
     default: SWResolvedPrice;

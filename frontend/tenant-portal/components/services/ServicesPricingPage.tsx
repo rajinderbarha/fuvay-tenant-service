@@ -540,6 +540,7 @@ function OfferingWorkspace({ tenantServiceId, groupName, onWorkspaceChanged, pri
     ? "consultation"
     : inspectionPricing ? "inspection" : "dimension";
   const fixedPricing = pricingMode === "dimension" && data.blueprint.pricing_behavior === "fixed";
+  const exactTypePricing = fixedPricing && !!data.blueprint.requires_exact_type_price;
   const availableTabs: Tab[] = pricingMode === "inspection"
     ? ["overview", "types-brands", "visit-fee", "warranty", "requirements"]
     : pricingMode === "consultation"
@@ -590,8 +591,10 @@ function OfferingWorkspace({ tenantServiceId, groupName, onWorkspaceChanged, pri
       {pricingMode === "consultation" ? (
         <p className="pricing-section-copy">Uses the shared fee in <a href="#provider-consultation-fee">provider settings above</a>. No separate service price is needed.</p>
       ) : (
-        <UnifiedPricingEditor ref={pricingEditorRef} tenantServiceId={tenantServiceId} data={data} pricingMode={pricingMode} onDirtyChange={setPricingDirty}>
-          {fixedPricing && <OperationalDimensionPricing editorRef={dimensionEditorRef} tenantServiceId={tenantServiceId} data={data} onDirtyChange={setDimensionDirty} />}
+        <UnifiedPricingEditor ref={pricingEditorRef} tenantServiceId={tenantServiceId} data={data} pricingMode={pricingMode}
+          exactTypePricing={exactTypePricing} onDirtyChange={setPricingDirty}>
+          {fixedPricing && <OperationalDimensionPricing editorRef={dimensionEditorRef} tenantServiceId={tenantServiceId}
+            data={data} exactTypePricing={exactTypePricing} onDirtyChange={setDimensionDirty} />}
         </UnifiedPricingEditor>
       )}
 
@@ -637,9 +640,10 @@ const UnifiedPricingEditor = forwardRef<PricingEditorHandle, {
   tenantServiceId: string;
   data: SWOfferingDetail;
   pricingMode: "inspection" | "dimension";
+  exactTypePricing: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   children?: React.ReactNode;
-}>(function UnifiedPricingEditor({ tenantServiceId, data, pricingMode, onDirtyChange, children }, ref) {
+}>(function UnifiedPricingEditor({ tenantServiceId, data, pricingMode, exactTypePricing, onDirtyChange, children }, ref) {
   const ts = data.tenant_service as {
     tenant_min_price?: number | null;
     tenant_max_price?: number | null;
@@ -674,7 +678,9 @@ const UnifiedPricingEditor = forwardRef<PricingEditorHandle, {
   const warrantyNumber = Number(warranty);
   const invalid = pricingMode === "inspection"
     ? !visitFee || !Number.isFinite(visitFeeNumber) || visitFeeNumber <= 0
-    : fixedPricing
+    : exactTypePricing
+      ? false
+      : fixedPricing
       ? !minimum || !Number.isFinite(minimumNumber) || minimumNumber <= 0
       : !minimum || !maximum || !Number.isFinite(minimumNumber) || !Number.isFinite(maximumNumber) || minimumNumber <= 0 || maximumNumber < minimumNumber;
   const secondaryInvalid = (surchargeNumber != null && (!Number.isFinite(surchargeNumber) || surchargeNumber < 0))
@@ -696,7 +702,9 @@ const UnifiedPricingEditor = forwardRef<PricingEditorHandle, {
               tenant_min_price: showEstimateRange ? minimumNumber : null,
               tenant_max_price: showEstimateRange ? maximumNumber : null,
             }
-            : { tenant_min_price: minimumNumber, tenant_max_price: fixedPricing ? minimumNumber : maximumNumber }),
+            : exactTypePricing
+              ? { tenant_base_price: null, tenant_min_price: null, tenant_max_price: null }
+              : { tenant_min_price: minimumNumber, tenant_max_price: fixedPricing ? minimumNumber : maximumNumber }),
           tenant_emergency_surcharge: surchargeNumber ?? undefined,
           warranty_days: warrantyNumber,
         });
@@ -709,7 +717,7 @@ const UnifiedPricingEditor = forwardRef<PricingEditorHandle, {
       }
     },
   }), [
-    fixedPricing, invalid, maximumNumber, minimumNumber, pricingMode, secondaryInvalid,
+    exactTypePricing, fixedPricing, invalid, maximumNumber, minimumNumber, pricingMode, secondaryInvalid,
     showEstimateRange, surchargeNumber, tenantServiceId, visitFeeNumber, warrantyNumber,
   ]);
 
@@ -720,16 +728,22 @@ const UnifiedPricingEditor = forwardRef<PricingEditorHandle, {
 
   return (
     <section className="pricing-panel">
-      <h2 className="pricing-section-title">{pricingMode === "inspection" ? "Inspection charge & estimate guidance" : "Your price"}</h2>
+      <h2 className="pricing-section-title">{pricingMode === "inspection" ? "Inspection charge & estimate guidance" : exactTypePricing ? "Your item prices" : "Your price"}</h2>
       <p className="pricing-section-copy">
         {pricingMode === "inspection"
           ? "Repairs cannot be priced before diagnosis. Set the visit charge; the final amount is approved after inspection."
+          : exactTypePricing ? "Select each item you provide and enter its exact customer-facing price below."
           : fixedPricing ? "Straightforward job with a known scope, so the customer sees and pays a real amount at booking." : "Set the range customers see at booking. A Type or Brand override can replace it when needed."}
       </p>
       {error && <div style={{ marginTop: 12 }}><Alert tone="danger">{error}</Alert></div>}
       <div className="pricing-form-grid">
         {pricingMode === "inspection" ? (
           <PricingMoneyField label="Inspection charge" value={visitFee} onChange={value => updateDraft(setVisitFee, value)} placeholder="249" hint="Payable if the customer declines your estimate." />
+        ) : exactTypePricing ? (
+          <div className="pricing-dimension-choice-block">
+            <strong>No service-wide price is needed</strong>
+            <p style={{ margin: "4px 0 0" }}>Every selected item is priced separately below.</p>
+          </div>
         ) : fixedPricing ? (
           <PricingMoneyField label={data.service_name.toLowerCase().includes("installation") ? "Installation price" : "Service price"} value={minimum} onChange={value => updateDraft(setMinimum, value)} placeholder="899" hint="Applies to every booking unless a type or brand price is set below." />
         ) : (
@@ -780,10 +794,11 @@ function PricingMoneyField({ label, value, onChange, placeholder, hint }: {
   );
 }
 
-function OperationalDimensionPricing({ editorRef, tenantServiceId, data, onDirtyChange }: {
+function OperationalDimensionPricing({ editorRef, tenantServiceId, data, exactTypePricing, onDirtyChange }: {
   editorRef: React.RefObject<InlineDimensionPricingEditorHandle | null>;
   tenantServiceId: string;
   data: SWOfferingDetail;
+  exactTypePricing: boolean;
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const availabilityKey = `${data.types.map(type => type.service_type_id).join(",")}|${data.brands.map(brand => brand.brand_id).join(",")}`;
@@ -817,10 +832,13 @@ function OperationalDimensionPricing({ editorRef, tenantServiceId, data, onDirty
     <>
       <InlineDimensionPricingEditor
         ref={editorRef}
-        basePrice={(data.tenant_service as { tenant_min_price?: number | null }).tenant_min_price ?? null}
+        basePrice={exactTypePricing ? null : (data.tenant_service as { tenant_min_price?: number | null }).tenant_min_price ?? null}
+        exactTypePrices={exactTypePricing}
         types={(availableTypes.data?.types ?? []).map(type => ({
           id: type.service_type_id,
           name: type.name,
+          parentId: type.parent_type_id,
+          parentName: type.parent_name,
           enabled: type.is_enabled,
           brandCoverage: type.brand_coverage,
           price: typeRows.find((priced: HsTypePricing) => priced.service_type_id === type.service_type_id)?.tenant_min_price ?? null,

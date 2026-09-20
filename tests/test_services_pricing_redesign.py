@@ -141,6 +141,18 @@ def test_setup_and_operational_workspace_share_mutation_api():
         assert f"homeServicesSetupApi.{method}" in page
 
 
+def test_operational_workspace_honours_exact_item_pricing_contract():
+    page = read(WORKSPACE)
+    api = read(WORKSPACE_API)
+    assert "requires_exact_type_price?: boolean" in api
+    assert "exactTypePricing={exactTypePricing}" in page
+    assert "exactTypePrices={exactTypePricing}" in page
+    assert "Every selected item is priced separately below." in page
+    assert "tenant_base_price: null, tenant_min_price: null, tenant_max_price: null" in page
+    assert "parentId: type.parent_type_id" in page
+    assert "parentName: type.parent_name" in page
+
+
 def test_setup_price_ranges_never_autosave_empty_fields_as_zero():
     onboarding = read(ONBOARDING)
     assert "Number(min || 0)" not in onboarding

@@ -1,8 +1,8 @@
 import React, { StrictMode } from "react";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { useApi } from "../useApi";
+import { useAction, useApi } from "../useApi";
 
 describe("useApi Strict Mode loading", () => {
   it("starts only one automatic request", async () => {
@@ -26,5 +26,17 @@ describe("useApi Strict Mode loading", () => {
     await waitFor(() => expect(result.current.data).toEqual({ ready: true }));
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(result.current.error).toBeNull();
+  });
+});
+
+describe("useAction validation errors", () => {
+  it("shows the actionable local validation message", async () => {
+    const { result } = renderHook(() => useAction(async () => {
+      throw new Error("Enter an exact price for Tap change.");
+    }));
+
+    await act(async () => { await result.current.execute(); });
+
+    expect(result.current.error).toBe("Enter an exact price for Tap change.");
   });
 });

@@ -71,7 +71,10 @@ export function useAction<T,A extends unknown[]>(
     setLoading(true);setError(null);setErrorCode(null);setRequestId(null);
     try{const res=await action(...args); opts?.onSuccess?.(res); return res;}
     catch(e){
-      const msg=e instanceof ServiceOSError?e.message:"Action failed.";
+      // Local form validation intentionally throws Error before an API call.
+      // Preserve that actionable message instead of replacing it with the
+      // unhelpful generic "Action failed" label.
+      const msg=e instanceof Error && e.message?e.message:"Action failed.";
       setError(msg);
       setErrorCode(e instanceof ServiceOSError ? e.code : null);
       setRequestId(e instanceof ServiceOSError ? e.requestId ?? null : null);

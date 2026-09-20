@@ -540,6 +540,9 @@ export interface HsSetupType {
   /** Kept as an alias of `id` -- older callers use this name. */
   mapping_id: string;
   service_type_id: string; name: string;
+  parent_type_id?: string | null;
+  parent_name?: string | null;
+  is_price_leaf?: boolean;
   is_enabled: boolean;
   is_required: boolean; is_default: boolean;
   tenant_price_adjustment: number | null;
