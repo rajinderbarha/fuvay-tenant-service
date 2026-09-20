@@ -4629,6 +4629,40 @@ async def test_instagram_type_and_brand_dimensions_use_uploaded_images():
 
 
 @pytest.mark.asyncio
+async def test_type_dimension_only_shows_types_proven_ready_for_postcode(monkeypatch):
+    from app.engines.messaging_gateway import flow
+    from app.engines.home_service_booking import offering_catalog_service as catalog
+
+    service_id = uuid.uuid4()
+    ready_type_id = uuid.uuid4()
+    unavailable_type_id = uuid.uuid4()
+
+    async def readiness(_db, _zipcode):
+        return {
+            service_id: {
+                "job_type_ids": {uuid.uuid4()},
+                "type_ids": {ready_type_id},
+                "type_job_type_ids": {},
+            }
+        }
+
+    monkeypatch.setattr(catalog, "booking_ready_service_matches", readiness)
+    db = _DimensionDB(types=[
+        (ready_type_id, "Tap change", "https://cdn.example/tap.png", None),
+        (unavailable_type_id, "Commode", "https://cdn.example/commode.png", None),
+    ])
+
+    turn = await flow._dimension_step(
+        db,
+        {"id": "d-1", "offering_id": str(service_id), "zipcode": "140412"},
+        CHANNEL_INSTAGRAM,
+        0,
+    )
+
+    assert [row["title"] for row in _dimension_rows(turn)] == ["Tap change"]
+
+
+@pytest.mark.asyncio
 async def test_instagram_brand_uses_artwork_from_case_only_duplicate():
     """Keep the service's mapped brand id, but do not lose artwork uploaded
     against a historical case-only duplicate such as `LG` versus `lg`."""

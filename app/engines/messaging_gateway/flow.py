@@ -26,6 +26,7 @@ per-thread state to migrate, expire or repair.
 """
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote_plus
 
@@ -2418,6 +2419,25 @@ async def _pending_dimension(db, draft: dict) -> tuple[str, str, list] | None:
         if not sql:
             continue
         values = (await db.execute(text(sql), {"service": service_id})).all()
+        if key == "type" and draft.get("zipcode"):
+            # The postcode bootstrap may have proved an exact-price service
+            # by testing its provider-configured leaf types one by one.  Show
+            # only those types here: offering a master-catalog parent or a
+            # type no eligible provider can price merely postpones the same
+            # failure until after the customer has spent more time.
+            from app.engines.home_service_booking.offering_catalog_service import (
+                booking_ready_service_matches,
+            )
+            try:
+                readiness_service_id = uuid.UUID(str(service_id))
+            except (TypeError, ValueError, AttributeError):
+                readiness_service_id = service_id
+            readiness = (
+                await booking_ready_service_matches(db, str(draft["zipcode"]))
+            ).get(readiness_service_id)
+            eligible_type_ids = set((readiness or {}).get("type_ids") or [])
+            if eligible_type_ids:
+                values = [row for row in values if row[0] in eligible_type_ids]
         if not values:
             # Required but nothing configured to offer. Skipping keeps the
             # booking moving instead of dead-ending the customer on a question

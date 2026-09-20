@@ -95,6 +95,53 @@ async def _booking_candidate_pairs(db: AsyncSession, zipcode: str):
     )).all()
 
 
+async def _priceable_type_ids(
+    db: AsyncSession,
+    service_id: uuid.UUID,
+    job_type_id: uuid.UUID,
+) -> list[uuid.UUID]:
+    """Return provider-configured leaf types with a valid exact price.
+
+    Exact-type-priced services cannot pass the production matcher until the
+    customer has selected a type.  The postcode catalog runs before that
+    selection, so it must prove that *at least one* real type is bookable
+    instead of treating ``TYPE_SELECTION_REQUIRED`` as provider
+    unavailability.  Parent/group types are intentionally excluded: only a
+    leaf can be selected and priced on the booking.
+    """
+    from sqlalchemy import text
+
+    rows = (await db.execute(text("""
+        SELECT DISTINCT tst.service_type_id
+          FROM tenant_service_types tst
+          JOIN tenant_services ts ON ts.id = tst.tenant_service_id
+          JOIN service_types st ON st.id = tst.service_type_id
+         WHERE ts.master_service_id = :service_id
+           AND ts.job_type_id = :job_type_id
+           AND ts.is_active IS TRUE
+           AND ts.is_enabled IS TRUE
+           AND ts.setup_status = 'published'
+           AND tst.is_enabled IS TRUE
+           AND tst.tenant_min_price > 0
+           AND tst.tenant_max_price = tst.tenant_min_price
+           AND st.is_active IS TRUE
+           AND st.deleted_at IS NULL
+           AND st.customer_visible IS TRUE
+           AND NOT EXISTS (
+               SELECT 1
+                 FROM service_types child
+                WHERE child.parent_type_id = st.id
+                  AND child.is_active IS TRUE
+                  AND child.deleted_at IS NULL
+           )
+         ORDER BY tst.service_type_id
+    """), {
+        "service_id": str(service_id),
+        "job_type_id": str(job_type_id),
+    })).scalars().all()
+    return list(rows)
+
+
 async def booking_ready_service_matches(
     db: AsyncSession, zipcode: str,
 ) -> dict[uuid.UUID, dict]:
@@ -161,16 +208,75 @@ async def booking_ready_service_matches(
                 error=str(exc),
             )
             continue
-        if not match or match.get("signals") is None:
+        matched_type_ids: list[uuid.UUID | None] = []
+        if match and match.get("signals") is not None:
+            matched_type_ids.append(None)
+        else:
+            # A fixed-price service whose price lives on each type (for
+            # example Plumbing -> Tap / Basin / Commode) is expected to fail
+            # a type-less probe.  Prove readiness against its real configured
+            # leaf types before hiding the service from the customer.
+            exclusion_codes = {
+                str(item.get("reason_code") or "")
+                for item in ((match or {}).get("excluded_providers") or [])
+                if isinstance(item, dict)
+            }
+            if "TYPE_SELECTION_REQUIRED" in exclusion_codes and job_type_id:
+                for type_id in await _priceable_type_ids(db, service_id, job_type_id):
+                    try:
+                        async with db.begin_nested():
+                            typed_match = await select_best_provider(
+                                db,
+                                category_id=category_id,
+                                offering_id=service_id,
+                                city=city,
+                                zipcode=normalized_zip,
+                                job_type_id=job_type_id,
+                                offering_type_id=type_id,
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "booking_ready_catalog.typed_match_failed",
+                            zipcode=normalized_zip,
+                            service_id=str(service_id),
+                            job_type_id=str(job_type_id),
+                            service_type_id=str(type_id),
+                            error=str(exc),
+                        )
+                        continue
+                    if typed_match and typed_match.get("signals") is not None:
+                        matched_type_ids.append(type_id)
+                        # Keep the strongest typed match for the summary data.
+                        if (
+                            not match
+                            or match.get("signals") is None
+                            or (
+                                typed_match.get("score") is not None
+                                and (
+                                    match.get("score") is None
+                                    or typed_match["score"] > match["score"]
+                                )
+                            )
+                        ):
+                            match = typed_match
+
+        if not matched_type_ids or not match or match.get("signals") is None:
             continue
 
         current = ready.setdefault(service_id, {
             "category_id": category_id,
             "job_type_ids": set(),
+            "type_ids": set(),
+            "type_job_type_ids": {},
             "best_score": None,
             "earliest_slot": None,
         })
         current["job_type_ids"].add(job_type_id)
+        for matched_type_id in matched_type_ids:
+            if matched_type_id is None:
+                continue
+            current["type_ids"].add(matched_type_id)
+            current["type_job_type_ids"].setdefault(matched_type_id, set()).add(job_type_id)
         score = match.get("score")
         if current["best_score"] is None or (score is not None and score > current["best_score"]):
             current["best_score"] = score

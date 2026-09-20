@@ -543,10 +543,20 @@ class BackendToolExecutor:
                 )
                 ready = await booking_ready_service_matches(self.db, draft.zipcode)
                 service_readiness = ready.get(draft.offering_id)
-                eligible_job_types = (
-                    set(service_readiness["job_type_ids"])
-                    if service_readiness is not None else set()
-                )
+                if service_readiness is None:
+                    eligible_job_types = set()
+                else:
+                    selected_type_id = getattr(draft, "offering_type_id", None)
+                    typed_job_types = service_readiness.get("type_job_type_ids") or {}
+                    # For exact-type-priced services, readiness can differ by
+                    # type.  Once the customer selects one, expose only the
+                    # problem/job types that a real provider can fulfil for
+                    # that exact type.  Older/direct readiness records have no
+                    # typed map and retain the service-level behavior.
+                    if selected_type_id and selected_type_id in typed_job_types:
+                        eligible_job_types = set(typed_job_types[selected_type_id])
+                    else:
+                        eligible_job_types = set(service_readiness["job_type_ids"])
 
             rows = (await self.db.execute(
                 select(MasterIssueType.id, MasterIssueType.name, MasterIssueType.description,
