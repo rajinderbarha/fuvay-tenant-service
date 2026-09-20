@@ -37,6 +37,20 @@ INSPECTION_PRICING_BEHAVIORS = {
 }
 
 
+def requires_exact_type_prices(blueprint: dict) -> bool:
+    """Return whether every selected Type needs its own fixed price.
+
+    The rule is derived from Admin-owned catalog structure rather than a
+    service name, so other menu-priced services can use the same contract.
+    """
+    return bool(
+        str(blueprint.get("pricing_behavior") or "").lower() == "fixed"
+        and blueprint.get("type_mode") == "required"
+        and blueprint.get("type_affects_price")
+        and not blueprint.get("brand_affects_price")
+    )
+
+
 def project_tenant_blueprint(
     master: MasterService | None,
     workflow: dict | None,
@@ -63,7 +77,9 @@ def project_tenant_blueprint(
 
     type_required = _dimension_required("type", bool(master and master.is_type_required))
     brand_required = _dimension_required("brand", bool(master and master.is_brand_required))
-    return {
+    type_rule = dimension_rules.get("type") or {}
+    brand_rule = dimension_rules.get("brand") or {}
+    projected = {
         "type_mode": "required" if type_required else "optional",
         "brand_mode": "required" if brand_required else "optional",
         "requires_issue_type": bool(master and master.requires_issue_type),
@@ -79,9 +95,13 @@ def project_tenant_blueprint(
             workflow.get("pricing_behavior") or (master.pricing_model if master else None)
             if workflow else (master.pricing_model if master else None)
         ),
+        "type_affects_price": bool(type_rule.get("enabled") and type_rule.get("affects_price")),
+        "brand_affects_price": bool(brand_rule.get("enabled") and brand_rule.get("affects_price")),
         "workflow_version": workflow.get("version_number") if workflow else None,
         "source": "service_job_workflow" if workflow else "master_service_legacy",
     }
+    projected["requires_exact_type_price"] = requires_exact_type_prices(projected)
+    return projected
 
 
 class TenantCatalogService:
@@ -370,6 +390,7 @@ class TenantCatalogService:
                 "job_type_label": job_type_row["job_type_label"],
                 "job_types": [job_type_row],
                 "pricing_model": job_type_row["pricing_behavior"],
+                "requires_exact_type_price": job_type_row["requires_exact_type_price"],
                 "base_price": float(s.base_price),
                 "min_price": float(s.min_price) if s.min_price else None,
                 "max_price": float(s.max_price) if s.max_price else None,
@@ -761,6 +782,14 @@ class TenantCatalogService:
                     f"{job_type.label} is not ready for tenant setup. An administrator must publish its workflow.",
                     status_code=422,
                 )
+            if requires_exact_type_prices(blueprint) and any(
+                value is not None for value in (tenant_base, tenant_min, tenant_max)
+            ):
+                raise ServiceOSException(
+                    "SERVICE_DEFAULT_PRICE_NOT_ALLOWED",
+                    "Set one exact price for each selected item instead of a service-wide price.",
+                    status_code=422,
+                )
             latest_blueprint = (await self.db.execute(
                 select(ServiceBlueprintVersion).where(
                     ServiceBlueprintVersion.master_service_id == svc.id,
@@ -872,6 +901,17 @@ class TenantCatalogService:
         svc = (await self.db.execute(
             select(MasterService).where(MasterService.id == ts.master_service_id)
         )).scalar_one_or_none()
+        if svc is not None:
+            blueprint = await self._tenant_setup_blueprint(svc, ts.job_type_id)
+            if requires_exact_type_prices(blueprint) and any(
+                field in data and data[field] is not None
+                for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price")
+            ):
+                raise ServiceOSException(
+                    "SERVICE_DEFAULT_PRICE_NOT_ALLOWED",
+                    "Set one exact price for each selected item instead of a service-wide price.",
+                    status_code=422,
+                )
         eff = {}
         for field in ("tenant_base_price", "tenant_min_price", "tenant_max_price", "tenant_visit_fee"):
             if field in data:
@@ -1032,6 +1072,11 @@ class TenantCatalogService:
             if tid not in type_ids:
                 tst.is_enabled = False
 
+        # The endpoint receives the provider's explicit supported set.  Keep
+        # coverage aligned so an unselected/unpriced type cannot leak through
+        # an older "all" mode.
+        ts.type_coverage_mode = "selected"
+
         await self.db.flush()
         return await self.get_tenant_service_types(tenant_service_id)
 
@@ -1156,6 +1201,14 @@ class TenantCatalogService:
         blueprint = await self._tenant_setup_blueprint(master, ts.job_type_id)
         return str(blueprint.get("pricing_behavior") or "").lower() in INSPECTION_PRICING_BEHAVIORS
 
+    async def _requires_exact_type_prices(self, ts: TenantService) -> bool:
+        master = await self.db.get(MasterService, ts.master_service_id)
+        if master is None:
+            return False
+        return requires_exact_type_prices(
+            await self._tenant_setup_blueprint(master, ts.job_type_id)
+        )
+
     async def _reject_dimension_price_for_inspection(self, ts: TenantService) -> None:
         if str(ts.job_type).lower() == "consultation":
             raise ServiceOSException(
@@ -1256,6 +1309,12 @@ class TenantCatalogService:
         if tmin == 0 or tmax == 0:
             raise ServiceOSException("TENANT_PRICE_INVALID",
                 "Service prices must be greater than zero.", status_code=422)
+        if await self._requires_exact_type_prices(ts) and tmin != tmax:
+            raise ServiceOSException(
+                "FIXED_TYPE_PRICE_REQUIRED",
+                "Enter one exact price for this item, not a price range.",
+                status_code=422,
+            )
 
         tst.tenant_min_price = tmin
         tst.tenant_max_price = tmax
@@ -1584,6 +1643,7 @@ class TenantCatalogService:
         requires_brand = blueprint["brand_mode"] == "required"
         pricing_behavior = str(blueprint.get("pricing_behavior") or "").lower()
         is_inspection_pricing = pricing_behavior in INSPECTION_PRICING_BEHAVIORS
+        exact_type_pricing = requires_exact_type_prices(blueprint)
         is_consultation = str(ts.job_type or "").lower() == "consultation"
 
         if is_consultation:
@@ -1609,6 +1669,45 @@ class TenantCatalogService:
                     "code": "MISSING_VISIT_FEE" if has_authoritative_blueprint else "MISSING_TENANT_PRICE",
                     "message": "Set the visit or inspection fee for this service.",
                 })
+        elif exact_type_pricing:
+            selected_types = (await self.db.execute(
+                select(TenantServiceType, ServiceType.name)
+                .join(ServiceType, ServiceType.id == TenantServiceType.service_type_id)
+                .where(
+                    TenantServiceType.tenant_service_id == tenant_service_id,
+                    TenantServiceType.is_enabled.is_(True),
+                )
+            )).all()
+            if ts.type_coverage_mode != "selected":
+                errors.append({
+                    "step": "coverage", "job_type_id": str(ts.job_type_id),
+                    "dimension_path": {"dimension": "type"},
+                    "code": "EXACT_TYPE_SELECTION_REQUIRED",
+                    "message": "Choose the exact items you offer so each one has its own price.",
+                })
+            if not selected_types:
+                errors.append({
+                    "step": "coverage", "job_type_id": str(ts.job_type_id),
+                    "dimension_path": {"dimension": "type"},
+                    "code": "MISSING_REQUIRED_TYPE_SELECTION",
+                    "message": "Select at least one item that you install.",
+                })
+            for selected_type, type_name in selected_types:
+                if selected_type.tenant_min_price is None or selected_type.tenant_max_price is None:
+                    errors.append({
+                        "step": "pricing", "job_type_id": str(ts.job_type_id),
+                        "dimension_path": {"type": type_name},
+                        "code": "EXACT_TYPE_PRICE_REQUIRED",
+                        "message": f"Set an exact price for {type_name}.",
+                    })
+                elif (selected_type.tenant_min_price <= 0
+                      or selected_type.tenant_min_price != selected_type.tenant_max_price):
+                    errors.append({
+                        "step": "pricing", "job_type_id": str(ts.job_type_id),
+                        "dimension_path": {"type": type_name},
+                        "code": "FIXED_TYPE_PRICE_REQUIRED",
+                        "message": f"{type_name} must have one fixed price greater than zero.",
+                    })
         elif not requires_type and not requires_brand:
             if ts.tenant_min_price is None or ts.tenant_max_price is None:
                 errors.append({
@@ -1665,7 +1764,8 @@ class TenantCatalogService:
                                        f"{' + '.join(v for v in (type_name, brand_name) if v) or 'this service'}.",
                         })
 
-        if (requires_type or requires_brand) and not is_inspection_pricing and not is_consultation:
+        if ((requires_type or requires_brand) and not is_inspection_pricing
+                and not is_consultation and not exact_type_pricing):
             selected_types = (await self.db.execute(
                 select(TenantServiceType).where(
                     TenantServiceType.tenant_service_id == tenant_service_id,
@@ -1712,7 +1812,9 @@ class TenantCatalogService:
                         TenantServiceType.is_enabled.is_(True),
                     )
                 )).scalar() or 0)
-                if count == 0:
+                if count == 0 and not any(
+                    error["code"] == "MISSING_REQUIRED_TYPE_SELECTION" for error in errors
+                ):
                     errors.append({"step": "coverage", "job_type_id": None,
                                    "dimension_path": {"dimension": "type"}, "code": "MISSING_REQUIRED_TYPE_SELECTION",
                                    "message": "Select at least one supported service type."})
@@ -1868,6 +1970,7 @@ class TenantCatalogService:
         """
         ts = await self._load_tenant_service(tenant_service_id)
         self._assert_tenant_owns_ts(ts)
+        exact_type_pricing = await self._requires_exact_type_prices(ts)
 
         # Coverage gate: an unsupported type/brand (per coverage_mode) must
         # never resolve to a price, regardless of any override row that
@@ -1889,6 +1992,29 @@ class TenantCatalogService:
                 "source": source,
                 "inherited_from_rule_id": None,
             }
+
+        if exact_type_pricing and service_type_id is None:
+            return {"resolved": False, "reason": "TYPE_SELECTION_REQUIRED"}
+
+        # Exact item-price workflows never inherit a service default or a
+        # brand-only amount.  The selected Type is the billable catalog item.
+        if exact_type_pricing:
+            r = await self.db.execute(select(TenantServiceType).where(
+                TenantServiceType.tenant_service_id == tenant_service_id,
+                TenantServiceType.service_type_id == service_type_id,
+                TenantServiceType.is_enabled.is_(True),
+            ))
+            item_price = r.scalar_one_or_none()
+            if (item_price is None or item_price.tenant_min_price is None
+                    or item_price.tenant_max_price is None):
+                return {"resolved": False, "reason": "EXACT_TYPE_PRICE_REQUIRED"}
+            if (item_price.tenant_min_price <= 0
+                    or item_price.tenant_min_price != item_price.tenant_max_price):
+                return {"resolved": False, "reason": "FIXED_TYPE_PRICE_REQUIRED"}
+            return _found(
+                item_price.id, "type_fixed_price",
+                item_price.tenant_min_price, item_price.tenant_max_price,
+            )
 
         # 1. Exact type + brand override.
         if service_type_id is not None and brand_id is not None:

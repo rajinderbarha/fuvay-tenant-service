@@ -357,9 +357,11 @@ export const jobsApi = {
 export interface AdminMasterServiceRow {
   offering_key?:string; service_id:string; category_id:string; service_name:string; description?:string|null;
   job_type_id?:string; job_type_label?:string;
-  job_type:"repair"|"service"|"consultation"; pricing_model:string; base_price:number;
+  job_type:string; pricing_model:string; base_price:number;
   min_price?:number|null; max_price?:number|null; visit_fee:number;
   is_brand_required:boolean; is_type_required:boolean; is_active:boolean; is_enabled?:boolean;
+  /** Fixed-price offering whose selected Types are individually billable items. */
+  requires_exact_type_price?:boolean;
   /** Grouping keys the Services & Pricing setup page groups by. */
   service_group_id?:string|null; service_group_name?:string|null;
   requires_issue_type?:boolean; requires_checklist?:boolean;

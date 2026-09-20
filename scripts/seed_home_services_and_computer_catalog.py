@@ -326,9 +326,17 @@ HOME_SERVICES = {
              "checklist": [("Water supply isolated before starting", "YES_NO", True), ("Leak / blockage source identified", "YES_NO", True),
                            ("Fault fixed and leak-tested", "YES_NO", True), ("Photo of completed repair", "PHOTO", True),
                            ("Parts replaced (if any)", "SHORT_TEXT", False), ("Customer sign-off", "SIGNATURE", True)]},
-            {"key": "installation", "pricing_behavior": "range", "type_required": False, "brand_required": False,
+            {"key": "installation", "pricing_behavior": "fixed", "type_required": True,
+             "exact_type_pricing": True,
+             "types": ["Tap change", "Wash basin installation", "Commode installation", "Other fixture installation"],
+             "brand_required": False,
              "issues": [("New tap / fixture installation", "low"), ("New pipeline for appliance", "medium")],
-             "questions": [q("fixture_type", "What needs to be installed?", options=[("tap", "Tap / faucet"), ("wash_basin", "Wash basin"), ("commode", "Commode"), ("other", "Other")])],
+             "questions": [q("fixture_type", "What needs to be installed?", options=[
+                 ("plumbing-tap-change", "Tap change"),
+                 ("plumbing-wash-basin-installation", "Wash basin installation"),
+                 ("plumbing-commode-installation", "Commode installation"),
+                 ("plumbing-other-fixture-installation", "Other fixture installation"),
+             ])],
              "checklist": [("Water supply isolated before starting", "YES_NO", True), ("Fixture fitted and sealed", "YES_NO", True),
                            ("Leak-tested under running water", "YES_NO", True), ("Photo of installed fixture", "PHOTO", True),
                            ("Customer sign-off", "SIGNATURE", True)]},
@@ -542,7 +550,14 @@ async def build_job_type(db, admin_svc, jt_svc, question_svc, checklist_svc_modu
 
     from app.exceptions import ServiceOSException as _SOE
     if jt_spec.get("type_required"):
-        await dim_svc.set_service_job_dimension(master_service_id, job_type_id, type_dim_id, {"enabled": True, "required": True, "ask_customer": True})
+        exact_type_pricing = bool(jt_spec.get("exact_type_pricing"))
+        await dim_svc.set_service_job_dimension(master_service_id, job_type_id, type_dim_id, {
+            "enabled": True, "required": True, "ask_customer": True,
+            "use_for_matching": True, "affects_price": exact_type_pricing,
+            "allow_all_coverage": not exact_type_pricing,
+            "allow_selected_coverage": True,
+            "allow_exclusion_coverage": not exact_type_pricing,
+        })
         for t in jt_spec["types"]:
             tid = type_name_to_id.get(t)
             if tid:
@@ -672,11 +687,26 @@ async def run():
 
         type_dim_id = (await db.execute(select(CatalogDimension.id).where(CatalogDimension.legacy_source == "service_types"))).scalar_one()
         brand_dim_id = (await db.execute(select(CatalogDimension.id).where(CatalogDimension.legacy_source == "brands"))).scalar_one()
-        type_name_to_id = dict((await db.execute(select(ServiceType.name, ServiceType.id))).all())
         brand_name_to_id = dict((await db.execute(select(Brand.name, Brand.id))).all())
         job_type_key_to_id = dict((await db.execute(select(JobTypeDefinition.key, JobTypeDefinition.id))).all())
 
         home_cat = (await db.execute(select(ServiceCategory).where(ServiceCategory.slug == HOME_SERVICES_CATEGORY_SLUG))).scalar_one()
+        plumbing_types = (
+            ("Tap change", "plumbing-tap-change", "PLUMBING_TAP_CHANGE", 10),
+            ("Wash basin installation", "plumbing-wash-basin-installation", "PLUMBING_WASH_BASIN_INSTALLATION", 20),
+            ("Commode installation", "plumbing-commode-installation", "PLUMBING_COMMODE_INSTALLATION", 30),
+            ("Other fixture installation", "plumbing-other-fixture-installation", "PLUMBING_OTHER_FIXTURE_INSTALLATION", 40),
+        )
+        for name, slug, code, display_order in plumbing_types:
+            existing_type = (await db.execute(select(ServiceType).where(ServiceType.slug == slug))).scalar_one_or_none()
+            if existing_type is None:
+                db.add(ServiceType(
+                    category_id=home_cat.id, name=name, slug=slug, code=code,
+                    type_family="Appliance Type", customer_visible=True,
+                    status="active", display_order=display_order, is_active=True,
+                ))
+        await db.flush()
+        type_name_to_id = dict((await db.execute(select(ServiceType.name, ServiceType.id))).all())
         print(f"Home Services category: {home_cat.id}")
         for group_name, services in HOME_SERVICES.items():
             group_id = await ensure_group(admin_svc, home_cat.id, group_name)

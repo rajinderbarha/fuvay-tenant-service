@@ -34,6 +34,7 @@ export interface InlineDimensionPricingEditorHandle {
 
 interface Props {
   basePrice: number | null;
+  exactTypePrices?: boolean;
   types: InlinePriceType[];
   brands: InlinePriceBrand[];
   exceptions: InlineBrandException[];
@@ -57,7 +58,7 @@ function positiveNumber(value: string | undefined) {
 
 export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEditorHandle, Props>(
   function InlineDimensionPricingEditor({
-    basePrice, types, brands, exceptions, loading = false,
+    basePrice, exactTypePrices = false, types, brands, exceptions, loading = false,
     onSaveTypes, onSaveBrands, onSaveType, onClearType, onClearTypePrices,
     onSaveBrand, onClearBrand, onDirtyChange,
   }, ref) {
@@ -70,7 +71,10 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
     const [dirty, setDirty] = useState(false);
     const [saving, setSaving] = useState(false);
 
-    const initialKey = useMemo(() => JSON.stringify({ basePrice, types, brands, exceptions }), [basePrice, types, brands, exceptions]);
+    const initialKey = useMemo(
+      () => JSON.stringify({ basePrice, exactTypePrices, types, brands, exceptions }),
+      [basePrice, exactTypePrices, types, brands, exceptions],
+    );
     useEffect(() => {
       // Individual save requests refresh props while the remaining requests
       // are still running. Never overwrite the user's in-flight selection.
@@ -92,7 +96,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
           : hasSavedSubset ? enabledBrands : [];
         typeExceptions.forEach(row => { initialBrandValues[`${type.id}:${row.brandId}`] = String(row.price ?? ""); });
       }
-      setVaryByType(pricedTypeIds.length > 0 || exceptions.some(row => row.price != null));
+      setVaryByType(exactTypePrices || pricedTypeIds.length > 0 || exceptions.some(row => row.price != null));
       setActiveTypeIds(enabledTypeIds.length ? enabledTypeIds : types.slice(0, 1).map(type => type.id));
       setTypeValues(Object.fromEntries(types.map(type => [type.id, String(type.price ?? "")])));
       setBrandModes(initialModes);
@@ -157,18 +161,22 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
           || desiredBrandIds.length !== savedBrandIds.length
           || desiredBrandIds.some(id => !savedBrandIds.includes(id))
           || activeTypeIds.some(id => !types.some(type => type.id === id && type.enabled !== false));
-        if (!dirty && !matchingChanged) return;
         if (brands.length) {
           const empty = activeTypes.find(type => brandModes[type.id] === "specific" && !(selectedBrands[type.id]?.length));
           if (empty) throw new Error(`Select at least one supported brand for ${empty.name}, or choose All brands.`);
         }
+        if (exactTypePrices) {
+          const missingPrice = activeTypes.find(type => positiveNumber(typeValues[type.id]) == null);
+          if (missingPrice) throw new Error(`Enter an exact price for ${missingPrice.name}.`);
+        }
+        if (!dirty && !matchingChanged) return;
         setSaving(true);
         try {
           if (onSaveTypes) await onSaveTypes(activeTypeIds, brands.length ? coverage : {});
           if (onSaveBrands) await onSaveBrands(desiredBrandIds);
           if (!dirty) return; // Matching repair must not clear saved prices.
 
-          if (!varyByType) {
+          if (!varyByType && !exactTypePrices) {
             await onClearTypePrices();
             await Promise.all(exceptions.map(row => onClearBrand(row.typeId, row.brandId)));
             setDirty(false);
@@ -202,7 +210,7 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
         }
       },
     }), [
-      dirty, loading, saving, types, activeTypeIds, activeTypes, varyByType, brandModes, selectedBrands,
+      dirty, loading, saving, types, activeTypeIds, activeTypes, varyByType, exactTypePrices, brandModes, selectedBrands,
       typeValues, brandValues, brands, exceptions, onSaveTypes, onSaveBrands,
       onSaveType, onClearType, onClearTypePrices, onSaveBrand, onClearBrand,
     ]);
@@ -213,11 +221,11 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
           <>
             <div className="pricing-type-toggle-row">
               <span>
-                <strong>Price differs by type</strong>
-                <small>{varyByType ? `Blank types fall back to ₹${basePrice?.toLocaleString("en-IN") ?? "—"}` : `All ${types.length} types use ₹${basePrice?.toLocaleString("en-IN") ?? "—"}`}</small>
+                <strong>{exactTypePrices ? "Exact price for each item" : "Price differs by type"}</strong>
+                <small>{exactTypePrices ? "Every selected item must have its own fixed price." : varyByType ? `Blank types fall back to ₹${basePrice?.toLocaleString("en-IN") ?? "—"}` : `All ${types.length} types use ₹${basePrice?.toLocaleString("en-IN") ?? "—"}`}</small>
               </span>
-              <button type="button" role="switch" aria-checked={varyByType} aria-label="Price differs by type" className="pricing-switch" disabled={loading || saving}
-                onClick={() => change(() => setVaryByType(value => !value))}><span /></button>
+              {!exactTypePrices && <button type="button" role="switch" aria-checked={varyByType} aria-label="Price differs by type" className="pricing-switch" disabled={loading || saving}
+                onClick={() => change(() => setVaryByType(value => !value))}><span /></button>}
             </div>
 
             <ServiceMatchingDisclosure key={String(varyByType)} expandedByPricing={varyByType}>

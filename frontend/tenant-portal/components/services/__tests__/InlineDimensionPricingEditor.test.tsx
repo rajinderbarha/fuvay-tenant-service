@@ -155,4 +155,41 @@ describe("InlineDimensionPricingEditor", () => {
     expect(onSaveBrands).toHaveBeenCalledWith(["daikin"]);
     expect(onSaveBrand).toHaveBeenCalledWith("split", "daikin", 2100);
   });
+
+  it("requires an exact price for every selected item and has no fallback switch", async () => {
+    const editorRef = createRef<InlineDimensionPricingEditorHandle>();
+    const onSaveType = vi.fn().mockResolvedValue(undefined);
+    render(
+      <InlineDimensionPricingEditor
+        ref={editorRef}
+        basePrice={null}
+        exactTypePrices
+        types={[
+          { id: "tap", name: "Tap change", price: 80, enabled: true },
+          { id: "commode", name: "Commode installation", price: null, enabled: true },
+        ]}
+        brands={[]}
+        exceptions={[]}
+        onSaveTypes={vi.fn().mockResolvedValue(undefined)}
+        onSaveType={onSaveType}
+        onClearType={vi.fn().mockResolvedValue(undefined)}
+        onClearTypePrices={vi.fn().mockResolvedValue(undefined)}
+        onSaveBrand={vi.fn().mockResolvedValue(undefined)}
+        onClearBrand={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByText("Exact price for each item")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Price differs by type" })).not.toBeInTheDocument();
+    await act(async () => {
+      await expect(editorRef.current!.save()).rejects.toThrow(
+        "Enter an exact price for Commode installation.",
+      );
+    });
+    expect(onSaveType).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Commode installation price"), { target: { value: "300" } });
+    await act(async () => { await editorRef.current!.save(); });
+    expect(onSaveType).toHaveBeenCalledWith("commode", 300);
+  });
 });

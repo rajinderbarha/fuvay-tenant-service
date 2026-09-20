@@ -36,7 +36,7 @@ function isInspectionPricingModel(model?: string | null) {
 }
 
 export function offeringPriceSummary(
-  service: Pick<AdminMasterServiceRow, "job_type" | "pricing_model">,
+  service: Pick<AdminMasterServiceRow, "job_type" | "pricing_model" | "requires_exact_type_price">,
   enabled: Pick<TenantEnabledService, "tenant_min_price" | "tenant_max_price" | "tenant_visit_fee"> | null | undefined,
   consultationFee: number | null,
 ) {
@@ -46,6 +46,7 @@ export function offeringPriceSummary(
   if (isInspectionPricingModel(service.pricing_model)) {
     return enabled?.tenant_visit_fee ? `${money(enabled.tenant_visit_fee)} inspection` : "No charge set";
   }
+  if (service.requires_exact_type_price) return "Individual item prices";
   if (!enabled?.tenant_min_price) return "No price set";
   if (service.pricing_model === "fixed") return money(enabled.tenant_min_price);
   return `${money(enabled.tenant_min_price)}–${money(enabled.tenant_max_price)}`;
@@ -194,6 +195,7 @@ function ServicesPricingPageContent() {
   const isConsultationMode = String(selectedService?.job_type).toLowerCase() === "consultation";
   const isInspectionMode = !isConsultationMode && isInspectionPricingModel(selectedService?.pricing_model);
   const isFixedPriceMode = !isConsultationMode && selectedService?.pricing_model === "fixed";
+  const requiresExactTypePrice = !!selectedService?.requires_exact_type_price;
   const isMatchingOnly = isInspectionMode || isConsultationMode;
   // The current Admin blueprint is authoritative. Stored tenant flags are a
   // snapshot from enrollment and may be stale after an Admin publishes a
@@ -311,7 +313,7 @@ function ServicesPricingPageContent() {
           return false;
         }
       }
-    } else if (isFixedPriceMode) {
+    } else if (isFixedPriceMode && !requiresExactTypePrice) {
       const parsedPrice = Number(defaultMin);
       if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
         setError("Enter a fixed price greater than zero.");
@@ -335,9 +337,15 @@ function ServicesPricingPageContent() {
         payload.tenant_min_price = showEstimateRange ? Number(defaultMin) : null;
         payload.tenant_max_price = showEstimateRange ? Number(defaultMax) : null;
       } else if (!isConsultationMode) {
-        if (defaultMin) payload.tenant_min_price = Number(defaultMin);
-        if (defaultMin && isFixedPriceMode) payload.tenant_max_price = Number(defaultMin);
-        else if (defaultMax) payload.tenant_max_price = Number(defaultMax);
+        if (requiresExactTypePrice) {
+          payload.tenant_min_price = null;
+          payload.tenant_max_price = null;
+        } else if (defaultMin) {
+          payload.tenant_min_price = Number(defaultMin);
+          payload.tenant_max_price = isFixedPriceMode
+            ? Number(defaultMin)
+            : (defaultMax ? Number(defaultMax) : null);
+        }
       }
       if (isInspectionMode && visitFee) payload.tenant_visit_fee = Number(visitFee);
       payload.tenant_emergency_surcharge = parsedSurcharge ?? 0;
@@ -617,6 +625,8 @@ function ServicesPricingPageContent() {
         ? !(Number(savedConsultationFee) > 0)
         : isInspectionPricingModel(service.pricing_model)
         ? !enabled.tenant_visit_fee
+        : service.requires_exact_type_price
+        ? enabled.setup_status !== "published"
         : !enabled.tenant_min_price || !enabled.tenant_max_price)
     ));
   }).length;
@@ -741,9 +751,9 @@ function ServicesPricingPageContent() {
                   <>
                     <section className="pricing-panel">
                       <h2 className="pricing-section-title">{isConsultationMode ? "Offering settings" : isInspectionMode ? "Inspection charge & estimate guidance" : "Your price"}</h2>
-                      <p className="pricing-section-copy">{isConsultationMode ? "This offering uses the shared fee configured above. Type and Brand affect matching only." : isInspectionMode ? "Set what the visit costs. The final repair amount is approved after diagnosis. Type and Brand never change the Repair price. Type and Brand control eligibility and matching only." : isFixedPriceMode ? "Straightforward job with a known scope, so the customer sees and pays a real amount at booking." : "Set the default range. Type and Brand overrides are optional and stay below."}</p>
+                      <p className="pricing-section-copy">{isConsultationMode ? "This offering uses the shared fee configured above. Type and Brand affect matching only." : isInspectionMode ? "Set what the visit costs. The final repair amount is approved after diagnosis. Type and Brand never change the Repair price. Type and Brand control eligibility and matching only." : requiresExactTypePrice ? "Choose the installation items you offer and enter one exact price for each. Customers see the selected item's real price at booking." : isFixedPriceMode ? "Straightforward job with a known scope, so the customer sees and pays a real amount at booking." : "Set the default range. Type and Brand overrides are optional and stay below."}</p>
                       <div className="pricing-form-grid">
-                        {isConsultationMode ? null : isInspectionMode ? <SetupPricingMoneyField label="Inspection charge" value={visitFee} onChange={setVisitFee} placeholder="249" hint="Payable if the customer declines your estimate." /> : isFixedPriceMode ? <SetupPricingMoneyField label={selectedService.service_name.toLowerCase().includes("installation") ? "Installation price" : "Service price"} value={defaultMin} onChange={setDefaultMin} placeholder="899" hint="Applies to every booking unless a type or brand price is set below."/> : <><SetupPricingMoneyField label="Minimum price" value={defaultMin} onChange={setDefaultMin} placeholder="600" hint="Your lowest expected charge."/><SetupPricingMoneyField label="Maximum price" value={defaultMax} onChange={setDefaultMax} placeholder="900" hint="Must be at least the minimum."/></>}
+                        {isConsultationMode || requiresExactTypePrice ? null : isInspectionMode ? <SetupPricingMoneyField label="Inspection charge" value={visitFee} onChange={setVisitFee} placeholder="249" hint="Payable if the customer declines your estimate." /> : isFixedPriceMode ? <SetupPricingMoneyField label={selectedService.service_name.toLowerCase().includes("installation") ? "Installation price" : "Service price"} value={defaultMin} onChange={setDefaultMin} placeholder="899" hint="Applies to every booking unless a type or brand price is set below."/> : <><SetupPricingMoneyField label="Minimum price" value={defaultMin} onChange={setDefaultMin} placeholder="600" hint="Your lowest expected charge."/><SetupPricingMoneyField label="Maximum price" value={defaultMax} onChange={setDefaultMax} placeholder="900" hint="Must be at least the minimum."/></>}
                         <SetupPricingMoneyField label="Emergency add-on" value={emergencySurcharge} onChange={setEmergencySurcharge} placeholder="0" hint="Nights, Sundays, same-day urgent."/>
                         <label className="pricing-field-label"><span>Warranty</span><span className="pricing-field-control"><input aria-label="Service warranty days" type="number" min={5} value={warrantyDays} onChange={event => setWarrantyDays(event.target.value)} placeholder="5"/><span className="pricing-field-suffix">days</span></span><span className="pricing-field-hint">On the work you did · platform minimum is 5 days.</span></label>
                       </div>
@@ -893,7 +903,8 @@ function SetupDimensionsInlineEditor({ editorRef, selectedService, enrolled, isI
         <InlineDimensionPricingEditor
           key={enrolled.tenant_service_id}
           ref={editorRef}
-          basePrice={enrolled.tenant_min_price ?? null}
+          basePrice={selectedService.requires_exact_type_price ? null : enrolled.tenant_min_price ?? null}
+          exactTypePrices={!!selectedService.requires_exact_type_price}
           types={types.map(type => ({
             id: type.service_type_id,
             name: type.name,

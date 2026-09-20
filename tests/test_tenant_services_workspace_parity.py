@@ -36,6 +36,9 @@ def test_workspace_projects_real_workflow_fields_without_hardcoded_requirements(
         "requires_service_area": False,
         "requires_availability": False,
         "pricing_behavior": "range",
+        "type_affects_price": False,
+        "brand_affects_price": False,
+        "requires_exact_type_price": False,
         "workflow_version": 4,
         "source": "service_job_workflow",
     }
@@ -83,6 +86,31 @@ def test_normalized_dimension_rules_override_legacy_type_brand_flags():
 
     assert projected["type_mode"] == "required"
     assert projected["brand_mode"] == "optional"
+
+
+def test_fixed_required_price_bearing_type_requires_exact_item_prices():
+    master = SimpleNamespace(
+        is_type_required=False, is_brand_required=False,
+        requires_checklist=False, requires_schedule=True,
+        requires_address=True, requires_issue_type=False,
+        pricing_model="range",
+    )
+    workflow = {
+        "pricing_behavior": "fixed", "checklist_required": False,
+        "quote_approval_required": False, "technician_required": True,
+        "schedule_required": True, "service_area_required": True,
+        "availability_required": True, "version_number": 2,
+    }
+    projected = project_tenant_blueprint(master, workflow, {
+        "type": {
+            "enabled": True, "required": True,
+            "show_during_tenant_setup": True, "affects_price": True,
+        },
+    })
+
+    assert projected["type_mode"] == "required"
+    assert projected["type_affects_price"] is True
+    assert projected["requires_exact_type_price"] is True
 
 
 def test_workflow_setup_gates_are_projected_for_tenant_publish():

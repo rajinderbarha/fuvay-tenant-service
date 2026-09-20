@@ -281,6 +281,9 @@ ELIGIBILITY_GATE_CODES = (
     "no_pricing_rule",
     "EXACT_JOB_TYPE_NOT_SUPPORTED",
     "OFFERING_NOT_PUBLISHED",
+    "TYPE_SELECTION_REQUIRED",
+    "EXACT_TYPE_PRICE_REQUIRED",
+    "NO_VALID_PRICE_RULE",
     "HEALTH_BAND_NOT_BOOKABLE",
     "NO_LIVE_SLOT_CAPACITY",
 )
@@ -1084,6 +1087,42 @@ async def _passes_full_eligibility_gate(
         if not has_visit_fee:
             return False, "NO_VALID_PRICE_RULE"
     else:
+        exact_type_pricing = bool((await db.execute(text(
+            "SELECT 1 FROM service_job_dimensions sjd "
+            "JOIN catalog_dimensions cd ON cd.id=sjd.dimension_id "
+            "WHERE sjd.master_service_id=:oid AND sjd.job_type_id=:jtid "
+            "AND cd.key='type' AND sjd.enabled=true AND sjd.required=true "
+            "AND sjd.affects_price=true AND :behavior='fixed' "
+            "AND NOT EXISTS (SELECT 1 FROM service_job_dimensions brand_sjd "
+            "JOIN catalog_dimensions brand_cd ON brand_cd.id=brand_sjd.dimension_id "
+            "WHERE brand_sjd.master_service_id=sjd.master_service_id "
+            "AND brand_sjd.job_type_id=sjd.job_type_id AND brand_cd.key='brand' "
+            "AND brand_sjd.enabled=true AND brand_sjd.affects_price=true) LIMIT 1"
+        ), {
+            "oid": str(offering_id),
+            "jtid": str(job_type_id) if job_type_id else None,
+            "behavior": effective_behavior,
+        })).scalar())
+        if exact_type_pricing:
+            if not offering_type_id:
+                return False, "TYPE_SELECTION_REQUIRED"
+            exact_price_row = (await db.execute(text(
+                "SELECT tst.id FROM tenant_service_types tst "
+                "JOIN tenant_services ts ON ts.id=tst.tenant_service_id "
+                "WHERE ts.tenant_id=:tid AND ts.master_service_id=:oid "
+                "AND ts.job_type_id=:jtid AND ts.is_active=true "
+                "AND ts.is_enabled=true AND ts.setup_status='published' "
+                "AND tst.service_type_id=:type_id AND tst.is_enabled=true "
+                "AND tst.tenant_min_price > 0 "
+                "AND tst.tenant_min_price=tst.tenant_max_price LIMIT 1"
+            ), {
+                "tid": str(tenant_id), "oid": str(offering_id),
+                "jtid": str(job_type_id), "type_id": str(offering_type_id),
+            })).fetchone()
+            if not exact_price_row:
+                return False, "EXACT_TYPE_PRICE_REQUIRED"
+            return True, None
+
         tenant_price_sql = (
             "SELECT tenant_base_price, tenant_min_price FROM tenant_services "
             "WHERE tenant_id=:tid AND master_service_id=:oid "

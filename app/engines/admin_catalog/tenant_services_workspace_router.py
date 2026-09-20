@@ -115,6 +115,7 @@ async def get_workspace(
         pricing_error_codes = {
             "MISSING_TENANT_PRICE", "MISSING_VISIT_FEE", "MISSING_CONSULTATION_FEE",
             "INCOMPLETE_TYPE_PRICE_OVERRIDE", "INCOMPLETE_BRAND_PRICE_OVERRIDE",
+            "EXACT_TYPE_PRICE_REQUIRED", "FIXED_TYPE_PRICE_REQUIRED",
         }
         has_missing_price = any(e["code"] in pricing_error_codes for e in validation["errors"])
         if has_missing_price:

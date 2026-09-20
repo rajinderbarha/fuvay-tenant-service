@@ -284,7 +284,10 @@ class QuestionFlowService:
             )
             .limit(1)
         )).first()
-        if row is not None:
+        # AsyncSession mocks and compatibility adapters may return an empty
+        # row-like sentinel. Treat that as "no catalog metadata" and use the
+        # legacy key fallback instead of attempting to unpack it.
+        if row is not None and len(row) >= 3:
             answer_source, input_type, legacy_source = row
             if legacy_source in ("brands", "service_types"):
                 return legacy_source
