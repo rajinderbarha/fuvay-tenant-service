@@ -62,6 +62,29 @@ logger = structlog.get_logger("home_service.booking.service")
 utcnow = lambda: datetime.now(timezone.utc)
 
 
+def _format_customer_price(
+    customer_total: float,
+    customer_min_price: float | None,
+    customer_max_price: float | None,
+    *,
+    requires_inspection_estimate: bool,
+) -> str:
+    """Format the payable amount without collapsing a range to its minimum."""
+    def money(value: float) -> str:
+        amount = Decimal(str(value)).quantize(Decimal("0.01"))
+        rendered = f"{amount:,.2f}".rstrip("0").rstrip(".")
+        return f"₹{rendered}"
+
+    if (
+        not requires_inspection_estimate
+        and customer_min_price is not None
+        and customer_max_price is not None
+        and Decimal(str(customer_min_price)) != Decimal(str(customer_max_price))
+    ):
+        return f"{money(customer_min_price)}–{money(customer_max_price)}"
+    return money(customer_total)
+
+
 class HomeServiceChatbotBookingService:
     """
     Manages the full booking draft lifecycle for Home Services.
@@ -2588,6 +2611,8 @@ class HomeServiceChatbotBookingService:
         customer_fee_model = customer_fee_policy.customer_fee_model if customer_fee_policy else "NONE"
 
         requires_inspection_estimate = pricing_model == PRICING_MODEL_VISIT_FEE
+        customer_min_price = _with_fee(min_price)
+        customer_max_price = _with_fee(max_price)
 
         return {
             "pricing_model":   pricing_model,
@@ -2645,12 +2670,17 @@ class HomeServiceChatbotBookingService:
             "monetization_job_type_rule_id": str(job_type_rule.id) if job_type_rule else None,
             "platform_fee":           platform_fee,
             "customer_total":         customer_total,      # what the customer pays
-            "customer_min_price":     _with_fee(min_price),
-            "customer_max_price":     _with_fee(max_price),
+            "customer_min_price":     customer_min_price,
+            "customer_max_price":     customer_max_price,
             "fee_included_note":      (f"Includes ₹{platform_fee:g} platform fee ({customer_fee_model.replace('_', ' ').title()})"
                                        if platform_fee else None),
             # display the inclusive total the customer actually pays
-            "display_price":   f"₹{int(customer_total)}",
+            "display_price":   _format_customer_price(
+                customer_total,
+                customer_min_price,
+                customer_max_price,
+                requires_inspection_estimate=requires_inspection_estimate,
+            ),
             "source":          "backend_catalog",
         }
 

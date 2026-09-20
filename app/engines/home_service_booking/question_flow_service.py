@@ -13,6 +13,7 @@ resolved yet), and invalid answers all fail closed (422/404/409), never
 silently accepted or guessed.
 """
 from __future__ import annotations
+import re
 import uuid
 from typing import Any
 
@@ -36,6 +37,25 @@ ERR_ANSWER_REQUIRED = "QF_ANSWER_REQUIRED"
 ERR_STALE_VERSION = "QF_STALE_QUESTION_FLOW_VERSION"
 
 _CHOICE_TYPES = ("single_select", "multi_select")
+
+
+def _pricing_dimension_key(value: Any) -> str:
+    """Build a conservative key for matching a question choice to a price type.
+
+    Plumbing uses stable choice codes such as ``tap`` and ``wash_basin``,
+    while an admin may name the mapped pricing types ``Tap change`` and
+    ``Wash Basin installation``. These are the same commercial selection.
+    Only known decorative words and fixture synonyms are normalised here;
+    this is deliberately not a broad fuzzy match.
+    """
+    text = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower())
+    aliases = {"faucet": "tap", "sink": "washbasin", "toilet": "commode"}
+    ignored = {
+        "new", "change", "replacement", "replace", "install",
+        "installation", "fixture",
+    }
+    tokens = [aliases.get(token, token) for token in text.split() if token not in ignored]
+    return "".join(tokens)
 
 
 class QuestionFlowService:
@@ -199,16 +219,41 @@ class QuestionFlowService:
             from app.engines.admin_catalog.models import Brand
             model, column = Brand, "brand_id"
         else:
-            from app.engines.admin_catalog.models import ServiceType
+            from app.engines.admin_catalog.models import MasterServiceType, ServiceType
             model, column = ServiceType, "offering_type_id"
 
-        row = (await self.db.execute(
-            select(model).where(func.lower(model.slug) == needle)
-        )).scalars().first()
-        if not row:
+        if source == "service_types":
+            # Do not resolve a similarly named global type from another
+            # service. Only active types mapped to this exact service may
+            # select a provider's type-specific price.
+            candidates = (await self.db.execute(
+                select(ServiceType).join(
+                    MasterServiceType,
+                    MasterServiceType.service_type_id == ServiceType.id,
+                ).where(
+                    MasterServiceType.master_service_id == draft.offering_id,
+                    MasterServiceType.is_active.is_(True),
+                    ServiceType.is_active.is_(True),
+                    ServiceType.deleted_at.is_(None),
+                )
+            )).scalars().all()
+            answer_key = _pricing_dimension_key(needle)
+            matches = [
+                candidate for candidate in candidates
+                if answer_key and answer_key in {
+                    _pricing_dimension_key(candidate.slug),
+                    _pricing_dimension_key(candidate.name),
+                }
+            ]
+            row = matches[0] if len(matches) == 1 else None
+        else:
             row = (await self.db.execute(
-                select(model).where(func.lower(model.name) == needle)
+                select(model).where(func.lower(model.slug) == needle)
             )).scalars().first()
+            if not row:
+                row = (await self.db.execute(
+                    select(model).where(func.lower(model.name) == needle)
+                )).scalars().first()
         if row:
             setattr(draft, column, row.id)
 
@@ -247,7 +292,7 @@ class QuestionFlowService:
                 return library_for_question_key(question_key)
         if question_key == "brand":
             return "brands"
-        if question_key in ("ac_type", "service_type", "offering_type"):
+        if question_key in ("ac_type", "service_type", "offering_type", "fixture_type"):
             return "service_types"
         return None
 

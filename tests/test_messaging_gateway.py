@@ -2845,6 +2845,7 @@ async def test_type_and_brand_answers_bridge_by_dimension_not_by_question_name()
     # simply an answer and must not touch a structured column.
     service.db = DB(None, answer_source="static")
     assert await service._answer_target(Draft(), "ac_type") == "service_types"
+    assert await service._answer_target(Draft(), "fixture_type") == "service_types"
     assert await service._answer_target(Draft(), "brand") == "brands"
     assert await service._answer_target(Draft(), "issue_duration") is None
 
