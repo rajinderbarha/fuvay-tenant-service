@@ -17,8 +17,12 @@ def test_problem_queries_exclude_archived_cross_service_mappings():
     )
 
     assert "ServiceIssueMapping.master_service_id == draft.offering_id" in backend
-    assert "ServiceIssueMapping.deleted_at.is_(None)" in backend
-    assert "MasterIssueType.customer_visible == True" in backend
+    # The chat's problem list is the shared customer problem query, the same
+    # one postcode readiness counts bookable problems with.
+    assert "customer_problem_query(" in backend
+    shared = catalog.split("def customer_problem_query", 1)[1].split("\nasync def ", 1)[0]
+    assert "ServiceIssueMapping.deleted_at.is_(None)" in shared
+    assert "MasterIssueType.customer_visible.is_(True)" in shared
     assert "ServiceIssueMapping.deleted_at.is_(None)" in catalog
     assert "ServiceIssueMapping.deleted_at.is_(None)" in start
 

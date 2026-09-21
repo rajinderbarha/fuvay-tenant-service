@@ -44,7 +44,7 @@ async def _booking_candidate_pairs(db: AsyncSession, zipcode: str):
     pricing, hours and live slot capacity.
     """
     from app.engines.admin_catalog.models import (
-        MasterService, ServiceIssueMapping, TenantService,
+        MasterIssueType, MasterService, ServiceIssueMapping, TenantService,
     )
     from app.engines.serviceability.models import (
         TenantServiceArea, TenantServiceAreaService,
@@ -73,6 +73,10 @@ async def _booking_candidate_pairs(db: AsyncSession, zipcode: str):
             ServiceIssueMapping,
             ServiceIssueMapping.master_service_id == MasterService.id,
         )
+        .join(
+            MasterIssueType,
+            MasterIssueType.id == ServiceIssueMapping.issue_type_id,
+        )
         .where(
             TenantServiceArea.zipcode == str(zipcode),
             TenantServiceArea.is_active.is_(True),
@@ -85,6 +89,11 @@ async def _booking_candidate_pairs(db: AsyncSession, zipcode: str):
             ServiceIssueMapping.status == "active",
             ServiceIssueMapping.deleted_at.is_(None),
             ServiceIssueMapping.customer_visible.is_(True),
+            # A job type is worth matching only if the customer can reach it
+            # through a problem they are actually shown.
+            MasterIssueType.is_active.is_(True),
+            MasterIssueType.status == "active",
+            MasterIssueType.customer_visible.is_(True),
         )
         .distinct()
         .order_by(
@@ -140,6 +149,147 @@ async def _priceable_type_ids(
         "job_type_id": str(job_type_id),
     })).scalars().all()
     return list(rows)
+
+
+def customer_problem_query(*columns):
+    """Customer-visible problems, each with its exact job type and built-in type.
+
+    The one definition both the postcode readiness check and the chat's
+    problem list use, so a service is never offered on the strength of a
+    problem the customer would not then be shown.
+    """
+    from app.engines.admin_catalog.models import (
+        MasterIssueType, ServiceIssueMapping, ServiceType,
+    )
+
+    # Some problems are already an exact, price-bearing type ("New pipeline
+    # for appliance"); choosing one sets that type on the draft.
+    default_type_id = (
+        select(ServiceType.id)
+        .where(
+            ServiceType.slug
+            == ServiceIssueMapping.metadata_json["default_service_type_slug"].astext,
+            ServiceType.is_active.is_(True),
+            ServiceType.deleted_at.is_(None),
+        )
+        .correlate(ServiceIssueMapping)
+        .scalar_subquery()
+    )
+    return (
+        select(
+            *columns,
+            ServiceIssueMapping.job_type_id.label("job_type_id"),
+            default_type_id.label("default_type_id"),
+        )
+        .select_from(MasterIssueType)
+        .join(ServiceIssueMapping, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
+        .where(
+            ServiceIssueMapping.status == "active",
+            ServiceIssueMapping.deleted_at.is_(None),
+            ServiceIssueMapping.customer_visible.is_(True),
+            MasterIssueType.is_active.is_(True),
+            MasterIssueType.status == "active",
+            MasterIssueType.customer_visible.is_(True),
+        )
+    )
+
+
+async def _customer_problem_rows(db: AsyncSession, service_ids: list[uuid.UUID]):
+    """(service_id, problem_id, job_type_id, default_type_id) for these services."""
+    from app.engines.admin_catalog.models import MasterIssueType, ServiceIssueMapping
+
+    return (await db.execute(
+        customer_problem_query(
+            ServiceIssueMapping.master_service_id.label("service_id"),
+            MasterIssueType.id.label("problem_id"),
+        ).where(ServiceIssueMapping.master_service_id.in_(service_ids))
+    )).all()
+
+
+async def _typed_match(
+    db: AsyncSession,
+    *,
+    category_id: uuid.UUID,
+    service_id: uuid.UUID,
+    city: str,
+    zipcode: str,
+    job_type_id: uuid.UUID,
+    type_id: uuid.UUID,
+) -> dict | None:
+    """The production matcher for one exact type, or None when nobody can take it."""
+    from app.engines.home_service_booking.matching_engine import select_best_provider
+
+    try:
+        async with db.begin_nested():
+            match = await select_best_provider(
+                db,
+                category_id=category_id,
+                offering_id=service_id,
+                city=city,
+                zipcode=zipcode,
+                job_type_id=job_type_id,
+                offering_type_id=type_id,
+            )
+    except Exception as exc:  # one malformed type must not hide the rest
+        logger.warning(
+            "booking_ready_catalog.typed_match_failed",
+            zipcode=zipcode,
+            service_id=str(service_id),
+            job_type_id=str(job_type_id) if job_type_id else None,
+            service_type_id=str(type_id),
+            error=str(exc),
+        )
+        return None
+    return match if match and match.get("signals") is not None else None
+
+
+async def _keep_services_with_bookable_problems(
+    db: AsyncSession, ready: dict, *, zipcode: str, city: str,
+) -> None:
+    """Record each service's bookable problems; drop services that have none.
+
+    A service is ready once one of its job types matches, but what the
+    customer picks next is a PROBLEM. The problem fixes the job type, and
+    some also fix an exact type. A service offered for a job type none of its
+    visible problems reach, or whose problems all need a type no ready
+    provider takes, left the customer on an empty problem list: "There is
+    nothing bookable here at the moment."
+    """
+    proven: dict[tuple, bool] = {}
+    for row in await _customer_problem_rows(db, list(ready)):
+        service = ready.get(row.service_id)
+        if service is None or row.job_type_id not in service["job_type_ids"]:
+            continue
+        type_id = row.default_type_id
+        if type_id is None or row.job_type_id in service["type_job_type_ids"].get(type_id, ()):
+            service["problem_ids"].add(row.problem_id)
+            continue
+        if row.job_type_id not in service["typeless_job_type_ids"]:
+            # Matched only for its priced types, and this is not one of them.
+            continue
+        # The job type matched with no type at all, which does not prove any
+        # provider takes THIS one — and the booking will match with it set.
+        key = (row.service_id, row.job_type_id, type_id)
+        if key not in proven:
+            proven[key] = await _typed_match(
+                db,
+                category_id=service["category_id"],
+                service_id=row.service_id,
+                city=city,
+                zipcode=zipcode,
+                job_type_id=row.job_type_id,
+                type_id=type_id,
+            ) is not None
+        if proven[key]:
+            service["problem_ids"].add(row.problem_id)
+
+    for service_id in [key for key, service in ready.items() if not service["problem_ids"]]:
+        logger.info(
+            "booking_ready_catalog.no_bookable_problem",
+            zipcode=zipcode,
+            service_id=str(service_id),
+        )
+        del ready[service_id]
 
 
 async def booking_ready_service_matches(
@@ -223,28 +373,16 @@ async def booking_ready_service_matches(
             }
             if "TYPE_SELECTION_REQUIRED" in exclusion_codes and job_type_id:
                 for type_id in await _priceable_type_ids(db, service_id, job_type_id):
-                    try:
-                        async with db.begin_nested():
-                            typed_match = await select_best_provider(
-                                db,
-                                category_id=category_id,
-                                offering_id=service_id,
-                                city=city,
-                                zipcode=normalized_zip,
-                                job_type_id=job_type_id,
-                                offering_type_id=type_id,
-                            )
-                    except Exception as exc:
-                        logger.warning(
-                            "booking_ready_catalog.typed_match_failed",
-                            zipcode=normalized_zip,
-                            service_id=str(service_id),
-                            job_type_id=str(job_type_id),
-                            service_type_id=str(type_id),
-                            error=str(exc),
-                        )
-                        continue
-                    if typed_match and typed_match.get("signals") is not None:
+                    typed_match = await _typed_match(
+                        db,
+                        category_id=category_id,
+                        service_id=service_id,
+                        city=city,
+                        zipcode=normalized_zip,
+                        job_type_id=job_type_id,
+                        type_id=type_id,
+                    )
+                    if typed_match is not None:
                         matched_type_ids.append(type_id)
                         # Keep the strongest typed match for the summary data.
                         if (
@@ -268,10 +406,16 @@ async def booking_ready_service_matches(
             "job_type_ids": set(),
             "type_ids": set(),
             "type_job_type_ids": {},
+            # Job types that matched with no type selected at all.
+            "typeless_job_type_ids": set(),
+            # Filled in below: the problems a customer can actually book.
+            "problem_ids": set(),
             "best_score": None,
             "earliest_slot": None,
         })
         current["job_type_ids"].add(job_type_id)
+        if None in matched_type_ids:
+            current["typeless_job_type_ids"].add(job_type_id)
         for matched_type_id in matched_type_ids:
             if matched_type_id is None:
                 continue
@@ -288,12 +432,18 @@ async def booking_ready_service_matches(
         ):
             current["earliest_slot"] = slot
 
+    if ready:
+        await _keep_services_with_bookable_problems(
+            db, ready, zipcode=normalized_zip, city=city,
+        )
+
     logger.info(
         "booking_ready_catalog.resolved",
         zipcode=normalized_zip,
         candidate_service_job_types=len(pairs),
         ready_services=len(ready),
         ready_job_types=sum(len(item["job_type_ids"]) for item in ready.values()),
+        ready_problems=sum(len(item["problem_ids"]) for item in ready.values()),
     )
     cache[cache_key] = ready
     return ready
@@ -521,6 +671,12 @@ async def list_serviceable_issues(
     rows = (await db.execute(
         _serviceable_issue_rows_query(serviceable_ms_ids)
     )).all()
+    if zipcode:
+        # The same problems the chat offers: only those a ready provider takes.
+        rows = [
+            (issue, mapping, ms) for issue, mapping, ms in rows
+            if issue.id in ready.get(ms.id, {}).get("problem_ids", ())
+        ]
 
     def _compat(mapping) -> tuple[str, str]:
         # AC-ISSUE-DATA-01 section 3: selection_mode/compatibility_group,

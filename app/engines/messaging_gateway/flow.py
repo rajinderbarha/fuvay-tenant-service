@@ -113,6 +113,10 @@ BAD_ADDRESS = (
 LOCATION_SAVED = "Location saved — the technician will see it."
 BAD_PINCODE = "That does not look like a pincode. Please send the 6 digits, for example 141001."
 NOTHING_HERE = "There is nothing bookable here at the moment."
+#: A service card outlives the moment it was true: an older carousel is still
+#: tappable, and a technician's last slot can go between two taps. Said with
+#: the list of what CAN be booked there, never as a dead end.
+SERVICE_NOT_READY = "No technician is available for that service at {zipcode} right now."
 START_FAILED = (
     "I could not start that booking just now. Please wait a moment and tap "
     "the service again."
@@ -601,6 +605,7 @@ async def _navigate(db, executor, reply_id: str, draft, thread, channel: str,
 
     if kind == PICK_AREA:
         thread.zipcode = rest
+        _executor_follows_zipcode(executor, rest)
         thread.city = await _area_city(db, rest)
         return await _next_step(db, thread, executor, None, channel, 0, identity)
 
@@ -627,7 +632,7 @@ async def _navigate(db, executor, reply_id: str, draft, thread, channel: str,
         if of_kind == PICK_OFFERING:
             return await _offering_step(db, executor, context, channel, page, thread)
         if of_kind == PICK_PROBLEM and draft:
-            return await _problem_step(executor, draft, channel, page)
+            return await _problem_step(db, thread, executor, draft, channel, page)
         if of_kind == PICK_DIMENSION and draft:
             # `context` carries the dimension key, but the draft already knows
             # which one is outstanding — re-resolving it keeps a stale "More"
@@ -770,6 +775,11 @@ async def _apply_tap(db, thread, executor, reply_id: str, draft: dict | None):
         # A service tap starts one clean attempt. This also repairs accounts
         # already stuck behind drafts abandoned by pre-fix /fuvay sessions.
         await abandon_social_booking_drafts(db, thread)
+        if db is not None and not await _offering_ready(
+            db, thread.zipcode, category_slug, offering_slug,
+        ):
+            # No draft: the next step re-shows the services that ARE ready.
+            return SERVICE_NOT_READY.format(zipcode=thread.zipcode), 0, None
         started = await executor._tool_start_home_service_draft(
             category_slug=category_slug, offering_slug=offering_slug,
         )
@@ -968,6 +978,7 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
             return BAD_PINCODE, draft
         changed = thread.zipcode != digits
         thread.zipcode = digits
+        _executor_follows_zipcode(executor, digits)
         if changed:
             thread.city = None  # a new pincode is a new place
         # Fill the city from the coverage row rather than asking for it.
@@ -2028,7 +2039,7 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
         return dimension
 
     if not draft.get("job_type_id"):
-        return await _problem_step(executor, draft, channel, page)
+        return await _problem_step(db, thread, executor, draft, channel, page)
 
     picker = await pickers.build_picker(
         db, draft, customer_id=thread.customer_id, channel=channel, page=page,
@@ -2202,6 +2213,16 @@ async def _serviceable_categories(db, zipcode: str) -> list:
                ServiceCategory.id.in_(covered))
         .order_by(ServiceCategory.name)
     )).scalars().all())
+
+
+async def _offering_ready(db, zipcode: str, category_slug: str, offering_slug: str) -> bool:
+    """Whether this service is on the list the customer would be shown now."""
+    from app.engines.home_service_booking.offering_catalog_service import (
+        list_serviceable_offerings,
+    )
+
+    result = await list_serviceable_offerings(db, category_slug, zipcode)
+    return any(o.get("slug") == offering_slug for o in result.get("offerings") or [])
 
 
 async def _has_published_service_coverage(db, zipcode: str) -> bool:
@@ -2614,7 +2635,7 @@ async def _apply_dimension(db, thread, executor, rest: str, draft: dict):
     return None, 0, await _draft(db, thread)
 
 
-async def _problem_step(executor, draft: dict, channel: str, page: int) -> Turn:
+async def _problem_step(db, thread, executor, draft: dict, channel: str, page: int) -> Turn:
     result = await executor._tool_get_service_problems(draft_id=str(draft["id"]))
     problems = result.get("problems") or []
     cards = channel == CHANNEL_INSTAGRAM and any(
@@ -2646,9 +2667,17 @@ async def _problem_step(executor, draft: dict, channel: str, page: int) -> Turn:
                                presentation="carousel" if cards else "quick_replies",
                                capacity_override=(MAX_IG_GENERIC_ELEMENTS
                                                   if cards else None))
-    # A generic carousel cannot contain the question text, so send it as the
-    # preceding message just like the category and service card pickers.
-    return Turn(ASK_PROBLEM if cards else None, picker) if picker else Turn(NOTHING_HERE)
+    if picker:
+        # A generic carousel cannot contain the question text, so send it as
+        # the preceding message just like the category and service pickers.
+        return Turn(ASK_PROBLEM if cards else None, picker)
+    # Nobody here can take this service any more (its card was tapped from an
+    # older carousel, or the last ready technician's slot has gone since).
+    # Offer what can still be booked at this pincode rather than a dead end.
+    step = await _next_step(db, thread, executor, None, channel, 0)
+    note = SERVICE_NOT_READY.format(zipcode=thread.zipcode or draft.get("zipcode"))
+    step.text = f"{note}\n\n{step.text}" if step.text else note
+    return step
 
 
 async def _match_step(db, thread, executor, draft: dict, channel: str, page: int) -> Turn:
@@ -2746,6 +2775,20 @@ async def _confirm_step(executor, draft: dict, thread) -> Turn:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _executor_follows_zipcode(executor, zipcode: str) -> None:
+    """Hand a pincode set during this turn to the already-built executor.
+
+    The executor is built before the customer's reply is applied, so on the
+    turn they type their pincode it still held none — and
+    `list_serviceable_offerings` without a pincode returns every service
+    published anywhere. The cards sent right after the pincode therefore
+    included services no technician there could take, and tapping one ended
+    on NOTHING_HERE.
+    """
+    if executor is not None:
+        executor.zipcode = zipcode
 
 
 def _executor(db, thread):

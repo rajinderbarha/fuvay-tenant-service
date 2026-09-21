@@ -577,7 +577,7 @@ async def test_instagram_problem_step_uses_service_artwork_as_visual_cards():
             ]}
 
     turn = await flow._problem_step(
-        Executor(), {"id": "draft-1"}, CHANNEL_INSTAGRAM, 0,
+        None, None, Executor(), {"id": "draft-1"}, CHANNEL_INSTAGRAM, 0,
     )
 
     assert turn.text == flow.ASK_PROBLEM
@@ -606,7 +606,7 @@ async def test_problem_step_keeps_compact_picker_when_service_has_no_public_artw
             }]}
 
     turn = await flow._problem_step(
-        Executor(), {"id": "draft-1"}, CHANNEL_INSTAGRAM, 0,
+        None, None, Executor(), {"id": "draft-1"}, CHANNEL_INSTAGRAM, 0,
     )
 
     assert turn.text is None
