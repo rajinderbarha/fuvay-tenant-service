@@ -1,0 +1,85 @@
+name: Purge booking data
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Audit counts or execute the purge
+        required: true
+        type: choice
+        options:
+          - audit
+          - purge
+        default: audit
+      confirmation:
+        description: Type DELETE_ALL_BOOKING_DATA when operation is purge
+        required: false
+        type: string
+
+jobs:
+  booking-data-maintenance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout maintenance SQL
+        uses: actions/checkout@v4
+
+      - name: Upload maintenance SQL
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: scripts/purge_all_booking_data.sql
+          target: /srv/serviceos
+          overwrite: true
+
+      - name: Audit booking data
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -eu
+            compose="docker compose --env-file /srv/serviceos/.env.production -f /srv/serviceos/docker-compose.prod.yml -f /srv/serviceos/docker-compose.ip.yml"
+            $compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' <<'SQL'
+            SELECT json_build_object(
+              'service_bookings', (SELECT count(*) FROM service_bookings),
+              'service_jobs', (SELECT count(*) FROM service_jobs),
+              'home_service_drafts', (SELECT count(*) FROM home_service_booking_drafts),
+              'customer_booking_drafts', (SELECT count(*) FROM customer_booking_drafts),
+              'customer_reviews', (SELECT count(*) FROM customer_reviews),
+              'legacy_reviews', (SELECT count(*) FROM reviews),
+              'complaints', (SELECT count(*) FROM customer_complaints),
+              'warranty_claims', (SELECT count(*) FROM warranty_claims),
+              'service_invoices', (SELECT count(*) FROM service_invoices),
+              'service_payments', (SELECT count(*) FROM service_payment_records),
+              'job_ledger_rows', (
+                SELECT count(*) FROM usage_credit_ledger
+                WHERE job_id IS NOT NULL OR booking_id IS NOT NULL
+              )
+            );
+            SQL
+
+      - name: Validate destructive confirmation
+        if: ${{ inputs.operation == 'purge' }}
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          test "$CONFIRMATION" = "DELETE_ALL_BOOKING_DATA"
+
+      - name: Purge all booking data
+        if: ${{ inputs.operation == 'purge' }}
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -eu
+            compose="docker compose --env-file /srv/serviceos/.env.production -f /srv/serviceos/docker-compose.prod.yml -f /srv/serviceos/docker-compose.ip.yml"
+            $compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < /srv/serviceos/scripts/purge_all_booking_data.sql
+            $compose restart api worker
+            curl --fail --show-error --silent --retry 12 --retry-delay 5 --retry-all-errors --connect-timeout 5 --max-time 10 http://127.0.0.1:8000/health
+
