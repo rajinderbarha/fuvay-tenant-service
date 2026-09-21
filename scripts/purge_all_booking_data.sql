@@ -277,7 +277,6 @@ DELETE FROM job_status_history;
 DELETE FROM job_media;
 DELETE FROM job_notes;
 DELETE FROM job_quotes;
-DELETE FROM job_checklist_items;
 DELETE FROM jobs;
 DELETE FROM bookings;
 
