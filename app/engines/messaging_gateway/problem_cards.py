@@ -23,10 +23,21 @@ _FAMILIES = (
     (("install", "replace", "new"), "install", "🛠️"),
 )
 
+_PLUMBING_INSTALL_TERMS = (
+    "change", "tap", "faucet", "basin", "sink", "commode",
+    "toilet", "fixture", "plumb",
+)
+
 
 def problem_card_family(name: str) -> tuple[str, str]:
     """Return ``(asset key, symbol)`` inferred from customer-facing wording."""
     value = str(name or "").casefold()
+    if any(word in value for word in _PLUMBING_INSTALL_TERMS):
+        # Plumbing type rows commonly have no uploaded artwork yet. Use the
+        # public install card rather than the generic/unknown placeholder.
+        install = next((item for item in _FAMILIES if item[1] == "install"), None)
+        if install:
+            return install[1], install[2]
     return next(
         ((key, symbol) for words, key, symbol in _FAMILIES
          if any(word in value for word in words)),

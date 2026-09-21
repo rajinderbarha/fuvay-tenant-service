@@ -37,6 +37,9 @@ def make_draft(**overrides):
     d.ai_session_id = overrides.get("ai_session_id", None)
     d.catalog_question_answers = overrides.get("catalog_question_answers", {})
     d.question_flow_version = overrides.get("question_flow_version", 1)
+    d.offering_type_id = overrides.get("offering_type_id", None)
+    d.brand_id = overrides.get("brand_id", None)
+    d.zipcode = overrides.get("zipcode", None)
     return d
 
 
@@ -137,6 +140,61 @@ class TestGetCurrentQuestion:
 
         result = await svc.get_current_question(draft_id=draft.id, customer_id=draft.customer_id)
         assert result["current_question"]["photo_capable"] is True
+
+    @pytest.mark.parametrize(
+        ("question_key", "draft_field"),
+        [("service_type", "offering_type_id"), ("brand", "brand_id")],
+    )
+    async def test_existing_structured_dimension_is_not_asked_again_as_catalog_question(
+        self, question_key, draft_field,
+    ):
+        """Active drafts created by the former flat picker must not receive a
+        second Type or Brand carousel from the catalog question flow."""
+        draft = make_draft(**{draft_field: _id()})
+        q = make_question(question_key=question_key)
+        db = make_db()
+        db.get = AsyncMock(return_value=draft)
+        svc = make_service(db=db, resolved={"questions": [q], "known": []})
+
+        result = await svc.get_current_question(
+            draft_id=draft.id, customer_id=draft.customer_id,
+        )
+
+        assert result["current_question"] is None
+        assert result["progress"]["complete"] is True
+        assert result["progress"]["answered_count"] == 1
+
+    async def test_type_question_keeps_only_ready_leaf_and_its_parent(self, monkeypatch):
+        from app.engines.home_service_booking import offering_catalog_service as catalog
+
+        ready_leaf = _id()
+        ready_parent = _id()
+        unavailable = _id()
+        draft = make_draft(zipcode="140412")
+        q = make_question(
+            question_key="service_type",
+            options=[
+                {"id": str(ready_parent), "label": "Commode installation"},
+                {"id": str(ready_leaf), "label": "Western commode"},
+                {"id": str(unavailable), "label": "Unavailable fixture"},
+            ],
+        )
+
+        async def readiness(_db, _zipcode):
+            return {draft.offering_id: {"type_ids": {ready_leaf}}}
+
+        monkeypatch.setattr(catalog, "booking_ready_service_matches", readiness)
+        db = MagicMock()
+        parent_rows = MagicMock()
+        parent_rows.all.return_value = [(ready_leaf, ready_parent)]
+        db.execute = AsyncMock(return_value=parent_rows)
+        svc = make_service(db=db, resolved={"questions": [q], "known": []})
+
+        resolved = await svc._resolve(draft)
+
+        assert [option["id"] for option in resolved["questions"][0]["options"]] == [
+            str(ready_parent), str(ready_leaf),
+        ]
 
 
 class TestSubmitAnswer:

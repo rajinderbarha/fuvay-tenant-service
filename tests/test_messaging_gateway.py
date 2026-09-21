@@ -27,6 +27,24 @@ def test_signature_can_use_admin_stored_secret():
     assert meta_client.verify_signature(body, signature, app_secret="wrong-secret") is False
 
 
+def test_plumbing_type_without_uploaded_artwork_uses_install_card():
+    from app.engines.messaging_gateway.problem_cards import (
+        instagram_card_image_url,
+        problem_card_image,
+    )
+
+    expected = problem_card_image("installation")
+    for label in (
+        "Tap change",
+        "Wash basin installation",
+        "Western/English commode",
+    ):
+        assert problem_card_image(label) == expected
+        rendered = instagram_card_image_url(None, fallback_name=label)
+        assert rendered.startswith("https://res.cloudinary.com/")
+        assert "/c_fill,g_auto,h_960,w_960,q_auto:good,f_jpg/" in rendered
+
+
 def test_parse_whatsapp_messages_and_skip_delivery_receipts():
     payload = {
         "object": "whatsapp_business_account",
@@ -4554,18 +4572,22 @@ class _DimensionDB:
     """
 
     def __init__(self, *, dimensions=None, types=None, brands=None,
-                 brand_artwork=None, job_types=None):
+                 brand_artwork=None, job_types=None, question_owners=None):
         self.dimensions = dimensions if dimensions is not None else [
-            ("type", "Type"), ("brand", "Brand"),
+            (uuid.uuid4(), "type", "Type", "service_types"),
+            (uuid.uuid4(), "brand", "Brand", "brands"),
         ]
         self.types = types if types is not None else [("t-1", "Window AC"), ("t-2", "Split AC")]
         self.brands = brands if brands is not None else [("b-1", "Voltas")]
         self.brand_artwork = brand_artwork if brand_artwork is not None else []
         self.job_types = job_types if job_types is not None else [("job-1",)]
+        self.question_owners = question_owners if question_owners is not None else []
 
     async def execute(self, clause, params=None):
         sql = str(clause)
-        if "master_service_job_types" in sql:
+        if "FROM catalog_questions cq" in sql:
+            rows = self.question_owners
+        elif "master_service_job_types" in sql:
             rows = self.job_types
         elif "service_job_dimensions" in sql:
             rows = self.dimensions
@@ -4606,6 +4628,117 @@ async def test_type_is_asked_before_brand_and_both_before_the_problem():
     # Both answered -> nothing outstanding, so the flow moves on to the problem.
     draft["brand_id"] = "b-1"
     assert await flow._dimension_step(_DimensionDB(), draft, CHANNEL_INSTAGRAM, 0) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("key", "label", "legacy_source", "question_key"),
+    [
+        ("type", "Type", "service_types", "fixture_type"),
+        ("brand", "Brand", "brands", "appliance_brand"),
+    ],
+)
+async def test_catalog_question_owns_dimension_without_duplicate_carousel(
+    key, label, legacy_source, question_key,
+):
+    """Nested Type/Brand questions are authoritative; the flat blueprint
+    picker must not ask the same customer choice before them."""
+    from app.engines.messaging_gateway import flow
+
+    service_id = uuid.uuid4()
+    job_type_id = uuid.uuid4()
+    dimension_id = uuid.uuid4()
+    db = _DimensionDB(
+        dimensions=[(dimension_id, key, label, legacy_source)],
+        job_types=[(job_type_id,)],
+        question_owners=[(
+            question_key, "dimension", dimension_id, legacy_source,
+        )],
+    )
+
+    pending = await flow._pending_dimension(
+        db,
+        {
+            "id": "d-1",
+            "offering_id": str(service_id),
+            "job_type_id": str(job_type_id),
+            "selected_problem_id": str(uuid.uuid4()),
+            "catalog_question_answers": {},
+        },
+    )
+
+    assert pending is None
+
+
+@pytest.mark.asyncio
+async def test_conditionally_revealed_catalog_question_still_owns_plumbing_type_sequence(
+    monkeypatch,
+):
+    """The Instagram turn must go straight to the catalog question tree.
+
+    Ownership is configuration-level, so a question hidden behind a problem
+    or parent answer still suppresses the legacy flat Type carousel.  This is
+    the exact two-carousel regression seen for Plumbing.
+    """
+    from app.engines.messaging_gateway import flow
+
+    service_id = uuid.uuid4()
+    job_type_id = uuid.uuid4()
+    dimension_id = uuid.uuid4()
+    expected_picker = {
+        "body": "What do you need installed?",
+        "rows": [{"id": "qf|fixture|commode", "title": "Commode"}],
+        "presentation": "carousel",
+    }
+    db = _DimensionDB(
+        dimensions=[(dimension_id, "type", "Type", "service_types")],
+        job_types=[(job_type_id,)],
+        question_owners=[(
+            "fixture_type", "dimension", dimension_id, "service_types",
+        )],
+    )
+    build_picker = AsyncMock(return_value=expected_picker)
+    monkeypatch.setattr(flow.pickers, "build_picker", build_picker)
+
+    thread = SimpleNamespace(
+        customer_id=uuid.uuid4(), zipcode="140412", city="Bassi Pathana",
+    )
+    executor = SimpleNamespace(customer_id=thread.customer_id)
+    draft = {
+        "id": str(uuid.uuid4()),
+        "status": "collecting_details",
+        "offering_id": str(service_id),
+        "job_type_id": str(job_type_id),
+        "selected_problem_id": str(uuid.uuid4()),
+        "catalog_question_answers": {},
+    }
+
+    turn = await flow._next_step(
+        db, thread, executor, draft, CHANNEL_INSTAGRAM, 0,
+    )
+
+    assert turn.text is None
+    assert turn.picker == expected_picker
+    build_picker.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_static_type_named_question_does_not_hide_real_dimension_picker():
+    """A static question called *_type is not a catalog-library owner."""
+    from app.engines.messaging_gateway import flow
+
+    dimension_id = uuid.uuid4()
+    db = _DimensionDB(
+        dimensions=[(dimension_id, "type", "Type", "service_types")],
+        question_owners=[("fixture_type", "static", None, None)],
+    )
+
+    pending = await flow._pending_dimension(
+        db, {"id": "d-1", "offering_id": str(uuid.uuid4())},
+    )
+
+    assert pending is not None
+    assert pending[0] == "type"
 
 
 @pytest.mark.asyncio
@@ -4669,7 +4802,7 @@ async def test_instagram_brand_uses_artwork_from_case_only_duplicate():
     from app.engines.messaging_gateway import flow
 
     db = _DimensionDB(
-        dimensions=[("brand", "Brand")],
+        dimensions=[(uuid.uuid4(), "brand", "Brand", "brands")],
         brands=[("mapped-lg", "lg", None, None)],
         brand_artwork=[(
             "LG", "lg", "https://res.cloudinary.com/fuvay/image/upload/lg.webp", None,

@@ -133,9 +133,110 @@ class QuestionFlowService:
             "enabled_dimension_ids": [],
             "prior_answers": prior,
         }
-        return await self.catalog.resolve_applicable_questions(
+        resolved = await self.catalog.resolve_applicable_questions(
             master_service_id=draft.offering_id, job_type_id=draft.job_type_id, context=context,
         )
+        questions = list(resolved.get("questions") or [])
+        sources = await self._question_answer_sources(questions)
+
+        # A legacy/direct dimension picker may already have populated the
+        # canonical draft column (including drafts created before the unified
+        # flow below was deployed).  In that case the equivalent catalog
+        # question is already answered in business terms and must not be asked
+        # again.  This repairs active conversations such as Plumbing showing
+        # Western/English commode and then immediately asking Tap/Basin/
+        # Commode again.
+        structured_answers = {
+            "service_types": getattr(draft, "offering_type_id", None),
+            "brands": getattr(draft, "brand_id", None),
+        }
+        known = list(resolved.get("known") or [])
+        filtered: list[dict] = []
+        for question in questions:
+            source = sources.get(str(question.get("id")))
+            if source in structured_answers and structured_answers[source]:
+                key = str(question.get("question_key") or "")
+                if key and key not in known:
+                    known.append(key)
+                continue
+            filtered.append(question)
+
+        # Exact-type pricing is provider-owned.  The postcode readiness pass
+        # has already proved which leaf types have a real provider, price and
+        # slot.  Apply that same set to dimension-backed catalog questions so
+        # switching from the duplicate flat picker to a nested question tree
+        # cannot re-introduce unavailable types.  Parents remain selectable
+        # when at least one eligible child exists beneath them.
+        if getattr(draft, "zipcode", None) and any(
+            sources.get(str(question.get("id"))) == "service_types"
+            for question in filtered
+        ):
+            eligible_paths = await self._eligible_type_paths(draft)
+            if eligible_paths is not None:
+                for question in filtered:
+                    if sources.get(str(question.get("id"))) != "service_types":
+                        continue
+                    question["options"] = [
+                        option for option in (question.get("options") or [])
+                        if str(option.get("id")) in eligible_paths
+                    ]
+
+        return {**resolved, "questions": filtered, "known": known}
+
+    async def _question_answer_sources(self, questions: list[dict]) -> dict[str, str | None]:
+        """Resolve each question to its canonical structured value library."""
+        from app.engines.admin_catalog.models import CatalogDimension
+        from app.engines.admin_catalog.question_service import (
+            CHOICE_INPUT_TYPES,
+            library_for_question_key,
+        )
+
+        dimension_ids = {
+            uuid.UUID(str(question["dimension_id"]))
+            for question in questions
+            if question.get("dimension_id")
+        }
+        dimension_sources: dict[str, str | None] = {}
+        if dimension_ids:
+            rows = (await self.db.execute(
+                select(CatalogDimension.id, CatalogDimension.legacy_source).where(
+                    CatalogDimension.id.in_(dimension_ids)
+                )
+            )).all()
+            dimension_sources = {str(row[0]): row[1] for row in rows}
+
+        result: dict[str, str | None] = {}
+        for question in questions:
+            source = dimension_sources.get(str(question.get("dimension_id")))
+            if source not in {"service_types", "brands"} and question.get("input_type") in CHOICE_INPUT_TYPES:
+                source = library_for_question_key(question.get("question_key"))
+            result[str(question.get("id"))] = source
+        return result
+
+    async def _eligible_type_paths(self, draft: HomeServiceBookingDraft) -> set[str] | None:
+        """Eligible leaf type ids plus their one-level navigation parents.
+
+        ``None`` means this service was proved ready without type-specific
+        matching, so its configured question options remain unchanged.
+        """
+        from app.engines.admin_catalog.models import ServiceType
+        from app.engines.home_service_booking.offering_catalog_service import (
+            booking_ready_service_matches,
+        )
+
+        ready = await booking_ready_service_matches(self.db, str(draft.zipcode))
+        service_ready = ready.get(draft.offering_id)
+        leaf_ids = set((service_ready or {}).get("type_ids") or [])
+        if not leaf_ids:
+            return None
+        rows = (await self.db.execute(
+            select(ServiceType.id, ServiceType.parent_type_id).where(
+                ServiceType.id.in_(leaf_ids)
+            )
+        )).all()
+        permitted = {str(type_id) for type_id in leaf_ids}
+        permitted.update(str(parent_id) for _, parent_id in rows if parent_id)
+        return permitted
 
     def _build_envelope(self, draft: HomeServiceBookingDraft, resolved: dict) -> dict:
         questions = resolved["questions"]

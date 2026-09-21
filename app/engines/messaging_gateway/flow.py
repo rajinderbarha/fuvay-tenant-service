@@ -2401,7 +2401,7 @@ async def _pending_dimension(db, draft: dict) -> tuple[str, str, list] | None:
         job_type_id = rows[0][0]
 
     configured = (await db.execute(text(
-        "SELECT cd.key, cd.name "
+        "SELECT cd.id, cd.key, cd.name, cd.legacy_source "
         "  FROM service_job_dimensions sjd "
         "  JOIN catalog_dimensions cd ON cd.id = sjd.dimension_id "
         " WHERE sjd.master_service_id = :s "
@@ -2411,10 +2411,23 @@ async def _pending_dimension(db, draft: dict) -> tuple[str, str, list] | None:
         " ORDER BY sjd.display_order, cd.display_order"
     ), {"s": service_id, "j": job_type_id})).all()
 
-    for key, label in configured:
+    for dimension_id, key, label, legacy_source in configured:
         field = DIMENSION_DRAFT_FIELD.get(key)
         if not field or draft.get(field):
             continue  # not answerable in chat, or already answered
+        if await _catalog_question_owns_dimension(
+            db,
+            draft,
+            job_type_id=job_type_id,
+            dimension_id=dimension_id,
+            legacy_source=legacy_source,
+        ):
+            # One canonical customer question only.  Catalog questions can
+            # express a nested tree (Plumbing fixture -> commode style), while
+            # this direct dimension path is deliberately flat. Asking both
+            # produced two consecutive Type carousels and even reversed the
+            # hierarchy. Let the configured question flow own the dimension.
+            continue
         sql = _DIMENSION_VALUE_SQL.get(key)
         if not sql:
             continue
@@ -2447,6 +2460,71 @@ async def _pending_dimension(db, draft: dict) -> tuple[str, str, list] | None:
             continue
         return key, label, values
     return None
+
+
+async def _catalog_question_owns_dimension(
+    db,
+    draft: dict,
+    *,
+    job_type_id,
+    dimension_id,
+    legacy_source: str | None,
+) -> bool:
+    """Whether a configured choice question owns this dimension.
+
+    This is catalog-driven and therefore applies to every service and future
+    Type/Brand question, not a Plumbing name-based exception.  Deliberately
+    inspect the configured question rather than only questions applicable to
+    the *current* answer context: a problem- or parent-answer-conditioned
+    question is hidden until the preceding tap, but it still owns the
+    dimension.  Resolving only the current question set allowed the flat
+    picker to appear first and the conditional catalog picker to appear again
+    later.
+    """
+    from app.engines.admin_catalog.question_service import library_for_question_key
+
+    try:
+        configured = (await db.execute(text(
+            "SELECT cq.question_key, cq.answer_source, cq.dimension_id, "
+            "       qd.legacy_source "
+            "  FROM catalog_questions cq "
+            "  LEFT JOIN catalog_dimensions qd ON qd.id = cq.dimension_id "
+            " WHERE cq.master_service_id = :service "
+            "   AND (cq.job_type_id IS NULL OR cq.job_type_id = :job_type) "
+            "   AND cq.is_active IS TRUE "
+            "   AND cq.customer_visible IS TRUE "
+            "   AND cq.input_type IN ('single_select', 'multi_select')"
+        ), {
+            "service": draft["offering_id"],
+            "job_type": job_type_id,
+        })).all()
+    except Exception as exc:  # catalog lookup failure must not remove the fallback picker
+        logger.warning(
+            "messaging_gateway.dimension.question_ownership_failed",
+            service_id=str(draft.get("offering_id") or ""),
+            job_type_id=str(job_type_id or ""),
+            dimension_id=str(dimension_id or ""),
+            error=str(exc),
+        )
+        return False
+
+    for question_key, answer_source, question_dimension_id, question_source in configured:
+        if (
+            dimension_id
+            and question_dimension_id
+            and str(question_dimension_id) == str(dimension_id)
+        ):
+            return True
+        if question_source in {"service_types", "brands"} and question_source == legacy_source:
+            return True
+        if (
+            legacy_source in {"service_types", "brands"}
+            and not question_dimension_id
+            and answer_source != "static"
+            and library_for_question_key(question_key) == legacy_source
+        ):
+            return True
+    return False
 
 
 async def _dimension_step(db, draft: dict, channel: str, page: int) -> Turn | None:
