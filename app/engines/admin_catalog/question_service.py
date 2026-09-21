@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 
+import sqlalchemy as sa
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -299,6 +300,18 @@ class CatalogQuestionService:
             tree_rule = validation if isinstance(validation, dict) else {}
             if tree_rule.get("type_tree_level") == "root":
                 query = query.where(ServiceType.parent_type_id.is_(None))
+            allowed_type_slugs = tree_rule.get("allowed_type_slugs")
+            if isinstance(allowed_type_slugs, list):
+                allowed_type_slugs = [
+                    str(slug).strip() for slug in allowed_type_slugs
+                    if str(slug).strip()
+                ]
+                # An explicitly configured empty allowlist must expose no
+                # choices, not silently fall back to every mapped Type.
+                query = query.where(
+                    ServiceType.slug.in_(allowed_type_slugs)
+                    if allowed_type_slugs else sa.false()
+                )
             parent_slug = tree_rule.get("type_parent_slug")
             if parent_slug:
                 parent_id = select(ServiceType.id).where(

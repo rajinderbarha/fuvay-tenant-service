@@ -1376,6 +1376,7 @@ class ServiceIssueMapping(ServiceOSBase):
             "requires_description": self.requires_description,
             "severity_override":    self.severity_override,
             "display_order":        self.display_order,
+            "metadata_json":        self.metadata_json,
             "created_at":           self.created_at.isoformat() if self.created_at else None,
             "updated_at":           self.updated_at.isoformat() if self.updated_at else None,
         }

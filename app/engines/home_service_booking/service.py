@@ -739,7 +739,12 @@ class HomeServiceChatbotBookingService:
         # both paths are validated identically via _resolve_job_type_snapshot.
         if "selected_problem_id" in payload and payload["selected_problem_id"]:
             problem_id = uuid.UUID(str(payload["selected_problem_id"]))
-            from app.engines.admin_catalog.models import ServiceIssueMapping
+            from app.engines.admin_catalog.models import (
+                MasterServiceType,
+                ServiceIssueMapping,
+                ServiceType,
+                ServiceTypeMapping,
+            )
             mapping = (await self.db.execute(
                 select(ServiceIssueMapping).where(
                     ServiceIssueMapping.issue_type_id == problem_id,
@@ -754,8 +759,16 @@ class HomeServiceChatbotBookingService:
                     "The selected problem is not available for this service.",
                     status_code=422,
                 )
+            problem_changed = draft.selected_problem_id != problem_id
             draft.selected_problem_id = problem_id
             changes["selected_problem_id"] = str(problem_id)
+            # A customer can go back and choose a different Problem. Never
+            # retain a Type that was selected (or inferred) for the previous
+            # Problem, because it can suppress the newly applicable question
+            # and route/price the booking against the wrong catalog leaf.
+            if problem_changed:
+                draft.offering_type_id = None
+                changes["offering_type_id"] = None
             if mapping.job_type_id is None:
                 # This Problem applies to "all job types" -- it does NOT
                 # resolve an EXACT Job Type (spec section 4: "mapping has an
@@ -770,6 +783,49 @@ class HomeServiceChatbotBookingService:
             else:
                 await self._resolve_job_type_snapshot(draft, mapping.job_type_id)
                 changes["job_type_id"] = str(draft.job_type_id) if draft.job_type_id else None
+
+            mapping_metadata = (
+                mapping.metadata_json
+                if isinstance(mapping.metadata_json, dict) else {}
+            )
+            default_type_slug = str(
+                mapping_metadata.get("default_service_type_slug") or ""
+            ).strip()
+            if default_type_slug:
+                # Some Problems are already an exact, price-bearing catalog
+                # leaf (for example "New pipeline for appliance"). Resolve
+                # that leaf server-side instead of asking an unrelated Type
+                # question. Both mappings are checked so stale/global Types
+                # can never be injected into the booking draft.
+                default_type_id = (await self.db.execute(
+                    select(ServiceType.id)
+                    .join(
+                        MasterServiceType,
+                        MasterServiceType.service_type_id == ServiceType.id,
+                    )
+                    .join(
+                        ServiceTypeMapping,
+                        ServiceTypeMapping.type_id == ServiceType.id,
+                    )
+                    .where(
+                        ServiceType.slug == default_type_slug,
+                        ServiceType.is_active.is_(True),
+                        ServiceType.deleted_at.is_(None),
+                        MasterServiceType.master_service_id == draft.offering_id,
+                        MasterServiceType.is_active.is_(True),
+                        ServiceTypeMapping.service_id == draft.offering_id,
+                        ServiceTypeMapping.status == "active",
+                        ServiceTypeMapping.customer_visible.is_(True),
+                    )
+                )).scalars().first()
+                if default_type_id is None:
+                    raise ServiceOSException(
+                        "PROBLEM_DEFAULT_TYPE_NOT_AVAILABLE",
+                        "The selected service option is not configured correctly.",
+                        status_code=422,
+                    )
+                draft.offering_type_id = default_type_id
+                changes["offering_type_id"] = str(default_type_id)
         elif "job_type_id" in payload and payload["job_type_id"]:
             job_type_id = uuid.UUID(str(payload["job_type_id"]))
             await self._resolve_job_type_snapshot(draft, job_type_id)

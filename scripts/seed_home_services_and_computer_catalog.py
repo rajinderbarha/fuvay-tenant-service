@@ -31,9 +31,11 @@ PLATFORM_ACTOR = None  # system-authored catalog content; no specific admin user
 #   in the global Types/Brands libraries), issues (name, severity),
 #   questions (key, label, input_type, [options]), checklist (label, item_type, required).
 
-def q(key, label, input_type="single_select", options=None, required=True, show_when=None):
+def q(key, label, input_type="single_select", options=None, required=True,
+      show_when=None, problem=None):
     return {"key": key, "label": label, "input_type": input_type,
-            "options": options, "required": required, "show_when": show_when}
+            "options": options, "required": required, "show_when": show_when,
+            "problem": problem}
 
 
 APPLIANCE_BRANDS_GENERAL = ["LG", "Samsung", "Whirlpool", "Godrej", "Haier", "Panasonic", "Voltas", "IFB", "Bosch"]
@@ -331,15 +333,18 @@ HOME_SERVICES = {
              "exact_type_pricing": True,
              "types": ["Tap change", "Wash basin installation", "Commode installation",
                        "Western / English commode", "Indian-style commode",
-                       "Other fixture installation"],
+                       "Other fixture installation", "New pipeline for appliance"],
              "brand_required": False,
              "issues": [("New tap / fixture installation", "low"), ("New pipeline for appliance", "medium")],
+             "default_type_by_issue": {
+                 "New pipeline for appliance": "plumbing-appliance-pipeline-installation",
+             },
              "questions": [q("fixture_type", "What needs to be installed?", options=[
                  ("plumbing-tap-change", "Tap change"),
                  ("plumbing-wash-basin-installation", "Wash basin installation"),
                  ("plumbing-commode-installation", "Commode installation"),
                  ("plumbing-other-fixture-installation", "Other fixture installation"),
-             ]), q("commode_type", "Which commode type?", options=[
+             ], problem="New tap / fixture installation"), q("commode_type", "Which commode type?", options=[
                  ("plumbing-western-commode-installation", "Western / English commode"),
                  ("plumbing-indian-commode-installation", "Indian-style commode"),
              ], show_when=("fixture_type", "plumbing-commode-installation"))],
@@ -589,6 +594,7 @@ async def build_job_type(db, admin_svc, jt_svc, question_svc, checklist_svc_modu
     import re
     from sqlalchemy import select as _select
     from app.engines.admin_catalog.models import MasterIssueType
+    issue_name_to_id = {}
     for name, severity in jt_spec["issues"]:
         slug = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
         existing_issue = (await db.execute(_select(MasterIssueType).where(MasterIssueType.slug == slug))).scalar_one_or_none()
@@ -599,9 +605,20 @@ async def build_job_type(db, admin_svc, jt_svc, question_svc, checklist_svc_modu
                 "name": name, "severity": severity, "customer_visible": True,
             })
             issue_id = issue["id"]
-        await admin_svc.opt_svc.add_service_issue_mapping(master_service_id, {
-            "issue_type_id": issue_id, "job_type_id": str(job_type_id), "customer_visible": True,
-        })
+        issue_name_to_id[name] = issue_id
+        default_type_slug = (jt_spec.get("default_type_by_issue") or {}).get(name)
+        mapping_payload = {
+            "issue_type_id": issue_id,
+            "job_type_id": str(job_type_id),
+            "customer_visible": True,
+        }
+        if default_type_slug:
+            mapping_payload["metadata_json"] = {
+                "default_service_type_slug": default_type_slug,
+            }
+        await admin_svc.opt_svc.add_service_issue_mapping(
+            master_service_id, mapping_payload,
+        )
 
     created_questions = {}
     for qspec in jt_spec["questions"]:
@@ -623,6 +640,11 @@ async def build_job_type(db, admin_svc, jt_svc, question_svc, checklist_svc_modu
                 "condition_type": "answer_equals",
                 "ref_id": created_questions[parent_key],
                 "expected_value": expected_value,
+            })
+        if qspec.get("problem"):
+            await question_svc.add_rule(uuid.UUID(created["id"]), {
+                "condition_type": "problem",
+                "ref_id": issue_name_to_id[qspec["problem"]],
             })
 
     template = await checklist_svc_module.create_template(
@@ -713,6 +735,7 @@ async def run():
             ("Western / English commode", "plumbing-western-commode-installation", "PLUMBING_WESTERN_COMMODE_INSTALLATION", 31, "plumbing-commode-installation"),
             ("Indian-style commode", "plumbing-indian-commode-installation", "PLUMBING_INDIAN_COMMODE_INSTALLATION", 32, "plumbing-commode-installation"),
             ("Other fixture installation", "plumbing-other-fixture-installation", "PLUMBING_OTHER_FIXTURE_INSTALLATION", 40, None),
+            ("New pipeline for appliance", "plumbing-appliance-pipeline-installation", "PLUMBING_APPLIANCE_PIPELINE_INSTALLATION", 50, None),
         )
         for name, slug, code, display_order, parent_slug in plumbing_types:
             existing_type = (await db.execute(select(ServiceType).where(ServiceType.slug == slug))).scalar_one_or_none()

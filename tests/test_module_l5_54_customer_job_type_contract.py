@@ -39,6 +39,7 @@ def _mock_draft(**overrides):
     d.master_service_job_type_id = None
     d.service_job_workflow_id = None
     d.selected_problem_id = None
+    d.offering_type_id = None
     d.status = "collecting_details"
     for k, v in overrides.items():
         setattr(d, k, v)
@@ -117,6 +118,94 @@ class TestProblemToJobTypeResolution:
                             payload={"selected_problem_id": str(uuid.uuid4())},
                         )
         assert draft.job_type_id is None
+
+    @pytest.mark.asyncio
+    async def test_problem_can_resolve_its_exact_price_bearing_type(self):
+        """Pipeline is the final item; it must not ask fixture Type again."""
+        from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+        svc = HomeServiceChatbotBookingService(db=AsyncMock())
+        draft = _mock_draft()
+        job_type_id = uuid.uuid4()
+        pipeline_type_id = uuid.uuid4()
+
+        mapping = MagicMock()
+        mapping.job_type_id = job_type_id
+        mapping.metadata_json = {
+            "default_service_type_slug": "plumbing-appliance-pipeline-installation",
+        }
+        link = MagicMock(id=uuid.uuid4())
+        workflow = MagicMock(id=uuid.uuid4())
+        svc.db.execute = AsyncMock(side_effect=[
+            _first(mapping), _first(link), _first(workflow), _first(pipeline_type_id),
+        ])
+        svc.db.commit = AsyncMock()
+        svc.db.refresh = AsyncMock()
+
+        with patch.object(svc, "_require_draft", AsyncMock(return_value=draft)), \
+             patch.object(svc, "_assert_not_terminal", MagicMock()), \
+             patch.object(svc, "_emit_event", AsyncMock()), \
+             patch.object(svc, "_enrich_draft", AsyncMock(return_value={})):
+            await svc.update_draft_fields(
+                draft_id=draft.id,
+                customer_id=None,
+                payload={"selected_problem_id": str(uuid.uuid4())},
+            )
+
+        assert draft.job_type_id == job_type_id
+        assert draft.offering_type_id == pipeline_type_id
+
+    @pytest.mark.asyncio
+    async def test_changing_problem_clears_previous_type_selection(self):
+        from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+        svc = HomeServiceChatbotBookingService(db=AsyncMock())
+        draft = _mock_draft(offering_type_id=uuid.uuid4())
+        mapping = MagicMock()
+        mapping.job_type_id = None
+        mapping.metadata_json = None
+        svc.db.execute = AsyncMock(return_value=_first(mapping))
+        svc.db.commit = AsyncMock()
+        svc.db.refresh = AsyncMock()
+
+        with patch.object(svc, "_require_draft", AsyncMock(return_value=draft)), \
+             patch.object(svc, "_assert_not_terminal", MagicMock()), \
+             patch.object(svc, "_emit_event", AsyncMock()), \
+             patch.object(svc, "_enrich_draft", AsyncMock(return_value={})):
+            await svc.update_draft_fields(
+                draft_id=draft.id,
+                customer_id=None,
+                payload={"selected_problem_id": str(uuid.uuid4())},
+            )
+
+        assert draft.offering_type_id is None
+
+    @pytest.mark.asyncio
+    async def test_reselecting_same_problem_keeps_answered_type(self):
+        from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+        svc = HomeServiceChatbotBookingService(db=AsyncMock())
+        problem_id = uuid.uuid4()
+        selected_type_id = uuid.uuid4()
+        draft = _mock_draft(
+            selected_problem_id=problem_id,
+            offering_type_id=selected_type_id,
+        )
+        mapping = MagicMock()
+        mapping.job_type_id = None
+        mapping.metadata_json = None
+        svc.db.execute = AsyncMock(return_value=_first(mapping))
+        svc.db.commit = AsyncMock()
+        svc.db.refresh = AsyncMock()
+
+        with patch.object(svc, "_require_draft", AsyncMock(return_value=draft)), \
+             patch.object(svc, "_assert_not_terminal", MagicMock()), \
+             patch.object(svc, "_emit_event", AsyncMock()), \
+             patch.object(svc, "_enrich_draft", AsyncMock(return_value={})):
+            await svc.update_draft_fields(
+                draft_id=draft.id,
+                customer_id=None,
+                payload={"selected_problem_id": str(problem_id)},
+            )
+
+        assert draft.offering_type_id == selected_type_id
 
 
 class TestOfferingChangeClearsStaleContext:

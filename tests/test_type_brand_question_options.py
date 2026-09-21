@@ -10,6 +10,7 @@ questions resolved with 0 options while 4 types and 11 brands were mapped.
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -63,3 +64,32 @@ async def test_other_free_questions_and_non_choice_inputs_get_no_options():
     assert await svc._resolved_options(_question("issue_duration")) == []
     assert await svc._resolved_options(_question("brand", input_type="text")) == []
     svc._library_options.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_type_library_honours_explicit_slug_allowlist():
+    """A newly mapped Type must not leak into an unrelated carousel."""
+    result = MagicMock()
+    result.all.return_value = []
+    db = SimpleNamespace(execute=AsyncMock(return_value=result))
+    svc = CatalogQuestionService(db=db)
+
+    await svc._library_options(
+        uuid.uuid4(),
+        "service_types",
+        {
+            "type_tree_level": "root",
+            "allowed_type_slugs": [
+                "plumbing-tap-change",
+                "plumbing-wash-basin-installation",
+            ],
+        },
+    )
+
+    statement = db.execute.await_args.args[0]
+    compiled = statement.compile()
+    assert "service_types.slug IN" in str(compiled)
+    assert set(compiled.params["slug_1"]) == {
+        "plumbing-tap-change",
+        "plumbing-wash-basin-installation",
+    }

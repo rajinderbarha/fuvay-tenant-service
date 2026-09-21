@@ -819,6 +819,7 @@ class ServiceOptionService:
             requires_description=body.get("requires_description", it.requires_description),
             severity_override=body.get("severity_override"),
             display_order=body.get("display_order", 0),
+            metadata_json=body.get("metadata_json"),
             created_by_user_id=self.actor_id,
         )
         self.db.add(m)
@@ -834,7 +835,8 @@ class ServiceOptionService:
         if not m or m.deleted_at:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Mapping not found")
         for field in ("is_common", "is_default", "customer_visible", "requires_photo",
-                      "requires_description", "severity_override", "display_order", "status"):
+                      "requires_description", "severity_override", "display_order", "status",
+                      "metadata_json"):
             if field in body:
                 setattr(m, field, body[field])
         if "job_type_id" in body:
