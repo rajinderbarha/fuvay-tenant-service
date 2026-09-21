@@ -16,6 +16,7 @@ import { Badge, Skeleton, Btn } from "../shared/ui";
 import {
   tenantComplaintsApi, ServiceOSError,
   type ComplaintMessageItem, type ComplaintMediaItem, type ComplaintResolutionItem,
+  type ComplaintResolutionOption,
 } from "../../lib/api";
 import { useApi } from "../../hooks/useApi";
 import { statusLabel } from "./ComplaintQueueList";
@@ -186,40 +187,49 @@ export function EvidenceTab({ complaintId }: { complaintId: string }) {
 
 /* ── Resolution ───────────────────────────────────────────────────────────── */
 
-/** Only the remedy types the complaints engine actually models. */
-const RESOLUTION_TYPES = [
-  { value: "rework", label: "Free rework visit" },
-  { value: "refund", label: "Refund" },
-  { value: "partial_refund", label: "Partial refund" },
-  { value: "credit", label: "Service credit" },
-  { value: "apology", label: "Apology / goodwill" },
-  { value: "no_action", label: "No action required" },
-];
+/** Labels for offers already on a case, including types older cases may
+ *  carry. What can be offered NOW comes from the server (`options`): the list
+ *  used to be hardcoded here and included "partial_refund" and "credit",
+ *  which the engine never modelled -- accepting them resolved the case with
+ *  no remedy at all. */
+const RESOLUTION_LABELS: Record<string, string> = {
+  rework: "Free rework visit", refund: "Refund", callback: "Callback",
+  apology: "Apology / goodwill", no_action: "No action required",
+  partial_refund: "Partial refund", credit: "Service credit",
+  provider_reassignment: "Reassign provider",
+};
 
-export function ResolutionTab({ complaintId, canOffer, blockedReason, onChanged }: {
-  complaintId: string; canOffer: boolean; blockedReason: string | null; onChanged: () => void;
+export function ResolutionTab({ complaintId, options, canOffer, blockedReason, onChanged }: {
+  complaintId: string; options: ComplaintResolutionOption[]; canOffer: boolean;
+  blockedReason: string | null; onChanged: () => void;
 }) {
   const list = useApi(useCallback(() => tenantComplaintsApi.resolutions(complaintId), [complaintId]));
-  const [type, setType] = useState(RESOLUTION_TYPES[0].value);
+  const [type, setType] = useState("");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
+  const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const offers: ComplaintResolutionItem[] = Array.isArray(list.data) ? list.data : [];
+  const selected = options.find(o => o.value === type) ?? options[0];
+  const amountValue = Number(amount);
+  const amountValid = !selected?.requires_amount || (amount.trim() !== "" && Number.isFinite(amountValue) && amountValue > 0);
 
   async function submit() {
-    if (!description.trim()) return;
+    if (!description.trim() || !selected || !amountValid) return;
     setSaving(true);
     setError(null);
     try {
       await tenantComplaintsApi.offerResolution(complaintId, {
-        resolution_type: type,
+        resolution_type: selected.value,
         description: description.trim(),
         customer_visible_notes: notes.trim() || undefined,
+        ...(selected.requires_amount ? { amount: amountValue } : {}),
       });
       setDescription("");
       setNotes("");
+      setAmount("");
       list.refetch();
       onChanged();
     } catch (e) {
@@ -240,7 +250,8 @@ export function ResolutionTab({ complaintId, canOffer, blockedReason, onChanged 
             <div key={o.id} style={{ padding: 12, borderRadius: 8, background: "var(--surface-sunken)", border: "1px solid var(--border)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-primary)" }}>
-                  {RESOLUTION_TYPES.find(r => r.value === o.resolution_type)?.label ?? o.resolution_type.replace(/_/g, " ")}
+                  {RESOLUTION_LABELS[o.resolution_type] ?? o.resolution_type.replace(/_/g, " ")}
+                  {o.amount ? ` · ₹${Number(o.amount).toLocaleString("en-IN")}` : ""}
                 </span>
                 <Badge
                   variant={o.status === "customer_accepted" ? "success" : o.status === "customer_rejected" ? "danger" : "warning"}
@@ -259,7 +270,7 @@ export function ResolutionTab({ complaintId, canOffer, blockedReason, onChanged 
         </div>
       )}
 
-      {canOffer ? (
+      {canOffer && selected ? (
         <div style={{ borderTop: offers.length ? "1px solid var(--border)" : "none", paddingTop: offers.length ? 14 : 0 }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 10px" }}>
             Propose a resolution
@@ -267,10 +278,25 @@ export function ResolutionTab({ complaintId, canOffer, blockedReason, onChanged 
           <div style={{ display: "grid", gap: 10 }}>
             <label style={{ display: "block" }}>
               <span style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Resolution type</span>
-              <select value={type} onChange={e => setType(e.target.value)} style={fieldStyle}>
-                {RESOLUTION_TYPES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              <select value={selected.value} onChange={e => setType(e.target.value)} style={fieldStyle}>
+                {options.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </label>
+            {selected.requires_amount && (
+              <label style={{ display: "block" }}>
+                <span style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
+                  Refund amount (₹)
+                </span>
+                <input
+                  type="number" min="1" step="0.01" inputMode="decimal" value={amount}
+                  onChange={e => setAmount(e.target.value)} style={fieldStyle}
+                  aria-describedby="cmp-refund-help"
+                />
+                <span id="cmp-refund-help" style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                  If the customer accepts, this becomes an approved refund you record under Refunds &amp; Warranty.
+                </span>
+              </label>
+            )}
             <label style={{ display: "block" }}>
               <span style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>What you will do</span>
               <textarea
@@ -290,7 +316,7 @@ export function ResolutionTab({ complaintId, canOffer, blockedReason, onChanged 
           {error && <p role="alert" style={{ fontSize: 12, color: "var(--danger-text)", margin: "8px 0 0" }}>{error}</p>}
           <Btn
             variant="primary" size="sm" icon={<ShieldCheck size={12}/>} loading={saving}
-            disabled={!description.trim()} onClick={submit} style={{ marginTop: 10 }}
+            disabled={!description.trim() || !amountValid} onClick={submit} style={{ marginTop: 10 }}
           >
             Propose resolution
           </Btn>

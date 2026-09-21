@@ -47,6 +47,35 @@ STATUS_CANCELLED                 = "cancelled"
 
 FINAL_STATUSES = {STATUS_CLOSED, STATUS_CANCELLED, STATUS_REJECTED}
 
+# ── Whose move is it ──────────────────────────────────────────────────────────
+# A complaint only stays healthy if every non-final status has an owner who is
+# on a clock. Before these sets existed, the only deadline was the provider's
+# FIRST reply: one "we are looking into it" and the case could sit open forever
+# with nothing measuring it.
+#
+# The provider owns these. `refund_requested` is the provider's move too, but
+# the refund request carries its own response deadline and penalty
+# (RefundRequest.provider_response_due_at), so the complaint does not run a
+# second, overlapping clock for it.
+PROVIDER_TURN_STATUSES = {
+    STATUS_OPEN, STATUS_AWAITING_PROVIDER, STATUS_REWORK_APPROVED,
+    STATUS_REFUND_REQUESTED, STATUS_REFUND_APPROVED,
+}
+PROVIDER_ACTION_TIMED_STATUSES = PROVIDER_TURN_STATUSES - {STATUS_REFUND_REQUESTED}
+# The customer owns these: a resolution is waiting for their accept/reject.
+CUSTOMER_TURN_STATUSES = {STATUS_RESOLUTION_PROPOSED, STATUS_AWAITING_CUSTOMER}
+
+# How long a proposed resolution may wait on the customer. A reminder goes out
+# at the first mark; at the second the case resolves as unanswered, so a
+# customer who never replies cannot hold the provider's queue open forever.
+CUSTOMER_REMINDER_HOURS = 48
+CUSTOMER_RESPONSE_EXPIRY_HOURS = 168
+
+# A resolved case stays open for follow-up messages for this long, then closes.
+# Nothing ever wrote `closed` before, so every resolved case stayed in the
+# provider's Open queue permanently.
+RESOLVED_AUTO_CLOSE_HOURS = 72
+
 # ── Valid status transitions ───────────────────────────────────────────────────
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     # MODULE-L5-02 bug #29: the customer refund endpoint is reachable directly
@@ -66,11 +95,20 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     # awaiting_customer was, and nothing ever moved it there), so a proposed
     # resolution could never be accepted or rejected — every complaint stalled at
     # resolution_proposed. Allow the customer's accept/reject targets directly.
+    # STATUS_REFUND_APPROVED: the customer accepted a refund the provider
+    # offered. The provider made the offer, so the refund starts approved and
+    # the provider's remaining step is recording the repayment. Without this
+    # edge, accepting a refund offer resolved the case and no refund existed.
     STATUS_RESOLUTION_PROPOSED:{STATUS_AWAITING_CUSTOMER, STATUS_AWAITING_PROVIDER, STATUS_RESOLVED,
-                                STATUS_REWORK_APPROVED},
+                                STATUS_REWORK_APPROVED, STATUS_REFUND_APPROVED},
     STATUS_AWAITING_CUSTOMER:  {STATUS_RESOLVED, STATUS_AWAITING_PROVIDER},
     STATUS_REWORK_APPROVED:    {STATUS_RESOLVED},
-    STATUS_REFUND_REQUESTED:   {STATUS_REFUND_APPROVED},
+    # A declined refund used to leave the case in refund_requested with no
+    # legal move at all: the provider could not offer anything else and no
+    # clock watched it. A refund-only case (the dedicated refund flow) ends
+    # as rejected; any other complaint returns to the provider, who still owes
+    # a resolution for the underlying issue.
+    STATUS_REFUND_REQUESTED:   {STATUS_REFUND_APPROVED, STATUS_REJECTED, STATUS_AWAITING_PROVIDER},
     STATUS_REFUND_APPROVED:    {STATUS_REFUND_RECORDED},
     STATUS_REFUND_RECORDED:    {STATUS_RESOLVED},
     STATUS_RESOLVED:           {STATUS_CLOSED},
@@ -136,6 +174,24 @@ RESOLUTION_TYPES = {
     "rework", "refund", "callback", "provider_reassignment",
     "apology", "warning", "no_action", "rejected",
 }
+
+# What a provider can offer from the case workspace. Every value has a defined
+# outcome when the customer accepts: rework spawns a rework visit, refund spawns
+# an approved refund the provider must record, and the rest resolve the case.
+# The workspace previously offered "partial_refund" and "credit", which the
+# engine never modelled -- accepting them resolved the case and nothing
+# happened. A partial refund is a refund with a smaller amount; credits belong
+# to the settlement flow.
+PROVIDER_RESOLUTION_OPTIONS = (
+    ("rework", "Free rework visit"),
+    ("refund", "Refund"),
+    ("callback", "Callback"),
+    ("apology", "Apology / goodwill"),
+    ("no_action", "No action required"),
+)
+PROVIDER_RESOLUTION_TYPES = {key for key, _label in PROVIDER_RESOLUTION_OPTIONS}
+ERR_RESOLUTION_TYPE_NOT_ALLOWED = "RESOLUTION_TYPE_NOT_ALLOWED"
+ERR_RESOLUTION_AMOUNT_REQUIRED  = "RESOLUTION_AMOUNT_REQUIRED"
 
 # ── Resolution statuses ────────────────────────────────────────────────────────
 RES_PROPOSED          = "proposed"
@@ -252,6 +308,12 @@ STATUS_SETTLED                = "settled"
 
 FINAL_STATUSES_EXT = FINAL_STATUSES | {STATUS_SETTLED}
 
+#: Nothing left for anyone to do. `resolved`, `refund_recorded` and `settled`
+#: are outcomes waiting only to close. FINAL_STATUSES alone was used as "open"
+#: everywhere, so resolved cases counted as open in the provider's queue and
+#: KPIs, stayed eligible for the first-response penalty, and blocked nothing.
+RESOLVED_OR_FINAL_STATUSES = FINAL_STATUSES_EXT | {STATUS_RESOLVED, STATUS_REFUND_RECORDED}
+
 ALLOWED_TRANSITIONS_EXT: dict[str, set[str]] = {
     **ALLOWED_TRANSITIONS,
     STATUS_SETTLED:                {STATUS_CLOSED},
@@ -285,6 +347,8 @@ MONETARY_REMEDIES = {
     "refund", "partial_refund", "full_refund", "cash", "cash_refund",
     "tenant_direct_refund", "manual_customer_refund_exception", "bank_transfer",
 }
+
+ERR_SETTLEMENT_MONETARY_NOT_ALLOWED = "SETTLEMENT_MONETARY_REMEDY_NOT_ALLOWED"
 
 # Maps a mutually agreed remedy onto the credit-ledger settlement type.
 REMEDY_TO_SETTLEMENT_TYPE = {

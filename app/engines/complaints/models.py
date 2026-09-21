@@ -64,6 +64,11 @@ class CustomerComplaint(Base):
     settlement_status               = Column(String(40),  nullable=True)
     provider_sla_penalty_charged    = Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     provider_sla_penalized_at       = Column(DateTime(timezone=True), nullable=True)
+    # Migration 376 -- the provider's resolution clock. Re-stamped every time
+    # the case returns to the provider (filed, resolution rejected, rework or
+    # refund accepted) and cleared while it waits on the customer.
+    provider_action_due_at          = Column(DateTime(timezone=True), nullable=True)
+    provider_action_penalized_at    = Column(DateTime(timezone=True), nullable=True)
     created_at                      = Column(DateTime(timezone=True), nullable=True, default=_now)
     updated_at                      = Column(DateTime(timezone=True), nullable=True, default=_now, onupdate=_now)
 
@@ -106,6 +111,8 @@ class CustomerComplaint(Base):
                                                if self.provider_sla_penalty_charged is not None else 0.0),
             "provider_sla_penalized_at": (self.provider_sla_penalized_at.isoformat()
                                             if self.provider_sla_penalized_at else None),
+            "provider_action_due_at": (self.provider_action_due_at.isoformat()
+                                         if self.provider_action_due_at else None),
         }
 
     def to_customer_dict(self) -> dict:
@@ -231,6 +238,9 @@ class ComplaintResolution(Base):
     description            = Column(Text, nullable=False)
     customer_visible_notes = Column(Text, nullable=True)
     internal_notes         = Column(Text, nullable=True)
+    # Migration 376 -- the refund amount a provider offers. Required for a
+    # refund offer so accepting it can create a refund for a known amount.
+    amount                 = Column(Numeric(12, 2), nullable=True)
     due_date               = Column(Date, nullable=True)
     created_at             = Column(DateTime(timezone=True), nullable=True, default=_now)
     updated_at             = Column(DateTime(timezone=True), nullable=True, default=_now, onupdate=_now)
@@ -246,6 +256,7 @@ class ComplaintResolution(Base):
             "proposed_by_user_id":    str(self.proposed_by_user_id) if self.proposed_by_user_id else None,
             "description":            self.description,
             "customer_visible_notes": self.customer_visible_notes,
+            "amount":                 str(self.amount) if self.amount is not None else None,
             "due_date":               self.due_date.isoformat() if self.due_date else None,
             "created_at":             self.created_at.isoformat() if self.created_at else None,
             "updated_at":             self.updated_at.isoformat() if self.updated_at else None,

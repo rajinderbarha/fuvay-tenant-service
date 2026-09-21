@@ -35,6 +35,7 @@ class PolicyIn(BaseModel):
     policy_name: Optional[str] = None
     tenant_id: Optional[uuid.UUID] = None
     category_id: Optional[uuid.UUID] = None
+    allow_customer_complaints: Optional[bool] = None
     complaint_window_hours: Optional[int] = None
     allow_duplicate_open_complaints: Optional[bool] = None
     allow_rework: Optional[bool] = None
@@ -44,6 +45,16 @@ class PolicyIn(BaseModel):
     default_resolution_hours: Optional[int] = None
     provider_sla_breach_penalty: Optional[Decimal] = None
     is_active: Optional[bool] = None
+
+    @field_validator("complaint_window_hours", "default_provider_response_hours",
+                     "default_resolution_hours")
+    @classmethod
+    def _hours_range(cls, value: int | None) -> int | None:
+        # A zero or negative window would make every new complaint overdue the
+        # moment it is filed (or never eligible); 90 days is a generous ceiling.
+        if value is not None and not (1 <= value <= 2160):
+            raise ValueError("hours must be between 1 and 2160")
+        return value
 
     @field_validator("provider_sla_breach_penalty")
     @classmethod

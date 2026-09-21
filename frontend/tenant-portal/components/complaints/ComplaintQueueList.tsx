@@ -20,6 +20,16 @@ export function statusLabel(s: string | null): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
+/** "Due in 5h" / "Overdue 2d" for the provider's running resolution deadline. */
+export function deadlineLabel(iso: string | null | undefined): { text: string; overdue: boolean } | null {
+  if (!iso) return null;
+  const mins = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
+  const span = (m: number) => (m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`);
+  return mins >= 0
+    ? { text: `Due in ${span(mins)}`, overdue: false }
+    : { text: `Overdue ${span(-mins)}`, overdue: true };
+}
+
 function timeAgo(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -60,6 +70,10 @@ export function ComplaintQueueList({ items, selectedId, onSelect }: {
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               <Badge variant={slaVariant(c.sla_status)} size="sm">{statusLabel(c.sla_status)}</Badge>
               <Badge variant="info" size="sm">{statusLabel(c.status)}</Badge>
+              {(() => {
+                const due = deadlineLabel(c.provider_action_due_at);
+                return due ? <Badge variant={due.overdue ? "danger" : "muted"} size="sm">{due.text}</Badge> : null;
+              })()}
               <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginLeft: "auto" }}>{timeAgo(c.updated_at)}</span>
             </div>
           </button>

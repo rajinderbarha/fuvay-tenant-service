@@ -6282,6 +6282,37 @@ export const adminReplyApi = {
 };
 
 // â”€â”€ Sprint 24: Admin policy API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/** A complaint policy: the deadlines providers must meet on customer
+ *  complaints, and the penalty for missing one. Resolution order is tenant,
+ *  then category, then the global default. */
+export interface ComplaintPolicyRecord {
+  id: string;
+  policy_key: string;
+  policy_name: string;
+  tenant_id: string | null;
+  category_id: string | null;
+  allow_customer_complaints: boolean;
+  complaint_window_hours: number;
+  allow_duplicate_open_complaints: boolean;
+  allow_rework: boolean;
+  allow_refund_request: boolean;
+  require_provider_response: boolean;
+  default_provider_response_hours: number;
+  default_resolution_hours: number;
+  provider_sla_breach_penalty: number;
+  is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export const adminComplaintPolicyApi = {
+  list:   () => apiFetch<ComplaintPolicyRecord[]>("/v1/admin/complaint-policies"),
+  create: (body: Partial<ComplaintPolicyRecord>) =>
+    apiFetch<ComplaintPolicyRecord>("/v1/admin/complaint-policies", { method: "POST", body: JSON.stringify(body) }),
+  update: (id: string, body: Partial<ComplaintPolicyRecord>) =>
+    apiFetch<ComplaintPolicyRecord>(`/v1/admin/complaint-policies/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+};
+
 export const adminPolicyApi = {
   list:   () => apiFetch<ReviewPolicyRecord[]>("/v1/admin/review-policies"),
   get:    (id: string) => apiFetch<ReviewPolicyRecord>(`/v1/admin/review-policies/${id}`),

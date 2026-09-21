@@ -122,7 +122,10 @@ async def notify_provider_complaint(
             notification_type=notification_type,
             title=title,
             body=body,
-            action_url=f"/provider/complaints/{complaint.id}",
+            # The Complaints & Resolution Center is the provider's workspace.
+            # This pointed at the older /provider/complaints page, which had
+            # drifted from it (no deadlines, remedies the engine rejects).
+            action_url=f"/home-services/complaints/{complaint.id}",
             action_label="View complaint",
             source_record_type="customer_complaints",
             source_record_id=complaint.id,

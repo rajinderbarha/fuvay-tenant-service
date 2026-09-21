@@ -9,7 +9,7 @@ from app.engines.complaints.constants import (
     REWORK_IN_PROGRESS, REWORK_COMPLETED, REWORK_REJECTED, REWORK_CANCELLED,
     STATUS_REWORK_APPROVED, STATUS_RESOLVED,
     ALLOWED_TRANSITIONS,
-    EVT_REWORK_CREATED,
+    EVT_REWORK_CREATED, EVT_STATUS_CHANGED,
     ACTOR_PROVIDER, ACTOR_SYSTEM,
     ERR_REWORK_NOT_FOUND, ERR_REWORK_ACCESS_DENIED, ERR_REWORK_NOT_ALLOWED,
 )
@@ -147,8 +147,26 @@ class ServiceReworkService:
         complaint = await self._complaint_svc.get_complaint(db, rework.complaint_id)
         allowed = ALLOWED_TRANSITIONS.get(complaint.status, set())
         if STATUS_RESOLVED in allowed:
+            old_status = complaint.status
             complaint.status    = STATUS_RESOLVED
             complaint.resolved_at = datetime.now(timezone.utc)
+            # The case resolved with no event and no word to the customer, so
+            # the timeline jumped straight to "resolved" and the customer only
+            # found out by opening the app.
+            await self._complaint_svc.enter_status(db, complaint, STATUS_RESOLVED)
+            await self._log_event(db, complaint.id, complaint.tenant_id, ACTOR_PROVIDER, actor_user_id,
+                                  EVT_STATUS_CHANGED, old_status, STATUS_RESOLVED,
+                                  {"rework_id": str(rework.id)}, request_id)
+            try:
+                from app.engines.complaints.notifications import notify_customer_complaint
+                await notify_customer_complaint(
+                    db, complaint, notification_type="complaint.rework_completed",
+                    title=f"Rework completed — {complaint.complaint_number}",
+                    body=(notes or "Your provider completed the rework visit.")[:480],
+                    severity="success",
+                )
+            except Exception:
+                pass
 
         await db.commit()
         return rework

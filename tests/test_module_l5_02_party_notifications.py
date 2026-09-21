@@ -15,9 +15,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 def test_helpers_target_the_right_recipient():
     from app.engines.complaints import notifications
     cust = inspect.getsource(notifications.notify_customer_complaint)
-    assert "complaint.customer_id" in cust and "/customer/complaints/" in cust
+    assert 'getattr(complaint, "customer_id"' in cust and "/customer/complaints/" in cust
     prov = inspect.getsource(notifications.notify_provider_complaint)
-    assert "_tenant_owner_ids" in prov and "/provider/complaints/" in prov
+    # Providers land in the Complaints & Resolution Center, the workspace that
+    # shows deadlines and only offers remedies the engine can carry out.
+    assert "_tenant_owner_ids" in prov and "/home-services/complaints/" in prov
     owners = inspect.getsource(notifications._tenant_owner_ids)
     assert 'role == "tenant_owner"' in owners
 

@@ -132,9 +132,11 @@ def test_settlement_requires_dual_acceptance_and_settles_the_complaint():
     accept_block = cust.split('if response == "accept":')[1].split("elif")[0]
     assert "proposal.status = PROPOSAL_ACCEPTED" not in accept_block
     assert "_check_dual_acceptance" in accept_block
-    # (b) both paths must settle the complaint on dual acceptance
+    # (b) both paths must settle the complaint on dual acceptance, through the
+    # one helper that also stamps resolved_at and logs the status change.
     for src in (cust, ten):
-        assert "complaint.status = STATUS_SETTLED" in src
+        assert "await self._settle(" in src
+    assert "complaint.status = STATUS_SETTLED" in inspect.getsource(ComplaintService._settle)
 
 
 def test_refund_events_log_the_status_actually_applied():

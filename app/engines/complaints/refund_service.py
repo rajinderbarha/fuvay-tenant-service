@@ -10,6 +10,8 @@ from app.engines.complaints.constants import (
     REFUND_REQUESTED, REFUND_PROVIDER_REVIEW,
     REFUND_APPROVED, REFUND_REJECTED, REFUND_RECORDED, REFUND_VERIFIED, REFUND_CANCELLED,
     STATUS_REFUND_REQUESTED, STATUS_REFUND_APPROVED, STATUS_REFUND_RECORDED, STATUS_RESOLVED,
+    STATUS_REJECTED, STATUS_AWAITING_PROVIDER, EVT_STATUS_CHANGED,
+    ERR_RESOLUTION_AMOUNT_REQUIRED,
     ALLOWED_TRANSITIONS,
     EVT_REFUND_REQUESTED, EVT_REFUND_APPROVED, EVT_REFUND_RECORDED,
     ACTOR_PROVIDER, ACTOR_CUSTOMER,
@@ -75,6 +77,9 @@ class RefundRequestService:
         else:
             complaint = await self._complaint_svc.get_complaint(db, complaint_id)
 
+        if actor_type == ACTOR_CUSTOMER:
+            await self._assert_refunds_allowed(db, complaint)
+
         existing = await db.scalar(
             select(RefundRequest).where(
                 RefundRequest.complaint_id == complaint_id,
@@ -89,24 +94,7 @@ class RefundRequestService:
                 "REFUND_ALREADY_REQUESTED", "This complaint already has a refund request.", status_code=409,
             )
         eligible_amount = None
-        from app.engines.invoice_payment.models import ServiceInvoice
-        invoice = None
-        if complaint.invoice_id:
-            invoice = await db.get(ServiceInvoice, complaint.invoice_id)
-        elif complaint.job_id:
-            invoice = await db.scalar(
-                select(ServiceInvoice).where(
-                    ServiceInvoice.job_id == complaint.job_id,
-                    ServiceInvoice.status != "cancelled",
-                ).order_by(ServiceInvoice.created_at.desc()).limit(1)
-            )
-        elif complaint.booking_id:
-            invoice = await db.scalar(
-                select(ServiceInvoice).where(
-                    ServiceInvoice.booking_id == complaint.booking_id,
-                    ServiceInvoice.status != "cancelled",
-                ).order_by(ServiceInvoice.created_at.desc()).limit(1)
-            )
+        invoice = await self._invoice_for_complaint(db, complaint)
         if invoice:
             eligible_amount = Decimal(str(invoice.total_amount))
             complaint.invoice_id = complaint.invoice_id or invoice.id
@@ -172,6 +160,7 @@ class RefundRequestService:
         if STATUS_REFUND_REQUESTED in allowed:
             complaint.status = STATUS_REFUND_REQUESTED
             applied = STATUS_REFUND_REQUESTED
+            await self._complaint_svc.enter_status(db, complaint, STATUS_REFUND_REQUESTED)
             await db.flush()
 
         await self._log_event(db, complaint_id, complaint.tenant_id, actor_type, actor_user_id,
@@ -220,11 +209,13 @@ class RefundRequestService:
             # remained refund_requested, leaving admin/customer timelines and
             # finance filters disagreeing about the same decision.
             complaint = await self._complaint_svc.get_complaint(db, refund.complaint_id)
+            self._mark_provider_responded(complaint)
             old_status = complaint.status
             applied = None
             if STATUS_REFUND_APPROVED in ALLOWED_TRANSITIONS.get(old_status, set()):
                 complaint.status = STATUS_REFUND_APPROVED
                 applied = STATUS_REFUND_APPROVED
+                await self._complaint_svc.enter_status(db, complaint, STATUS_REFUND_APPROVED)
                 await db.flush()
             await self._log_event(
                 db, refund.complaint_id, refund.tenant_id, ACTOR_PROVIDER, actor_user_id,
@@ -237,6 +228,7 @@ class RefundRequestService:
             refund.status = REFUND_REJECTED
             refund.rejection_reason = reason.strip()
             refund.resolution_method = "provider_rejected"
+            await self._close_out_declined_refund(db, refund, actor_user_id, request_id)
         await db.commit()
         return refund
 
@@ -343,11 +335,169 @@ class RefundRequestService:
                 complaint.status = STATUS_RESOLVED
                 complaint.resolved_at = datetime.now(timezone.utc)
                 applied = STATUS_RESOLVED
+            await self._complaint_svc.enter_status(db, complaint, complaint.status)
 
         await self._log_event(db, refund.complaint_id, refund.tenant_id, actor_type, actor_user_id,
                               EVT_REFUND_RECORDED, old_status, applied,
                               {"recorded_amount": str(recorded_amount)}, request_id)
+        if applied == STATUS_RESOLVED:
+            try:
+                from app.engines.complaints.notifications import notify_customer_complaint
+                await notify_customer_complaint(
+                    db, complaint, notification_type="complaint.refund_recorded",
+                    title=f"Refund recorded — {complaint.complaint_number}",
+                    body=f"Your provider recorded a refund of ₹{recorded_amount}. The case is resolved.",
+                    severity="success",
+                )
+            except Exception:
+                pass
         await db.commit()
+        return refund
+
+    @staticmethod
+    def _mark_provider_responded(complaint) -> None:
+        if complaint.provider_responded_at is None:
+            complaint.provider_responded_at = datetime.now(timezone.utc)
+        complaint.provider_response_required = False
+
+    async def _close_out_declined_refund(self, db: AsyncSession, refund: RefundRequest,
+                                         actor_user_id: uuid.UUID, request_id: str) -> None:
+        """Move the case on when the provider declines a refund.
+
+        A declined refund left its case in refund_requested, where no move was
+        legal and no clock ran -- stuck for good. A case that exists only to
+        carry the refund request ends as rejected (the provider's answer is the
+        outcome). Any other complaint goes back to the provider: declining the
+        money does not resolve the issue the customer raised.
+        """
+        complaint = await self._complaint_svc.get_complaint(db, refund.complaint_id)
+        self._mark_provider_responded(complaint)
+        if complaint.status != STATUS_REFUND_REQUESTED:
+            return
+        target = (STATUS_REJECTED if complaint.complaint_type == "refund_request"
+                  else STATUS_AWAITING_PROVIDER)
+        old_status = complaint.status
+        complaint.status = target
+        await self._complaint_svc.enter_status(db, complaint, target)
+        await db.flush()
+        await self._log_event(
+            db, complaint.id, complaint.tenant_id, ACTOR_PROVIDER, actor_user_id,
+            EVT_STATUS_CHANGED, old_status, target,
+            {"refund_id": str(refund.id), "rejection_reason": refund.rejection_reason}, request_id,
+        )
+        try:
+            from app.engines.complaints.notifications import notify_customer_complaint
+            body = (f"Your provider declined the refund: {refund.rejection_reason}"
+                    if target == STATUS_REJECTED else
+                    f"Your provider declined the refund ({refund.rejection_reason}) "
+                    "and will propose another way to resolve your complaint.")
+            await notify_customer_complaint(
+                db, complaint, notification_type="complaint.refund_declined",
+                title=f"Refund declined — {complaint.complaint_number}",
+                body=body[:480], severity="warning",
+            )
+        except Exception:
+            pass
+
+    async def _invoice_for_complaint(self, db: AsyncSession, complaint):
+        """The live invoice a refund on this complaint is measured against."""
+        from app.engines.invoice_payment.models import ServiceInvoice
+        if complaint.invoice_id:
+            return await db.get(ServiceInvoice, complaint.invoice_id)
+        if complaint.job_id:
+            return await db.scalar(
+                select(ServiceInvoice).where(
+                    ServiceInvoice.job_id == complaint.job_id,
+                    ServiceInvoice.status != "cancelled",
+                ).order_by(ServiceInvoice.created_at.desc()).limit(1)
+            )
+        if complaint.booking_id:
+            return await db.scalar(
+                select(ServiceInvoice).where(
+                    ServiceInvoice.booking_id == complaint.booking_id,
+                    ServiceInvoice.status != "cancelled",
+                ).order_by(ServiceInvoice.created_at.desc()).limit(1)
+            )
+        return None
+
+    async def eligible_refund_amount(self, db: AsyncSession, complaint) -> Decimal | None:
+        """The most that can be refunded on this complaint, when an invoice exists."""
+        from app.engines.invoice_payment.models import ServiceInvoice
+        invoice = await self._invoice_for_complaint(db, complaint)
+        if not isinstance(invoice, ServiceInvoice):
+            return None
+        return Decimal(str(invoice.total_amount))
+
+    async def _assert_refunds_allowed(self, db: AsyncSession, complaint) -> None:
+        """`allow_refund_request` was stored on the policy and never read."""
+        from app.engines.complaints.eligibility_service import ComplaintEligibilityService
+        category_id = complaint.category_id if isinstance(complaint.category_id, uuid.UUID) else None
+        tenant_id = complaint.tenant_id if isinstance(complaint.tenant_id, uuid.UUID) else None
+        policy = await ComplaintEligibilityService().get_complaint_policy(db, category_id, tenant_id)
+        if policy is not None and policy.allow_refund_request is False:
+            raise ServiceOSException(
+                "REFUND_NOT_ALLOWED", "Refunds are not available for this service.", status_code=403,
+            )
+
+    async def create_accepted_offer_refund(
+        self, db: AsyncSession, complaint, resolution, request_id: str = "—",
+    ) -> RefundRequest:
+        """The refund a customer gets by accepting a provider's refund offer.
+
+        It starts approved -- the provider made the offer -- so the provider's
+        only remaining step is recording the repayment, which resolves the case.
+        Does not commit; the caller moves the complaint in the same transaction.
+        """
+        active = await db.scalar(
+            select(RefundRequest).where(
+                RefundRequest.complaint_id == complaint.id,
+                RefundRequest.status.notin_((REFUND_CANCELLED, REFUND_REJECTED)),
+            ).limit(1)
+        )
+        if isinstance(active, RefundRequest):
+            raise ServiceOSException(
+                "REFUND_ALREADY_REQUESTED", "This complaint already has a refund in progress.",
+                status_code=409,
+            )
+        amount = Decimal(str(resolution.amount)) if resolution.amount is not None else None
+        if amount is None or amount <= 0:
+            raise ServiceOSException(
+                ERR_RESOLUTION_AMOUNT_REQUIRED,
+                "This refund offer has no amount. Ask the provider to offer it again.",
+                status_code=422,
+            )
+        invoice = await self._invoice_for_complaint(db, complaint)
+        if invoice is not None and getattr(invoice, "id", None):
+            complaint.invoice_id = complaint.invoice_id or invoice.id
+        now = datetime.now(timezone.utc)
+        refund = RefundRequest(
+            complaint_id        = complaint.id,
+            customer_id         = complaint.customer_id,
+            tenant_id           = complaint.tenant_id,
+            invoice_id          = complaint.invoice_id,
+            booking_id          = complaint.booking_id,
+            job_id              = complaint.job_id,
+            appointment_id      = complaint.appointment_id,
+            lead_id             = complaint.lead_id,
+            status              = REFUND_APPROVED,
+            refund_type         = "service_refund",
+            requested_amount    = amount,
+            approved_amount     = amount,
+            refund_method       = "provider_direct",
+            reason              = resolution.description,
+            approved_by_user_id = resolution.proposed_by_user_id,
+            approved_at         = now,
+            resolution_method   = "provider_direct_refund",
+        )
+        db.add(refund)
+        await db.flush()
+        await self._log_event(
+            db, complaint.id, complaint.tenant_id, ACTOR_PROVIDER, resolution.proposed_by_user_id,
+            EVT_REFUND_APPROVED, complaint.status, None,
+            {"refund_id": str(refund.id), "approved_amount": str(amount),
+             "source": "accepted_resolution", "resolution_id": str(resolution.id)},
+            request_id,
+        )
         return refund
 
     async def list_refund_requests(

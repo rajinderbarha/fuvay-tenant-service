@@ -80,6 +80,12 @@ export interface ComplaintQueueItem {
   severity: string;
   sla_status: string;
   tenant_first_response_due_at: string | null;
+  /** The provider's resolution deadline. Set while the case is the provider's
+   *  move (filed, resolution rejected, rework/refund accepted); null while it
+   *  waits on the customer or once it is resolved. */
+  provider_action_due_at: string | null;
+  provider_responded_at: string | null;
+  resolved_at: string | null;
   settlement_status: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -89,10 +95,28 @@ export interface ComplaintQueueItem {
   available_actions: string[];
 }
 
+export interface ComplaintResolutionOption {
+  value: string;
+  label: string;
+  /** A refund offer must name the amount the customer will get back. */
+  requires_amount: boolean;
+}
+
+export interface ComplaintRemedyLink {
+  kind: "rework" | "refund";
+  id: string;
+  status: string;
+  href: string;
+}
+
 export interface ComplaintDetail extends ComplaintQueueItem {
   job: ComplaintJobSnapshot | null;
   /** Why a resolution cannot be proposed yet, when it cannot. */
   action_blocked_reason?: string | null;
+  /** The remedies the server will accept on this case, per policy. */
+  available_resolution_types?: ComplaintResolutionOption[];
+  /** The rework or refund this case is waiting on, and where to act on it. */
+  remedy?: ComplaintRemedyLink | null;
 }
 
 export interface ComplaintQueueSummary {
@@ -151,7 +175,7 @@ export const tenantComplaintsApi = {
     apiFetch<T>(`/v1/provider/complaints/${complaintId}/resolutions`),
   offerResolution: <T = WsPayload>(
     complaintId: string,
-    body: { resolution_type: string; description: string; customer_visible_notes?: string },
+    body: { resolution_type: string; description: string; customer_visible_notes?: string; amount?: number },
   ) => apiFetch<T>(`/v1/provider/complaints/${complaintId}/offer-resolution`, post(body)),
 };
 
@@ -178,6 +202,7 @@ export interface ComplaintResolutionItem {
   resolution_type: string;
   description: string;
   customer_visible_notes: string | null;
+  amount?: string | null;
   created_at: string | null;
 }
 

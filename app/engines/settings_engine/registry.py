@@ -116,8 +116,8 @@ _reg(ConfigurationDefinition(
     owner_module="complaints", data_type="duration", unit="hours",
     allowed_scopes=["global", "vertical"], default_value=4, minimum=1, maximum=72,
     risk_level="medium", approval_required=False, snapshot_behavior="future_transitions",
-    has_real_consumer=False,
-    consumer_note="Registered for governance; complaints/complaint_service.py uses its own hardcoded SLA constants today.",
+    has_real_consumer=True,
+    consumer_note="app/jobs/complaint_sla.py _sla_warning_hours() via SettingsService.resolve(); applies to both the first-response and resolution deadlines.",
 ))
 
 _reg(ConfigurationDefinition(

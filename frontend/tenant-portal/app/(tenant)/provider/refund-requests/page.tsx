@@ -18,7 +18,7 @@
  *  - Refunds showed an amount and a type but no link to the complaint or job
  *    they came from, and never showed the customer's stated reason.
  */
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader, PageShell } from "@serviceos/design-system";
 import EnterpriseDataGrid, { GridColumn, GridData, RowAction } from "../../../../components/enterprise/EnterpriseDataGrid";
 import { FilterDef } from "../../../../components/enterprise/EnterpriseFilterBar";
@@ -133,6 +133,15 @@ export default function ProviderCustomerRemediesPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<RefundSummary | null>(null);
+
+  // A complaint in a remedy status links here as ?mode=rework / ?mode=refunds,
+  // so the provider lands on the list that holds the step they still owe.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("mode");
+    if (requested === "rework" || requested === "warranty" || requested === "refunds") {
+      setMode(requested);
+    }
+  }, []);
 
   /**
    * Warranty claims are cursor-paginated server-side. The grid is page-based,

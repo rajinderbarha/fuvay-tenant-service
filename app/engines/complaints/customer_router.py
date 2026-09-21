@@ -256,6 +256,7 @@ async def list_resolutions(
                 "resolution_type": res.resolution_type,
                 "description": res.description,
                 "customer_visible_notes": res.customer_visible_notes,
+                "amount": str(res.amount) if res.amount is not None else None,
                 "created_at": str(res.created_at)} for res in resolutions],
               rid, "complaint.resolutions.list")
 

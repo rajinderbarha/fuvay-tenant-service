@@ -221,6 +221,12 @@ export const ADMIN_PAGE_REGISTRY: Record<string, PageMeta> = {
     section: "engagement",
     breadcrumbs: [{ label: "Reviews" }],
   },
+  "/admin/complaints": {
+    title: "Complaint Policies",
+    section: "engagement",
+    breadcrumbs: [{ label: "Complaint Policies" }],
+    description: "Reply and resolution deadlines providers must meet on customer complaints",
+  },
         "/admin/engines": {
     title: "Engine Management",
     section: "automation",

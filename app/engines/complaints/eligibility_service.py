@@ -2,14 +2,13 @@
 import uuid
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_, case
 
 from app.engines.complaints.constants import (
     ELIGIBLE_STATUSES, VALID_RECORD_TYPES,
     RECORD_SERVICE_BOOKING, RECORD_SERVICE_JOB, RECORD_SERVICE_INVOICE,
     RECORD_COACHING_APPOINTMENT, RECORD_REAL_ESTATE_LEAD, RECORD_CUSTOMER_REVIEW,
-    STATUS_OPEN, STATUS_AWAITING_PROVIDER, STATUS_AWAITING_CUSTOMER,
-    STATUS_RESOLUTION_PROPOSED,
+    RESOLVED_OR_FINAL_STATUSES,
     ERR_COMPLAINT_INVALID_RECORD_TYPE, ERR_COMPLAINT_RECORD_NOT_FOUND,
     ERR_COMPLAINT_NOT_ELIGIBLE, ERR_COMPLAINT_WINDOW_EXPIRED,
     ERR_COMPLAINT_DUPLICATE_OPEN, ERR_COMPLAINT_ACCESS_DENIED,
@@ -20,10 +19,9 @@ from app.engines.complaints.constants import (
 )
 from app.engines.complaints.models import CustomerComplaint, ComplaintPolicy
 
-OPEN_STATUSES = {
-    STATUS_OPEN, STATUS_AWAITING_PROVIDER, STATUS_AWAITING_CUSTOMER,
-    STATUS_RESOLUTION_PROPOSED,
-}
+
+def _as_uuid(value) -> uuid.UUID | None:
+    return value if isinstance(value, uuid.UUID) else None
 
 
 class ComplaintEligibilityService:
@@ -81,7 +79,16 @@ class ComplaintEligibilityService:
                     "reason_code": ERR_COMPLAINT_TYPE_NOT_SUPPORTED,
                 }
 
+        # The record already carries its tenant, so a tenant-scoped policy
+        # applies without another lookup.
+        tenant_id = tenant_id or _as_uuid(getattr(record, "tenant_id", None))
         policy = await self.get_complaint_policy(db, category_id, tenant_id)
+        # `allow_customer_complaints` was stored and editable but never read, so
+        # switching complaints off for a category did nothing. The dedicated
+        # refund/payment flows pass no complaint_type and have their own switch.
+        if complaint_type and policy is not None and policy.allow_customer_complaints is False:
+            return {"eligible": False, "reason": "Complaints are not available for this service.",
+                    "reason_code": ERR_COMPLAINT_NOT_ELIGIBLE}
         window_hours = policy.complaint_window_hours if policy else 168
 
         window_anchor = getattr(record, "created_at", None)
@@ -177,25 +184,31 @@ class ComplaintEligibilityService:
         category_id: uuid.UUID | None = None,
         tenant_id: uuid.UUID | None = None,
     ) -> ComplaintPolicy | None:
+        """The most specific active policy: tenant beats category beats global.
+
+        This used to ignore `tenant_id` entirely, while the SLA penalty job
+        resolved policies tenant-first -- so a tenant-scoped policy changed the
+        penalty but not the filing window. One resolver now serves both.
+        """
+        q = select(ComplaintPolicy).where(ComplaintPolicy.is_active == True)  # noqa: E712
+        if tenant_id:
+            q = q.where(or_(ComplaintPolicy.tenant_id == tenant_id, ComplaintPolicy.tenant_id.is_(None)))
+        else:
+            q = q.where(ComplaintPolicy.tenant_id.is_(None))
         if category_id:
-            r = await db.execute(
-                select(ComplaintPolicy).where(
-                    ComplaintPolicy.category_id == category_id,
-                    ComplaintPolicy.is_active    == True,
-                )
-            )
-            p = r.scalars().first()
-            if p:
-                return p
-        r = await db.execute(
-            select(ComplaintPolicy).where(
-                ComplaintPolicy.category_id == None,
-                ComplaintPolicy.tenant_id   == None,
-                ComplaintPolicy.policy_key  == "default",
-                ComplaintPolicy.is_active   == True,
-            )
-        )
-        return r.scalars().first()
+            q = q.where(or_(ComplaintPolicy.category_id == category_id, ComplaintPolicy.category_id.is_(None)))
+        else:
+            q = q.where(ComplaintPolicy.category_id.is_(None))
+        q = q.order_by(
+            ComplaintPolicy.tenant_id.is_(None),
+            ComplaintPolicy.category_id.is_(None),
+            case((ComplaintPolicy.policy_key == "default", 0), else_=1),
+            ComplaintPolicy.created_at,
+        ).limit(1)
+        policy = (await db.execute(q)).scalar_one_or_none()
+        # Test doubles and partial sessions can hand back any object here; only
+        # a real policy row may change behaviour.
+        return policy if isinstance(policy, ComplaintPolicy) else None
 
     async def check_duplicate_open_complaint(
         self,
@@ -211,7 +224,10 @@ class ComplaintEligibilityService:
                 CustomerComplaint.record_type    == record_type,
                 CustomerComplaint.record_id      == record_id,
                 CustomerComplaint.complaint_type == complaint_type,
-                CustomerComplaint.status.in_(list(OPEN_STATUSES)),
+                # Anything not yet resolved is still open. The old set stopped
+                # at resolution_proposed, so while a rework visit or refund was
+                # in progress the customer could file the same complaint again.
+                CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES)),
             )
         )
         return r.scalars().first() is not None

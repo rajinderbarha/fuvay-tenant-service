@@ -8,12 +8,13 @@
  * (`ComplaintService.list_media`) that no router exposed, so customer-attached
  * photos were stored and unreachable. All three are now real. */
 import React, { useCallback } from "react";
-import { Wrench, CreditCard, Lock } from "lucide-react";
+import Link from "next/link";
+import { Wrench, CreditCard, Lock, ArrowRight } from "lucide-react";
 import { Card, Badge, Skeleton } from "../shared/ui";
 import { tenantComplaintsApi, type ComplaintDetail } from "../../lib/api";
 import { useApi } from "../../hooks/useApi";
 import { ConversationTab, EvidenceTab, ResolutionTab } from "./ComplaintCaseTabs";
-import { severityVariant, slaVariant, statusLabel } from "./ComplaintQueueList";
+import { severityVariant, slaVariant, statusLabel, deadlineLabel } from "./ComplaintQueueList";
 
 const TABS = ["overview", "conversation", "evidence", "job-context", "resolution", "activity"] as const;
 export type ComplaintTab = typeof TABS[number];
@@ -102,6 +103,7 @@ export function ComplaintCaseDetail({ complaintId, tab, onTabChange }: {
             {tab === "resolution" && (
               <ResolutionTab
                 complaintId={complaintId}
+                options={c.available_resolution_types ?? []}
                 canOffer={c.available_actions.includes("OFFER_RESOLUTION")}
                 blockedReason={c.action_blocked_reason ?? null}
                 onChanged={() => detail.refetch()}
@@ -142,13 +144,37 @@ function OverviewTab({ c }: { c: ComplaintDetail }) {
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>Last activity</p>
           <p style={{ fontSize: 12.5, color: "var(--text-primary)", margin: 0 }}>{fmtDate(c.updated_at)}</p>
         </div>
-        {c.tenant_first_response_due_at && (
+        {/* The first-response deadline stops mattering once you reply; the
+            resolution deadline is what keeps the case from sitting open. */}
+        {c.tenant_first_response_due_at && !c.provider_responded_at && (
           <div>
-            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>Response due</p>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>Reply due</p>
             <p style={{ fontSize: 12.5, color: "var(--text-primary)", margin: 0 }}>{fmtDate(c.tenant_first_response_due_at)}</p>
           </div>
         )}
+        {c.provider_action_due_at && (
+          <div>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 2px" }}>Resolve by</p>
+            <p style={{ fontSize: 12.5, color: deadlineLabel(c.provider_action_due_at)?.overdue ? "var(--danger-text)" : "var(--text-primary)", margin: 0 }}>
+              {fmtDate(c.provider_action_due_at)} · {deadlineLabel(c.provider_action_due_at)?.text}
+            </p>
+          </div>
+        )}
       </div>
+      {c.remedy && (
+        <Link href={c.remedy.href} style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+          padding: "10px 12px", borderRadius: 8, textDecoration: "none",
+          background: "var(--accent-muted)", border: "1px solid var(--brand)",
+        }}>
+          <span style={{ fontSize: 12.5, color: "var(--text-primary)" }}>
+            {c.remedy.kind === "rework" ? "Rework visit" : "Refund"} · {statusLabel(c.remedy.status)}
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)", display: "flex", alignItems: "center", gap: 4 }}>
+            Open in Refunds &amp; Warranty <ArrowRight size={12}/>
+          </span>
+        </Link>
+      )}
       {/* This used to list raw next-STATUSES from the state machine and call
           them "available next states". None of them were things a tenant could
           do -- there is no tenant status-transition endpoint -- so it described

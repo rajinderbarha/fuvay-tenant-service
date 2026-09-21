@@ -10,9 +10,12 @@ from app.engines.complaints.constants import (
     STATUS_OPEN, STATUS_AWAITING_PROVIDER, STATUS_AWAITING_CUSTOMER,
     STATUS_RESOLUTION_PROPOSED, STATUS_REWORK_APPROVED,
     STATUS_REFUND_REQUESTED, STATUS_REFUND_APPROVED, STATUS_REFUND_RECORDED,
-    STATUS_RESOLVED, STATUS_CANCELLED,
+    STATUS_RESOLVED, STATUS_CANCELLED, STATUS_CLOSED,
     STATUS_SETTLED,
     ALLOWED_TRANSITIONS, ALLOWED_TRANSITIONS_EXT, FINAL_STATUSES,
+    RESOLVED_OR_FINAL_STATUSES, PROVIDER_ACTION_TIMED_STATUSES, CUSTOMER_TURN_STATUSES,
+    PROVIDER_RESOLUTION_TYPES, ERR_RESOLUTION_TYPE_NOT_ALLOWED, ERR_RESOLUTION_AMOUNT_REQUIRED,
+    MONETARY_REMEDIES, ERR_SETTLEMENT_MONETARY_NOT_ALLOWED, RES_CANCELLED,
     SLA_ON_TIME, SLA_AT_RISK, SLA_BREACHED, SLA_ESCALATED,
     RES_PROPOSED, RES_CUSTOMER_ACCEPTED, RES_CUSTOMER_REJECTED,
     PROPOSAL_PROPOSED, PROPOSAL_ACCEPTED, PROPOSAL_REJECTED, PROPOSAL_COUNTERED,
@@ -34,6 +37,38 @@ from app.engines.complaints.models import (
     SettlementProposal,
 )
 from app.engines.complaints.eligibility_service import ComplaintEligibilityService
+from app.exceptions import ServiceOSException
+
+DEFAULT_PROVIDER_RESPONSE_HOURS = 24
+DEFAULT_RESOLUTION_HOURS = 72
+SAFETY_RESPONSE_HOURS = 1
+SAFETY_RESOLUTION_HOURS = 24
+DEFAULT_SLA_WARNING_HOURS = 4
+# How long past a deadline a breach becomes an escalation.
+SLA_ESCALATION_GRACE_HOURS = 24
+
+
+def _policy_hours(policy, key: str, default: int) -> int:
+    """An hours value from a policy row or its dict form, else the default.
+
+    Only a real positive integer counts: the policy columns are NOT NULL, but
+    test doubles and hand-built rows can carry anything.
+    """
+    value = policy.get(key) if isinstance(policy, dict) else getattr(policy, key, None)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return default
+    return value
+
+
+def _as_uuid(value):
+    """A UUID or None -- never an arbitrary object inside a SQL comparison."""
+    return value if isinstance(value, uuid.UUID) else None
+
+
+def _as_aware(value):
+    if not isinstance(value, datetime):
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 class ComplaintService:
@@ -205,9 +240,29 @@ class ComplaintService:
 
         await self._link_service_job(db, complaint, record_type, record_id)
 
-        # SLA deadlines
+        # SLA deadlines. These came from hardcoded 24h, and the admin policy's
+        # `default_provider_response_hours`, `default_resolution_hours` and
+        # `require_provider_response` were stored but never read. The resolved
+        # policy arrives with the eligibility verdict, so no second lookup.
+        policy = eligibility.get("policy")
         now = datetime.now(timezone.utc)
-        complaint.tenant_first_response_due_at = now + timedelta(hours=1 if is_safety_concern else 24)
+        response_required = not (isinstance(policy, dict) and policy.get("require_provider_response") is False)
+        # No first-response clock when the provider opened the case (a payment
+        # dispute they raised), or when the case is only the backing record of
+        # a refund request -- that request carries its own response deadline
+        # and penalty, and the complaint clock charged the provider twice for
+        # one unanswered refund.
+        if created_by_actor_type == ACTOR_PROVIDER or internal_refund_request:
+            response_required = False
+        if response_required:
+            response_hours = (SAFETY_RESPONSE_HOURS if is_safety_concern else
+                              _policy_hours(policy, "default_provider_response_hours",
+                                            DEFAULT_PROVIDER_RESPONSE_HOURS))
+            complaint.tenant_first_response_due_at = now + timedelta(hours=response_hours)
+        resolution_hours = _policy_hours(policy, "default_resolution_hours", DEFAULT_RESOLUTION_HOURS)
+        if is_safety_concern:
+            resolution_hours = min(resolution_hours, SAFETY_RESOLUTION_HOURS)
+        complaint.provider_action_due_at = now + timedelta(hours=resolution_hours)
         complaint.sla_status = SLA_ON_TIME
 
         db.add(complaint)
@@ -385,11 +440,17 @@ class ComplaintService:
         # ValueError. Pre-validate using the same ALLOWED_TRANSITIONS_EXT
         # map _transition itself uses, so nothing is created or mutated
         # unless the transition is already known to be legal.
-        target_status = (STATUS_REWORK_APPROVED
-                          if getattr(resolution, "resolution_type", None) == "rework"
-                          else STATUS_RESOLVED)
+        resolution_type = getattr(resolution, "resolution_type", None)
+        target_status = {
+            "rework": STATUS_REWORK_APPROVED,
+            "refund": STATUS_REFUND_APPROVED,
+        }.get(resolution_type, STATUS_RESOLVED)
         if target_status not in ALLOWED_TRANSITIONS_EXT.get(complaint.status, set()):
             raise ValueError(f"{ERR_COMPLAINT_INVALID_TRANSITION}: {complaint.status} → {target_status}")
+        # Only the offer that is still open can be accepted. An expired or
+        # superseded offer would otherwise re-run its remedy.
+        if getattr(resolution, "status", RES_PROPOSED) != RES_PROPOSED:
+            raise ValueError(f"{ERR_COMPLAINT_INVALID_TRANSITION}: resolution is {resolution.status}")
 
         resolution.status = RES_CUSTOMER_ACCEPTED
         complaint.customer_accepted_resolution_at = datetime.now(timezone.utc)
@@ -403,7 +464,18 @@ class ComplaintService:
         # request and move the complaint to rework_approved (the provider then
         # runs the rework, whose completion resolves the complaint). All other
         # resolution types resolve the complaint immediately as before.
-        if getattr(resolution, "resolution_type", None) == "rework":
+        if resolution_type == "refund":
+            # Accepting a refund offer used to resolve the case on the spot, so
+            # the provider's promise of money never became a refund anyone had
+            # to pay. It now creates an approved refund for the offered amount;
+            # recording the repayment is what resolves the case.
+            from app.engines.complaints.refund_service import RefundRequestService
+            await RefundRequestService().create_accepted_offer_refund(
+                db, complaint, resolution, request_id=request_id,
+            )
+            await self._transition(db, complaint, STATUS_REFUND_APPROVED, ACTOR_CUSTOMER, customer_id,
+                                   reason="Customer accepted the refund offer", request_id=request_id)
+        elif resolution_type == "rework":
             from app.engines.complaints.rework_service import ServiceReworkService
             await ServiceReworkService().create_rework_request_from_complaint(
                 db, complaint_id, customer_id, ACTOR_CUSTOMER,
@@ -422,11 +494,16 @@ class ComplaintService:
                               request_id=request_id)
         try:
             from app.engines.complaints.notifications import notify_provider_complaint
+            next_step = {
+                "refund": " Record the repayment in Refunds & Warranty to resolve the case.",
+                "rework": " Schedule and complete the rework visit in Refunds & Warranty.",
+            }.get(resolution_type, "")
             await notify_provider_complaint(
                 db, complaint,
                 notification_type="complaint.resolution_accepted",
                 title=f"Resolution accepted — {complaint.complaint_number}",
-                body="The customer accepted the proposed resolution.", severity="success",
+                body="The customer accepted the proposed resolution." + next_step,
+                severity="success",
             )
         except Exception:
             pass
@@ -490,7 +567,10 @@ class ComplaintService:
         severity vocabulary already used elsewhere in this file."""
         base = select(CustomerComplaint).where(CustomerComplaint.tenant_id == tenant_id)
         rows = (await db.execute(base)).scalars().all()
-        open_rows = [c for c in rows if c.status not in FINAL_STATUSES]
+        # Resolved and settled cases are not open. They were counted as open
+        # because only closed/cancelled/rejected were excluded -- and since
+        # nothing ever wrote `closed`, every resolved case stayed "open".
+        open_rows = [c for c in rows if c.status not in RESOLVED_OR_FINAL_STATUSES]
         # `awaiting_response` and `resolved_this_month` are new. The tenant
         # KPI strip already rendered tiles for both (plus an "SLA breached"
         # tile reading `sla_breached`), but this method returned none of those
@@ -533,7 +613,7 @@ class ComplaintService:
         clauses = [CustomerComplaint.tenant_id == tenant_id]
         if status:
             clauses.append(CustomerComplaint.status == status if status != "open"
-                            else CustomerComplaint.status.notin_(FINAL_STATUSES))
+                            else CustomerComplaint.status.notin_(RESOLVED_OR_FINAL_STATUSES))
         if severity:
             clauses.append(CustomerComplaint.severity == severity)
         if sla_status:
@@ -639,8 +719,10 @@ class ComplaintService:
         description: str,
         customer_visible_notes: str | None = None,
         request_id: str = "—",
+        amount=None,
     ) -> ComplaintResolution:
         complaint = await self.provider_get_complaint(db, tenant_id, complaint_id)
+        offer_amount = await self._validate_offer(db, complaint, resolution_type, amount)
         # Slice 2F-9A: validate the state transition *before* creating the
         # resolution record. Previously the record was added/flushed first
         # and the transition legality was only checked afterward -- an
@@ -658,11 +740,20 @@ class ComplaintService:
             proposed_by_user_id    = actor_user_id,
             description            = description,
             customer_visible_notes = customer_visible_notes,
+            amount                 = offer_amount,
         )
         db.add(resolution)
+        # A proposal is a response. Without this, a provider who went straight
+        # to offering a remedy still read as "never responded" and was charged
+        # the first-response penalty on a case they had answered.
+        if complaint.provider_responded_at is None:
+            complaint.provider_responded_at = datetime.now(timezone.utc)
+        complaint.provider_response_required = False
         await db.flush()
         await self._log_event(db, complaint_id, tenant_id, ACTOR_PROVIDER, actor_user_id,
-                              EVT_RESOLUTION_PROPOSED, None, None, None, {"type": resolution_type},
+                              EVT_RESOLUTION_PROPOSED, None, None, None,
+                              {"type": resolution_type,
+                               **({"amount": str(offer_amount)} if offer_amount is not None else {})},
                               request_id=request_id)
         # bug #42: the customer must be told a resolution is awaiting their
         # accept/reject — otherwise the complaint sits in resolution_proposed
@@ -672,11 +763,14 @@ class ComplaintService:
                 notify_customer_complaint, notify_customer_complaint_channel,
             )
             from app.engines.messaging_gateway.constants import PICK_COMPLAINT, PICKER_SEP
+            offered = resolution_type.replace('_', ' ')
+            if offer_amount is not None:
+                offered = f"{offered} of ₹{offer_amount}"
             await notify_customer_complaint(
                 db, complaint,
                 notification_type="complaint.resolution_offered",
                 title=f"A resolution was offered — {complaint.complaint_number}",
-                body=f"The provider offered: {resolution_type.replace('_', ' ')}. "
+                body=f"The provider offered: {offered}. "
                      "Open the complaint to accept or reject it.",
                 severity="info",
             )
@@ -812,34 +906,56 @@ class ComplaintService:
         return p
 
     # ── SLA management ────────────────────────────────────────────────────────
+    @staticmethod
+    def running_provider_deadline(complaint) -> tuple[datetime | None, str | None]:
+        """The provider deadline currently running on `complaint`, if any.
+
+        Two clocks, one at a time. Until the provider first replies or
+        proposes, the first-response deadline runs. After that, the resolution
+        deadline runs for as long as the case is the provider's move. While it
+        waits on the customer, or once it is resolved, no provider clock runs.
+
+        Before the resolution clock existed, a single reply stopped all
+        measurement: the case could then sit unresolved forever.
+        """
+        if complaint.status in RESOLVED_OR_FINAL_STATUSES:
+            return None, None
+        if complaint.provider_responded_at is None:
+            first_due = _as_aware(complaint.tenant_first_response_due_at)
+            if first_due is not None:
+                return first_due, "first_response"
+        if complaint.status in PROVIDER_ACTION_TIMED_STATUSES:
+            action_due = _as_aware(getattr(complaint, "provider_action_due_at", None))
+            if action_due is not None:
+                return action_due, "resolution"
+        return None, None
+
     async def check_and_update_sla(
-        self, db: AsyncSession, complaint: CustomerComplaint, request_id: str = "—"
+        self, db: AsyncSession, complaint: CustomerComplaint, request_id: str = "—",
+        *, warning_hours: int | None = None,
     ) -> CustomerComplaint:
-        """Recompute sla_status based on now vs. deadline. Does not commit."""
-        now = datetime.now(timezone.utc)
-        if complaint.status in FINAL_STATUSES:
-            return complaint
+        """Recompute sla_status against the running provider deadline. Does not commit.
 
-        # This deadline measures the provider's FIRST response, not how long a
-        # mutually worked complaint remains open. Once a response exists, later
-        # scheduler passes must never turn an answered case into a false breach.
-        if complaint.provider_responded_at is not None:
-            return complaint
-
-        due = complaint.tenant_first_response_due_at
+        `sla_status` describes whether the provider is late NOW. A breach is
+        not erased from history -- its event and penalty stay -- but a case
+        that has moved on to the customer, or into a fresh provider turn, no
+        longer reads as breached in the provider's queue.
+        """
+        due, clock = self.running_provider_deadline(complaint)
         # Historical/imported rows (and a few thin API projections) can carry
-        # no concrete deadline.  Treat anything other than a real datetime as
-        # "not scheduled" rather than letting a response fail while comparing
-        # an opaque value to the clock.
-        if not isinstance(due, datetime):
+        # no concrete deadline; that is "not scheduled", never a breach.
+        if due is None:
             return complaint
+        warn = (warning_hours if isinstance(warning_hours, int) and warning_hours > 0
+                else DEFAULT_SLA_WARNING_HOURS)
 
+        now = datetime.now(timezone.utc)
         old_sla = complaint.sla_status
-        if now > due + timedelta(hours=24):
+        if now > due + timedelta(hours=SLA_ESCALATION_GRACE_HOURS):
             complaint.sla_status = SLA_ESCALATED
         elif now > due:
             complaint.sla_status = SLA_BREACHED
-        elif now > due - timedelta(hours=4):
+        elif now > due - timedelta(hours=warn):
             complaint.sla_status = SLA_AT_RISK
         else:
             complaint.sla_status = SLA_ON_TIME
@@ -848,7 +964,8 @@ class ComplaintService:
             await self._log_event(
                 db, complaint.id, complaint.tenant_id, ACTOR_SYSTEM, None,
                 EVT_SLA_BREACHED, None, None,
-                {"sla_status": old_sla}, {"sla_status": complaint.sla_status},
+                {"sla_status": old_sla},
+                {"sla_status": complaint.sla_status, "clock": clock, "due_at": due.isoformat()},
                 request_id=request_id,
             )
         await db.flush()
@@ -862,7 +979,7 @@ class ComplaintService:
             select(CustomerComplaint)
             .where(and_(
                 CustomerComplaint.tenant_first_response_due_at < now,
-                CustomerComplaint.status.notin_(list(FINAL_STATUSES | {STATUS_SETTLED})),
+                CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES)),
                 CustomerComplaint.provider_responded_at.is_(None),
             ))
             .order_by(CustomerComplaint.tenant_first_response_due_at)
@@ -896,6 +1013,17 @@ class ComplaintService:
             complaint = await self.provider_get_complaint(db, tenant_id, complaint_id)
         else:
             complaint = await self._get_complaint(db, complaint_id)
+        # A settlement pays credit points or nothing. `_execute_settlement_payout`
+        # already refuses to move money for these types, so a "full refund"
+        # settlement accepted by both parties settled the case and paid the
+        # customer nothing. Refuse it up front; money goes through a refund.
+        if (proposal_type or "").lower() in MONETARY_REMEDIES:
+            raise ServiceOSException(
+                ERR_SETTLEMENT_MONETARY_NOT_ALLOWED,
+                "A settlement can offer credit points or a non-monetary remedy. "
+                "Offer a refund resolution to return money.",
+                status_code=422,
+            )
         proposal = SettlementProposal(
             complaint_id        = complaint_id,
             tenant_id           = complaint.tenant_id,
@@ -965,10 +1093,9 @@ class ComplaintService:
             self._check_dual_acceptance(proposal)
             if proposal.status == PROPOSAL_ACCEPTED:
                 complaint.settlement_status = PROPOSAL_ACCEPTED
-                complaint.resolved_at = now
                 # bug #30b: complaint.status was never advanced, so a fully
                 # dual-accepted settlement left the complaint 'open' forever.
-                complaint.status = STATUS_SETTLED
+                await self._settle(db, complaint, ACTOR_CUSTOMER, customer_id, request_id)
                 # Pay the customer in CREDIT POINTS, funded from the provider's
                 # canonical usage-credit balance. Never money.
                 await self._execute_settlement_payout(db, complaint, proposal, customer_id)
@@ -1025,11 +1152,10 @@ class ComplaintService:
             self._check_dual_acceptance(proposal)
             if proposal.status == PROPOSAL_ACCEPTED:
                 complaint.settlement_status = PROPOSAL_ACCEPTED
-                complaint.resolved_at = now
                 # MODULE-L5-02 bug #30b: complaint.status was never advanced on
                 # dual acceptance, so a settlement accepted by BOTH parties left
                 # the complaint sitting at 'open' in every queue forever.
-                complaint.status = STATUS_SETTLED
+                await self._settle(db, complaint, ACTOR_PROVIDER, actor_user_id, request_id)
                 # Pay the customer in credit points funded from the provider's
                 # canonical usage-credit balance. Never money.
                 await self._execute_settlement_payout(db, complaint, proposal, actor_user_id)
@@ -1055,6 +1181,180 @@ class ComplaintService:
             .order_by(SettlementProposal.created_at)
         )
         return r.scalars().all()
+
+    # ── Status side effects ───────────────────────────────────────────────────
+    async def enter_status(self, db: AsyncSession, complaint, new_status: str) -> None:
+        """Everything that must happen when a complaint enters `new_status`.
+
+        Called from `_transition` and from the refund/rework services, which
+        write the complaint status themselves. Keeping it in one place is what
+        keeps the clocks honest: the resolution deadline restarts whenever the
+        case comes back to the provider and stops while it waits on the
+        customer, and `resolved_at`/`closed_at` are stamped however the case
+        got there (accepting a resolution never stamped `resolved_at`, so those
+        cases were missing from "Resolved this month").
+        """
+        now = datetime.now(timezone.utc)
+        if new_status in PROVIDER_ACTION_TIMED_STATUSES:
+            policy = await self._eligibility.get_complaint_policy(
+                db, _as_uuid(complaint.category_id), _as_uuid(complaint.tenant_id),
+            )
+            hours = _policy_hours(policy, "default_resolution_hours", DEFAULT_RESOLUTION_HOURS)
+            complaint.provider_action_due_at = now + timedelta(hours=hours)
+            if complaint.provider_responded_at is not None:
+                complaint.sla_status = SLA_ON_TIME
+        else:
+            complaint.provider_action_due_at = None
+            if new_status in CUSTOMER_TURN_STATUSES and complaint.provider_responded_at is not None:
+                complaint.sla_status = SLA_ON_TIME
+        if new_status in (STATUS_RESOLVED, STATUS_SETTLED) and complaint.resolved_at is None:
+            complaint.resolved_at = now
+        if new_status in FINAL_STATUSES and complaint.closed_at is None:
+            complaint.closed_at = now
+
+    async def _settle(self, db: AsyncSession, complaint, actor_type: str, actor_user_id,
+                      request_id: str) -> None:
+        """Move a dual-accepted settlement's case to `settled`, once."""
+        if complaint.status in RESOLVED_OR_FINAL_STATUSES:
+            # The case already reached an outcome; the agreement is still
+            # honoured by the payout, but the status is not rewound.
+            return
+        old_status = complaint.status
+        complaint.status = STATUS_SETTLED
+        await self.enter_status(db, complaint, STATUS_SETTLED)
+        await self._log_event(
+            db, complaint.id, complaint.tenant_id, actor_type, actor_user_id,
+            EVT_STATUS_CHANGED, old_status, STATUS_SETTLED, None, None,
+            reason="Settlement accepted by both parties", request_id=request_id,
+        )
+
+    async def _validate_offer(self, db: AsyncSession, complaint, resolution_type: str, amount):
+        """Refuse an offer the engine cannot carry out. Returns the refund amount.
+
+        `offer-resolution` accepted any string, and the workspace offered
+        "partial_refund" and "credit", which nothing modelled -- accepting them
+        resolved the case with no remedy. The policy's `allow_rework` and
+        `allow_refund_request` switches were stored but never read.
+        """
+        if resolution_type not in PROVIDER_RESOLUTION_TYPES:
+            raise ServiceOSException(
+                ERR_RESOLUTION_TYPE_NOT_ALLOWED,
+                f"'{resolution_type}' is not a resolution that can be offered.",
+                status_code=422,
+            )
+        policy = await self._eligibility.get_complaint_policy(
+            db, _as_uuid(complaint.category_id), _as_uuid(complaint.tenant_id),
+        )
+        if resolution_type == "rework" and policy is not None and policy.allow_rework is False:
+            raise ServiceOSException(ERR_RESOLUTION_TYPE_NOT_ALLOWED,
+                                     "Free rework is not offered for this service.", status_code=422)
+        if resolution_type != "refund":
+            return None
+        if policy is not None and policy.allow_refund_request is False:
+            raise ServiceOSException(ERR_RESOLUTION_TYPE_NOT_ALLOWED,
+                                     "Refunds are not offered for this service.", status_code=422)
+        from decimal import Decimal, InvalidOperation
+        try:
+            value = Decimal(str(amount)) if amount is not None else None
+        except (InvalidOperation, ValueError):
+            value = None
+        if value is None or not value.is_finite() or value <= 0:
+            raise ServiceOSException(ERR_RESOLUTION_AMOUNT_REQUIRED,
+                                     "Enter the refund amount you are offering.", status_code=422)
+        from app.engines.complaints.refund_service import RefundRequestService
+        ceiling = await RefundRequestService().eligible_refund_amount(db, complaint)
+        if ceiling is not None and value > ceiling:
+            raise ServiceOSException(
+                "REFUND_AMOUNT_INVALID",
+                f"A refund cannot exceed the invoice total of ₹{ceiling}.",
+                status_code=422, context={"maximum_eligible_amount": float(ceiling)},
+            )
+        return value.quantize(Decimal("0.01"))
+
+    # ── Scheduler operations (app/jobs/complaint_sla.py) ─────────────────────
+    async def pending_resolution(self, db: AsyncSession, complaint_id) -> ComplaintResolution | None:
+        """The offer currently waiting on the customer, if any."""
+        rows = await self.list_resolutions(db, complaint_id)
+        pending = [r for r in rows if r.status == RES_PROPOSED]
+        return pending[-1] if pending else None
+
+    async def remind_customer_to_respond(self, db: AsyncSession, complaint, *, expires_at: datetime,
+                                         request_id: str = "job:complaint_sla") -> None:
+        """One nudge while a proposed resolution waits on the customer."""
+        await self._log_event(
+            db, complaint.id, complaint.tenant_id, ACTOR_SYSTEM, None,
+            "customer_response_reminder", None, None, None,
+            {"expires_at": expires_at.isoformat()}, request_id=request_id,
+        )
+        try:
+            from app.engines.complaints.notifications import (
+                notify_customer_complaint, notify_customer_complaint_channel,
+            )
+            when = expires_at.strftime("%d %b")
+            body = (f"Your provider proposed a resolution for {complaint.complaint_number}. "
+                    f"Please accept or reject it by {when}, or the case will be closed as resolved.")
+            await notify_customer_complaint(
+                db, complaint, notification_type="complaint.resolution_reminder",
+                title=f"Waiting for your answer — {complaint.complaint_number}",
+                body=body, severity="warning",
+            )
+            await notify_customer_complaint_channel(db, complaint, text=body)
+        except Exception:
+            pass
+
+    async def expire_unanswered_resolution(self, db: AsyncSession, complaint,
+                                           request_id: str = "job:complaint_sla") -> bool:
+        """Resolve a case whose proposed resolution the customer never answered.
+
+        Without this a customer who went quiet held the case open forever --
+        the provider cannot offer again while one offer is pending, so they had
+        no move either. The offer is withdrawn (it can no longer be accepted)
+        and the case resolves; the customer can still message until it closes.
+        """
+        if complaint.status not in CUSTOMER_TURN_STATUSES:
+            return False
+        from app.engines.complaints.constants import CUSTOMER_RESPONSE_EXPIRY_HOURS
+        for resolution in await self.list_resolutions(db, complaint.id):
+            if resolution.status == RES_PROPOSED:
+                resolution.status = RES_CANCELLED
+        await self._transition(
+            db, complaint, STATUS_RESOLVED, ACTOR_SYSTEM, None,
+            reason=(f"No customer response to the proposed resolution within "
+                    f"{CUSTOMER_RESPONSE_EXPIRY_HOURS // 24} days"),
+            request_id=request_id,
+        )
+        try:
+            from app.engines.complaints.notifications import (
+                notify_customer_complaint, notify_provider_complaint,
+            )
+            await notify_customer_complaint(
+                db, complaint, notification_type="complaint.resolution_expired",
+                title=f"Complaint resolved — {complaint.complaint_number}",
+                body="We did not hear back about the proposed resolution, so this case is now resolved.",
+            )
+            await notify_provider_complaint(
+                db, complaint, notification_type="complaint.resolution_expired",
+                title=f"Complaint resolved — {complaint.complaint_number}",
+                body="The customer did not answer your proposed resolution in time. The case is resolved.",
+            )
+        except Exception:
+            pass
+        return True
+
+    async def close_resolved(self, db: AsyncSession, complaint,
+                             request_id: str = "job:complaint_sla") -> bool:
+        """Close a case that reached an outcome. Nothing ever wrote `closed`."""
+        from app.engines.complaints.constants import STATUS_REFUND_RECORDED
+        if complaint.status == STATUS_REFUND_RECORDED:
+            # Recording a refund advances straight to resolved; a row left in
+            # refund_recorded predates that and would otherwise never move.
+            await self._transition(db, complaint, STATUS_RESOLVED, ACTOR_SYSTEM, None,
+                                   reason="Refund recorded", request_id=request_id)
+        if complaint.status not in (STATUS_RESOLVED, STATUS_SETTLED):
+            return False
+        await self._transition(db, complaint, STATUS_CLOSED, ACTOR_SYSTEM, None,
+                               reason="Closed automatically after resolution", request_id=request_id)
+        return True
 
     # ── Internal helpers ──────────────────────────────────────────────────────
     def _check_dual_acceptance(self, proposal: SettlementProposal) -> None:
@@ -1187,6 +1487,7 @@ class ComplaintService:
         if new_status not in allowed:
             raise ValueError(f"{ERR_COMPLAINT_INVALID_TRANSITION}: {old_status} → {new_status}")
         complaint.status = new_status
+        await self.enter_status(db, complaint, new_status)
         await db.flush()
         await self._log_event(
             db, complaint.id, complaint.tenant_id, actor_type, actor_user_id,

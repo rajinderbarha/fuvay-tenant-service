@@ -48,6 +48,8 @@ class OfferResolutionIn(BaseModel):
     resolution_type:       str
     description:           str
     customer_visible_notes: Optional[str] = None
+    # Required when resolution_type is "refund"; ignored otherwise.
+    amount:                Optional[Decimal] = None
 
 
 class ScheduleReworkIn(BaseModel):
@@ -145,6 +147,7 @@ async def offer_resolution(
         body.resolution_type, body.description,
         customer_visible_notes=body.customer_visible_notes,
         request_id=_rid(r),
+        amount=body.amount,
     )
     return ok({"id": str(res.id), "status": res.status, "resolution_type": res.resolution_type},
               _rid(r), "provider.resolution.offered")
@@ -161,6 +164,7 @@ async def list_resolutions(
     resolutions = await _complaint.list_resolutions(db, complaint_id)
     return ok([{"id": str(res.id), "status": res.status, "resolution_type": res.resolution_type,
                 "description": res.description, "customer_visible_notes": res.customer_visible_notes,
+                "amount": str(res.amount) if res.amount is not None else None,
                 "created_at": str(res.created_at)} for res in resolutions], _rid(r), "provider.resolutions.list")
 
 

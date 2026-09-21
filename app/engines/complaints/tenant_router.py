@@ -23,8 +23,11 @@ from app.schemas.base import ok
 from app.exceptions import ServiceOSException
 from app.engines.complaints.complaint_service import ComplaintService
 from app.engines.complaints.constants import (
-    ALLOWED_TRANSITIONS_EXT, FINAL_STATUSES_EXT, STATUS_RESOLUTION_PROPOSED,
-    STATUS_AWAITING_CUSTOMER,
+    ALLOWED_TRANSITIONS_EXT, FINAL_STATUSES, STATUS_RESOLUTION_PROPOSED,
+    STATUS_AWAITING_CUSTOMER, STATUS_REWORK_APPROVED, STATUS_REFUND_REQUESTED,
+    STATUS_REFUND_APPROVED, STATUS_RESOLVED, STATUS_SETTLED, STATUS_REFUND_RECORDED,
+    RESOLVED_OR_FINAL_STATUSES, PROVIDER_RESOLUTION_OPTIONS,
+    CUSTOMER_RESPONSE_EXPIRY_HOURS, RESOLVED_AUTO_CLOSE_HOURS,
 )
 from app.engines.tenant_engine.customer_operational_access_policy import customer_alias
 
@@ -57,9 +60,13 @@ def _available_actions(status: str) -> list[str]:
                            which transitions to resolution_proposed and is
                            therefore only legal from a status that permits it.
     """
-    if status in FINAL_STATUSES_EXT:
+    if status in FINAL_STATUSES:
         return []
+    # A resolved or settled case stays open for follow-up messages until it
+    # closes automatically; nothing else can happen to it.
     actions = ["SEND_MESSAGE"]
+    if status in RESOLVED_OR_FINAL_STATUSES:
+        return actions
     if STATUS_RESOLUTION_PROPOSED in ALLOWED_TRANSITIONS_EXT.get(status, set()):
         actions.append("OFFER_RESOLUTION")
     return actions
@@ -71,21 +78,78 @@ def _blocked_reason(status: str, actions: list[str]) -> str | None:
     Without this the workspace can only show a missing button, which reads as
     a broken page rather than as "this case is waiting on someone else".
     """
-    if status in FINAL_STATUSES_EXT:
+    if status in FINAL_STATUSES:
         return None
     if "OFFER_RESOLUTION" in actions:
         return None
-    if status == STATUS_RESOLUTION_PROPOSED:
+    if status in (STATUS_RESOLUTION_PROPOSED, STATUS_AWAITING_CUSTOMER):
+        days = CUSTOMER_RESPONSE_EXPIRY_HOURS // 24
         return (
-            "A resolution has been proposed and is with the customer. "
-            "You can keep replying while they decide."
+            "A resolution has been proposed and is with the customer. You can keep "
+            f"replying while they decide. If they do not answer within {days} days "
+            "the case resolves automatically."
         )
-    if status == STATUS_AWAITING_CUSTOMER:
-        return "This case is waiting on the customer. You can keep replying."
-    return (
-        "This case has moved into its selected remedy flow. You can keep "
-        "replying to the customer while the provider-owned action is completed."
-    )
+    # The remedy steps below are the provider's to finish, and the resolution
+    # deadline keeps running until they are done -- the old copy said only that
+    # the case had "moved into its remedy flow", which read as someone else's job.
+    if status == STATUS_REWORK_APPROVED:
+        return ("The customer accepted a free rework visit. Schedule it and mark it complete "
+                "in Refunds & Warranty; completing it resolves this case.")
+    if status == STATUS_REFUND_REQUESTED:
+        return "The customer requested a refund. Approve or decline it in Refunds & Warranty."
+    if status == STATUS_REFUND_APPROVED:
+        return ("A refund is approved. Record the repayment in Refunds & Warranty; "
+                "recording it resolves this case.")
+    if status in (STATUS_RESOLVED, STATUS_SETTLED, STATUS_REFUND_RECORDED):
+        return (f"This case is resolved. It closes automatically {RESOLVED_AUTO_CLOSE_HOURS} "
+                "hours after resolution; you can still reply until then.")
+    return None
+
+
+async def _remedy(db: AsyncSession, complaint) -> dict | None:
+    """The rework or refund this case is waiting on, and where to act on it.
+
+    A case in a remedy status had no way to reach that remedy from the
+    workspace, so finishing the job meant knowing to open a different page.
+    """
+    if complaint.status not in (STATUS_REWORK_APPROVED, STATUS_REFUND_REQUESTED, STATUS_REFUND_APPROVED):
+        return None
+    from app.engines.complaints.models import RefundRequest, ServiceReworkRequest
+    if complaint.status == STATUS_REWORK_APPROVED:
+        row = (await db.execute(
+            select(ServiceReworkRequest).where(ServiceReworkRequest.complaint_id == complaint.id)
+            .order_by(ServiceReworkRequest.created_at.desc()).limit(1)
+        )).scalars().first()
+        kind, mode = "rework", "rework"
+    else:
+        row = (await db.execute(
+            select(RefundRequest).where(RefundRequest.complaint_id == complaint.id)
+            .order_by(RefundRequest.created_at.desc()).limit(1)
+        )).scalars().first()
+        kind, mode = "refund", "refunds"
+    if row is None:
+        return None
+    return {
+        "kind": kind,
+        "id": str(row.id),
+        "status": row.status,
+        "href": f"/provider/refund-requests?mode={mode}",
+    }
+
+
+async def _resolution_options(db: AsyncSession, complaint) -> list[dict]:
+    """The remedies this provider can offer on this case, per policy."""
+    from app.engines.complaints.eligibility_service import ComplaintEligibilityService
+    category_id = complaint.category_id if isinstance(complaint.category_id, uuid.UUID) else None
+    policy = await ComplaintEligibilityService().get_complaint_policy(db, category_id, complaint.tenant_id)
+    options = []
+    for value, label in PROVIDER_RESOLUTION_OPTIONS:
+        if value == "rework" and policy is not None and policy.allow_rework is False:
+            continue
+        if value == "refund" and policy is not None and policy.allow_refund_request is False:
+            continue
+        options.append({"value": value, "label": label, "requires_amount": value == "refund"})
+    return options
 
 
 async def _service_options(db: AsyncSession, tenant_id: str) -> list[dict]:
@@ -230,12 +294,17 @@ async def get_complaint(
     await _svc.check_and_update_sla(db, c)
     await db.commit()
     job = await _job_snapshot(db, c.job_id)
+    actions = _available_actions(c.status)
     return ok({
         **c.to_provider_dict(),
         "customer_alias": customer_alias(tenant_id, c.customer_id),
         "job": job,
-        "available_actions": _available_actions(c.status),
-        "action_blocked_reason": _blocked_reason(c.status, _available_actions(c.status)),
+        "available_actions": actions,
+        "action_blocked_reason": _blocked_reason(c.status, actions),
+        "available_resolution_types": (
+            await _resolution_options(db, c) if "OFFER_RESOLUTION" in actions else []
+        ),
+        "remedy": await _remedy(db, c),
     }, _rid(r), "tenant.complaints.get")
 
 
