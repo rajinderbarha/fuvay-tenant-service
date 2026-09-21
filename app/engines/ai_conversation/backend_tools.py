@@ -526,13 +526,18 @@ class BackendToolExecutor:
         try:
             import uuid as _uuid
             from app.engines.home_service_booking.models import HomeServiceBookingDraft
-            from app.engines.admin_catalog.models import MasterIssueType, ServiceIssueMapping
+            from app.engines.admin_catalog.models import (
+                MasterIssueType,
+                ServiceIssueMapping,
+                ServiceType,
+            )
 
             draft = await self.db.get(HomeServiceBookingDraft, _uuid.UUID(draft_id))
             if not draft:
                 return {"error": "Draft not found", "problems": []}
 
             eligible_job_types = None
+            eligible_type_ids = None
             if getattr(draft, "zipcode", None):
                 # The postcode catalog has already run the production matcher.
                 # Reuse that answer here so a problem whose exact job type has
@@ -545,7 +550,9 @@ class BackendToolExecutor:
                 service_readiness = ready.get(draft.offering_id)
                 if service_readiness is None:
                     eligible_job_types = set()
+                    eligible_type_ids = set()
                 else:
+                    eligible_type_ids = set(service_readiness.get("type_ids") or [])
                     selected_type_id = getattr(draft, "offering_type_id", None)
                     typed_job_types = service_readiness.get("type_job_type_ids") or {}
                     # For exact-type-priced services, readiness can differ by
@@ -558,10 +565,24 @@ class BackendToolExecutor:
                     else:
                         eligible_job_types = set(service_readiness["job_type_ids"])
 
+            default_type_id = (
+                select(ServiceType.id)
+                .where(
+                    ServiceType.slug
+                    == ServiceIssueMapping.metadata_json[
+                        "default_service_type_slug"
+                    ].astext,
+                    ServiceType.is_active.is_(True),
+                    ServiceType.deleted_at.is_(None),
+                )
+                .correlate(ServiceIssueMapping)
+                .scalar_subquery()
+            )
             rows = (await self.db.execute(
                 select(MasterIssueType.id, MasterIssueType.name, MasterIssueType.description,
                        MasterIssueType.icon_url, MasterIssueType.image_url,
-                       ServiceIssueMapping.job_type_id.label("job_type_id"))
+                       ServiceIssueMapping.job_type_id.label("job_type_id"),
+                       default_type_id.label("default_type_id"))
                 .join(ServiceIssueMapping, ServiceIssueMapping.issue_type_id == MasterIssueType.id)
                 .where(
                     ServiceIssueMapping.master_service_id == draft.offering_id,
@@ -578,6 +599,10 @@ class BackendToolExecutor:
                 rows = [
                     r for r in rows
                     if getattr(r, "job_type_id", None) in eligible_job_types
+                    and (
+                        getattr(r, "default_type_id", None) is None
+                        or getattr(r, "default_type_id", None) in eligible_type_ids
+                    )
                 ]
             return {
                 "problems": [

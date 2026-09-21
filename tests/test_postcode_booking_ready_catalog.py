@@ -238,6 +238,125 @@ async def test_problem_catalog_uses_selected_type_readiness(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_problem_catalog_hides_unpriced_exact_default_type(monkeypatch):
+    """Do not offer Pipeline merely because another Plumbing type matches."""
+    from types import SimpleNamespace
+
+    from app.engines.ai_conversation.backend_tools import BackendToolExecutor
+    from app.engines.home_service_booking import offering_catalog_service as catalog
+
+    offering_id = uuid.uuid4()
+    installation_job_id = uuid.uuid4()
+    tap_type_id = uuid.uuid4()
+    pipeline_type_id = uuid.uuid4()
+    draft = SimpleNamespace(
+        offering_id=offering_id,
+        offering_type_id=None,
+        zipcode="140412",
+    )
+    rows = [
+        SimpleNamespace(
+            id=uuid.uuid4(), name="New tap / fixture installation",
+            description=None, icon_url=None, image_url=None,
+            job_type_id=installation_job_id, default_type_id=None,
+        ),
+        SimpleNamespace(
+            id=uuid.uuid4(), name="New pipeline for appliance",
+            description=None, icon_url=None, image_url=None,
+            job_type_id=installation_job_id,
+            default_type_id=pipeline_type_id,
+        ),
+    ]
+
+    async def only_tap_is_ready(_db, _zipcode):
+        return {
+            offering_id: {
+                "job_type_ids": {installation_job_id},
+                "type_ids": {tap_type_id},
+                "type_job_type_ids": {
+                    tap_type_id: {installation_job_id},
+                },
+            }
+        }
+
+    monkeypatch.setattr(catalog, "booking_ready_service_matches", only_tap_is_ready)
+
+    class _Rows:
+        def all(self):
+            return rows
+
+    class _ProblemDB:
+        async def get(self, _model, _record_id):
+            return draft
+
+        async def execute(self, _statement):
+            return _Rows()
+
+    result = await BackendToolExecutor(
+        _ProblemDB(), None, channel="instagram",
+    )._tool_get_service_problems(str(uuid.uuid4()))
+
+    assert [problem["name"] for problem in result["problems"]] == [
+        "New tap / fixture installation",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_problem_catalog_shows_exact_default_type_when_provider_prices_it(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.engines.ai_conversation.backend_tools import BackendToolExecutor
+    from app.engines.home_service_booking import offering_catalog_service as catalog
+
+    offering_id = uuid.uuid4()
+    installation_job_id = uuid.uuid4()
+    pipeline_type_id = uuid.uuid4()
+    draft = SimpleNamespace(
+        offering_id=offering_id,
+        offering_type_id=None,
+        zipcode="140412",
+    )
+    pipeline = SimpleNamespace(
+        id=uuid.uuid4(), name="New pipeline for appliance",
+        description=None, icon_url=None, image_url=None,
+        job_type_id=installation_job_id,
+        default_type_id=pipeline_type_id,
+    )
+
+    async def pipeline_is_ready(_db, _zipcode):
+        return {
+            offering_id: {
+                "job_type_ids": {installation_job_id},
+                "type_ids": {pipeline_type_id},
+                "type_job_type_ids": {
+                    pipeline_type_id: {installation_job_id},
+                },
+            }
+        }
+
+    monkeypatch.setattr(catalog, "booking_ready_service_matches", pipeline_is_ready)
+
+    class _Rows:
+        def all(self):
+            return [pipeline]
+
+    class _ProblemDB:
+        async def get(self, _model, _record_id):
+            return draft
+
+        async def execute(self, _statement):
+            return _Rows()
+
+    result = await BackendToolExecutor(
+        _ProblemDB(), None, channel="instagram",
+    )._tool_get_service_problems(str(uuid.uuid4()))
+
+    assert [problem["name"] for problem in result["problems"]] == [
+        "New pipeline for appliance",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_covered_postcode_with_no_ready_provider_gets_honest_message(monkeypatch):
     from app.engines.messaging_gateway import flow
     from app.engines.messaging_gateway.constants import CHANNEL_WHATSAPP
