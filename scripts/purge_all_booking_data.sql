@@ -142,6 +142,25 @@ DELETE FROM review_aggregates;
 DELETE FROM customer_behavior_assessments;
 DELETE FROM customer_health_scores;
 
+-- Provider health and risk projections are derived from the booking outcomes,
+-- reviews and complaints removed above.  Keeping those snapshots would make
+-- matching and dashboards continue to penalise (or reward) a provider for
+-- evidence that no longer exists.  Return Home Services providers to the
+-- product's neutral, unassessed prior; business/document verification remains
+-- intact and will continue to drive the Verified badge independently.
+DELETE FROM health_scores
+WHERE target_type IN ('tenant', 'tenant_provider')
+  AND target_id IN (SELECT id FROM tenants WHERE vertical = 'home_services');
+DELETE FROM risk_scores
+WHERE target_type IN ('tenant', 'tenant_provider')
+  AND target_id IN (SELECT id FROM tenants WHERE vertical = 'home_services');
+UPDATE tenants
+SET health_score = 65.00,
+    health_band = 'silver',
+    rating_average = 0.00,
+    updated_at = now()
+WHERE vertical = 'home_services';
+
 -- Quote, checklist, execution, assignment and dispatch lifecycle.
 DELETE FROM service_job_quote_events;
 DELETE FROM service_job_quote_items;
@@ -329,6 +348,28 @@ BEGIN
 
     IF survivors <> 0 THEN
         RAISE EXCEPTION 'Booking purge verification failed: % core rows remain', survivors;
+    END IF;
+END $$;
+
+DO $$
+DECLARE
+    stale_provider_health bigint;
+BEGIN
+    SELECT
+        (SELECT count(*) FROM health_scores
+         WHERE target_type IN ('tenant', 'tenant_provider')
+           AND target_id IN (SELECT id FROM tenants WHERE vertical = 'home_services'))
+      + (SELECT count(*) FROM risk_scores
+         WHERE target_type IN ('tenant', 'tenant_provider')
+           AND target_id IN (SELECT id FROM tenants WHERE vertical = 'home_services'))
+      + (SELECT count(*) FROM tenants
+         WHERE vertical = 'home_services'
+           AND (health_score <> 65.00 OR health_band <> 'silver' OR rating_average <> 0.00))
+    INTO stale_provider_health;
+
+    IF stale_provider_health <> 0 THEN
+        RAISE EXCEPTION 'Provider health reset verification failed: % stale rows remain',
+            stale_provider_health;
     END IF;
 END $$;
 
