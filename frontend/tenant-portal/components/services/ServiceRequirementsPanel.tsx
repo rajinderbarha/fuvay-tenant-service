@@ -72,14 +72,16 @@ export function ServiceRequirementsPanel({ masterServiceId, jobTypeId }: { maste
         <div style={SECTION}>
           <div style={HEAD}>
             <AlertTriangle size={14} style={{ color: "var(--warning-text)" }} />
-            Problems the customer can report ({d.problems.length})
+            Booking requests customers can select ({d.problems.length})
           </div>
+          <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "0 0 8px" }}>
+            The customer selects one request. Only its matching follow-up questions appear during booking.
+          </p>
           {d.problems.map(p => (
             <div key={p.issue_type_id} style={ROW}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ color: "var(--text-primary)" }}>{p.name ?? "—"}</span>
                 {p.is_common && <span style={CHIP}>COMMON</span>}
-                {p.severity && <span style={CHIP}>{String(p.severity).toUpperCase()}</span>}
                 {p.requires_photo && (
                   <span style={{ ...CHIP, display: "inline-flex", alignItems: "center", gap: 3 }}>
                     <Camera size={9} /> PHOTO REQUIRED
@@ -98,26 +100,34 @@ export function ServiceRequirementsPanel({ masterServiceId, jobTypeId }: { maste
         <div style={SECTION}>
           <div style={HEAD}>
             <HelpCircle size={14} style={{ color: "var(--brand)" }} />
-            Questions asked at booking ({d.questions.length})
+            Booking questions and when they appear ({d.questions.length})
           </div>
-          {d.questions.map(q => (
-            <div key={q.question_id} style={ROW}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ color: "var(--text-primary)" }}>{q.label ?? "—"}</span>
-                {q.required && <span style={{ ...CHIP, color: "var(--danger-text)" }}>REQUIRED</span>}
-                {q.input_type && <span style={CHIP}>{q.input_type}</span>}
-                {q.customer_visible === false && <span style={CHIP}>INTERNAL</span>}
+          {d.questions.map(q => {
+            const conditional = !!q.conditions?.length;
+            return (
+              <div key={q.question_id} style={ROW}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ color: "var(--text-primary)" }}>{q.label ?? "—"}</span>
+                  {q.required && <span style={{ ...CHIP, color: "var(--danger-text)" }}>{conditional ? "REQUIRED WHEN ASKED" : "REQUIRED"}</span>}
+                  {conditional && <span style={{ ...CHIP, color: "var(--brand)" }}>CONDITIONAL</span>}
+                  {q.input_type && <span style={CHIP}>{q.input_type === "single_select" ? "Single choice" : q.input_type.replaceAll("_", " ")}</span>}
+                </div>
+                {conditional && (
+                  <p style={{ fontSize: 11.5, color: "var(--brand)", margin: "3px 0 0", fontWeight: 600 }}>
+                    Asked only when: {q.conditions!.join(" and ")}
+                  </p>
+                )}
+                {q.options.length > 0 && (
+                  <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "2px 0 0" }}>
+                    Catalog choices: {q.options.filter(Boolean).join(", ")}
+                  </p>
+                )}
+                {q.help_text && (
+                  <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "2px 0 0" }}>{q.help_text}</p>
+                )}
               </div>
-              {q.options.length > 0 && (
-                <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "2px 0 0" }}>
-                  Options: {q.options.filter(Boolean).join(", ")}
-                </p>
-              )}
-              {q.help_text && (
-                <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "2px 0 0" }}>{q.help_text}</p>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

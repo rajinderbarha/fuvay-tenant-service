@@ -218,4 +218,28 @@ describe("InlineDimensionPricingEditor", () => {
     expect(screen.getByLabelText("Western / English commode price")).toHaveValue(300);
     expect(screen.getByLabelText("Indian-style commode price")).toHaveValue(350);
   });
+
+  it("keeps tap and basin separate when the API lists a commode variant first", () => {
+    render(
+      <InlineDimensionPricingEditor
+        basePrice={null} exactTypePrices
+        types={[
+          { id: "western", name: "Western / English commode", parentId: "commode", parentName: "Commode installation", price: 500, enabled: true },
+          { id: "tap", name: "Tap change", price: 100, enabled: true },
+          { id: "basin", name: "Wash basin installation", price: 300, enabled: true },
+        ]}
+        brands={[]} exceptions={[]}
+        onSaveType={vi.fn()} onClearType={vi.fn()} onClearTypePrices={vi.fn()}
+        onSaveBrand={vi.fn()} onClearBrand={vi.fn()}
+      />,
+    );
+    const individualHeader = screen.getByText("Individual service items", { selector: "div" });
+    const variantHeader = screen.getByText("Commode installation variants", { selector: "div" });
+    const tapCard = screen.getByLabelText("Tap change price").closest("section")!;
+    const basinCard = screen.getByLabelText("Wash basin installation price").closest("section")!;
+    const commodeCard = screen.getByLabelText("Western / English commode price").closest("section")!;
+    expect(individualHeader.compareDocumentPosition(tapCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(basinCard.compareDocumentPosition(variantHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(variantHeader.compareDocumentPosition(commodeCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

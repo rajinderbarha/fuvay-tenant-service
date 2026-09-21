@@ -42,3 +42,28 @@ it("shows a load failure instead of treating it as an empty configuration", asyn
   await waitFor(() => expect(screen.getByText("Requirements for this service could not be loaded.")).toBeInTheDocument());
   expect(screen.queryByText(/No problems, questions or checklists/)).toBeNull();
 });
+
+it("explains that the commode question does not apply to tap and basin selections", async () => {
+  api.getServiceRequirements.mockResolvedValue({ ...requirements, checklists: [], problems: [
+    { issue_type_id: "fixture-problem", name: "New tap / fixture installation", severity: "low" },
+    { issue_type_id: "pipeline-problem", name: "New pipeline for appliance", severity: "medium" },
+  ], questions: [
+    { question_id: "fixture", label: "What needs to be installed?", required: true, input_type: "single_select",
+      options: ["Tap change", "Wash basin installation", "Commode installation"],
+      conditions: ["Problem is New tap / fixture installation"] },
+    { question_id: "commode", label: "Which commode type?", required: true, input_type: "single_select",
+      options: ["Western / English commode"], conditions: [
+        "Problem is New tap / fixture installation",
+        "What needs to be installed? is Commode installation",
+      ] },
+  ] });
+  render(<ServiceRequirementsPanel masterServiceId="plumbing" jobTypeId="installation" />);
+  expect(await screen.findByText("Which commode type?")).toBeInTheDocument();
+  expect(screen.getByText("Booking requests customers can select (2)")).toBeInTheDocument();
+  expect(screen.getByText("Booking questions and when they appear (2)")).toBeInTheDocument();
+  expect(screen.queryByText("LOW")).not.toBeInTheDocument();
+  expect(screen.queryByText("MEDIUM")).not.toBeInTheDocument();
+  expect(screen.getAllByText("Single choice")).toHaveLength(2);
+  expect(screen.getByText("Asked only when: Problem is New tap / fixture installation and What needs to be installed? is Commode installation")).toBeInTheDocument();
+  expect(screen.getAllByText("REQUIRED WHEN ASKED")).toHaveLength(2);
+});

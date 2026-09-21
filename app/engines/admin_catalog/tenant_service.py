@@ -474,13 +474,65 @@ class TenantCatalogService:
         option_service = ServiceOptionService(
             self.db, actor_id=None, actor_role=None, request_id="—", tenant_id=tenant_id,
         )
-        problems = await option_service.list_service_issue_mappings(master_service_id, resolved_job_type_id)
+        mapped_problems = await option_service.list_service_issue_mappings(master_service_id, resolved_job_type_id)
+        problems = [
+            mapping for mapping in mapped_problems
+            if mapping.get("status", "active") == "active" and mapping.get("customer_visible") is not False
+            and mapping.get("issue_type", {}).get("is_active") is not False
+            and mapping.get("issue_type", {}).get("status", "active") == "active"
+            and mapping.get("issue_type", {}).get("customer_visible") is not False
+        ]
         option_mappings = await option_service.list_service_option_mappings(
             master_service_id, resolved_job_type_id,
         )
         questions_res = await CatalogQuestionService(self.db).list_questions(
             master_service_id, resolved_job_type_id,
         )
+        all_question_rows = questions_res.get("questions", [])
+        question_rows = [
+            question for question in all_question_rows
+            if question.get("is_active") is not False
+            and question.get("customer_visible") is not False
+        ]
+        problem_names = {
+            str(p["issue_type"]["id"]): p["issue_type"].get("name")
+            for p in problems if p.get("issue_type")
+        }
+        questions_by_id = {str(q["id"]): q for q in all_question_rows}
+
+        def question_conditions(question: dict) -> list[str]:
+            """Human-readable version of the same AND-ed runtime rules.
+
+            Providers need to understand when a question is asked, but the
+            raw UUID/code rule representation is an admin implementation
+            detail. Keep this projection read-only and derived from the
+            authoritative catalog rules returned above.
+            """
+            conditions: list[str] = []
+            for rule in question.get("rules") or []:
+                condition_type = rule.get("condition_type")
+                ref_id = str(rule.get("ref_id") or "")
+                if condition_type == "problem":
+                    name = problem_names.get(ref_id)
+                    if name:
+                        conditions.append(f"Problem is {name}")
+                elif condition_type == "answer_equals":
+                    parent = questions_by_id.get(ref_id)
+                    if not parent:
+                        continue
+                    expected = str(rule.get("expected_value") or "")
+                    option = next((
+                        row for row in (parent.get("options") or [])
+                        if str(row.get("code") or "") == expected
+                    ), None)
+                    answer = option.get("label") if option else expected.replace("-", " ")
+                    if answer:
+                        conditions.append(f"{parent.get('label') or 'Previous answer'} is {answer}")
+                elif condition_type == "job_type":
+                    conditions.append("This job type is selected")
+                elif condition_type == "dimension_enabled":
+                    conditions.append("The related service option is enabled")
+            return conditions
 
         # Checklists resolve through the (master_service, job_type) child
         # record, then the published template VERSION -> template.
@@ -554,8 +606,9 @@ class TenantCatalogService:
                     "customer_visible": q.get("customer_visible"),
                     "help_text": q.get("help_text"),
                     "options": [o.get("label") for o in (q.get("options") or [])],
+                    "conditions": question_conditions(q),
                 }
-                for q in questions_res.get("questions", [])
+                for q in question_rows
             ],
             "service_options": [
                 {

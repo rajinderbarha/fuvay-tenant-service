@@ -58,6 +58,19 @@ function positiveNumber(value: string | undefined) {
   return value?.trim() && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function orderedTypes(types: InlinePriceType[]) {
+  const individual = types.filter(type => !type.parentName);
+  const variants = new Map<string, InlinePriceType[]>();
+  for (const type of types) {
+    if (!type.parentName) continue;
+    const key = type.parentId ?? type.parentName;
+    const group = variants.get(key) ?? [];
+    group.push(type);
+    variants.set(key, group);
+  }
+  return [...individual, ...Array.from(variants.values()).flat()];
+}
+
 export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEditorHandle, Props>(
   function InlineDimensionPricingEditor({
     basePrice, exactTypePrices = false, types, brands, exceptions, loading = false,
@@ -113,6 +126,8 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
 
     const eligibleBrands = brands; // Matching support does not depend on permission to override price.
     const activeTypes = types.filter(type => activeTypeIds.includes(type.id));
+    const displayTypes = useMemo(() => orderedTypes(types), [types]);
+    const displayActiveTypes = orderedTypes(activeTypes);
 
     function change(mutator: () => void) {
       mutator();
@@ -234,9 +249,14 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                 <div className="pricing-dimension-choice-block">
                   <p>Which types do you actually service? Unselected types stay hidden from customers.</p>
                   <div className="pricing-choice-chips">
-                    {types.map((type, index) => (
+                    {displayTypes.map((type, index) => (
                       <React.Fragment key={type.id}>
-                        {type.parentName && type.parentName !== types[index - 1]?.parentName && (
+                        {!type.parentName && index === 0 && (
+                          <span style={{ flexBasis: "100%", fontSize: 11, fontWeight: 700, color: "var(--text-secondary)" }}>
+                            Individual service items
+                          </span>
+                        )}
+                        {type.parentName && (type.parentId ?? type.parentName) !== (displayTypes[index - 1]?.parentId ?? displayTypes[index - 1]?.parentName) && (
                           <span style={{ flexBasis: "100%", marginTop: index ? 6 : 0, fontSize: 11, fontWeight: 700, color: "var(--text-secondary)" }}>
                             ↳ {type.parentName} variants
                           </span>
@@ -249,13 +269,18 @@ export const InlineDimensionPricingEditor = forwardRef<InlineDimensionPricingEdi
                 </div>
 
                 <div className="pricing-type-card-list">
-                  {activeTypes.map((type, index) => {
+                  {displayActiveTypes.map((type, index) => {
                     const mode = brandModes[type.id] ?? "all";
                     const selected = selectedBrands[type.id] ?? [];
                     const inheritedPrice = varyByType ? positiveNumber(typeValues[type.id]) ?? basePrice : basePrice;
                     return (
                       <React.Fragment key={type.id}>
-                      {type.parentName && type.parentName !== activeTypes[index - 1]?.parentName && (
+                      {!type.parentName && index === 0 && (
+                        <div style={{ margin: "10px 0 -2px", fontSize: 12, fontWeight: 700, color: "var(--text-secondary)" }}>
+                          Individual service items
+                        </div>
+                      )}
+                      {type.parentName && (type.parentId ?? type.parentName) !== (displayActiveTypes[index - 1]?.parentId ?? displayActiveTypes[index - 1]?.parentName) && (
                         <div style={{ margin: "10px 0 -2px", fontSize: 12, fontWeight: 700, color: "var(--text-secondary)" }}>
                           {type.parentName} variants
                         </div>

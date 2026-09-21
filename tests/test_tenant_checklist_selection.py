@@ -113,6 +113,50 @@ async def test_tenant_requirements_show_exact_published_content_and_enforce_scop
     assert result["checklists"] == []
 
 
+@pytest.mark.asyncio
+async def test_tenant_requirements_explain_conditional_questions(checklist_db, monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.engines.admin_catalog.tenant_service import TenantCatalogService
+    from app.engines.admin_catalog.service_option_service import ServiceOptionService
+    from app.engines.admin_catalog.question_service import CatalogQuestionService
+
+    db, link, tenant = checklist_db
+    category_id = uuid.uuid4()
+    issue_id, fixture_id, commode_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    db.add(MasterService(id=link.master_service_id, category_id=category_id,
+                         service_name="Plumbing", slug="plumbing", job_type="installation", pricing_model="FIXED"))
+    db.add(TenantService(tenant_id=tenant, master_service_id=link.master_service_id,
+                         category_id=category_id, job_type="installation", job_type_id=link.job_type_id))
+    await db.flush()
+    monkeypatch.setattr(ServiceOptionService, "list_service_issue_mappings", AsyncMock(return_value=[
+        {"issue_type": {"id": str(issue_id), "name": "New tap / fixture installation"}},
+        {"status": "inactive", "issue_type": {"id": str(uuid.uuid4()), "name": "Retired request"}},
+    ]))
+    monkeypatch.setattr(ServiceOptionService, "list_service_option_mappings", AsyncMock(return_value=[]))
+    monkeypatch.setattr(CatalogQuestionService, "list_questions", AsyncMock(return_value={"questions": [
+        {"id": str(fixture_id), "label": "What needs to be installed?", "options": [
+            {"code": "plumbing-commode-installation", "label": "Commode installation"},
+        ], "rules": [{"condition_type": "problem", "ref_id": str(issue_id)}]},
+        {"id": str(commode_id), "label": "Which commode type?", "options": [], "rules": [
+            {"condition_type": "problem", "ref_id": str(issue_id)},
+            {"condition_type": "answer_equals", "ref_id": str(fixture_id),
+             "expected_value": "plumbing-commode-installation"},
+        ]},
+        {"id": str(uuid.uuid4()), "label": "Retired question", "is_active": False,
+         "options": [], "rules": []},
+    ]}))
+    result = await TenantCatalogService(db, actor_tenant_id=tenant, actor_role="TENANT_ADMIN").get_service_requirements(
+        link.master_service_id, tenant, link.job_type_id,
+    )
+    assert [problem["name"] for problem in result["problems"]] == ["New tap / fixture installation"]
+    assert len(result["questions"]) == 2
+    assert result["questions"][0]["conditions"] == ["Problem is New tap / fixture installation"]
+    assert result["questions"][1]["conditions"] == [
+        "Problem is New tap / fixture installation",
+        "What needs to be installed? is Commode installation",
+    ]
+
+
 def test_the_minimum_is_the_product_specified_five():
     assert c.MIN_TENANT_CHECKLIST_ITEMS_PER_SERVICE == 5
 

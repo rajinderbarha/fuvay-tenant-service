@@ -412,6 +412,7 @@ export interface ServiceRequirementQuestion {
   question_id: string; label?: string | null; input_type?: string | null;
   required?: boolean | null; customer_visible?: boolean | null;
   help_text?: string | null; icon_url?: string | null; options: (string | null)[];
+  conditions?: string[];
 }
 export interface ServiceRequirementChecklist {
   mapping_id: string; template_name: string; template_code: string;
