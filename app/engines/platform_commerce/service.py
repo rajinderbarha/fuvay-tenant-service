@@ -785,13 +785,20 @@ class CommerceService:
             raise NotFoundException("WarrantyClaim", str(claim_id))
         if c.status not in ("provider_action_required", "provider_in_progress", "provider_resolved"):
             raise ServiceOSException("WARRANTY_INVALID_STATE", f"Claim cannot be escalated from {c.status}.", status_code=409)
+        # A response is owed until the provider answers the CURRENT round. An
+        # answer given before an earlier escalation does not count: checking
+        # only `provider_responded_at` meant one early reply made every later
+        # escalation unenforceable.
+        response_owed = not c.provider_responded_at or bool(
+            c.escalated_at and c.provider_responded_at < c.escalated_at
+        )
         missed_deadline = bool(
-            owns_customer and not c.provider_responded_at and c.provider_response_due_at
+            owns_customer and response_owed and c.provider_response_due_at
             and c.provider_response_due_at <= utcnow()
         )
         # A customer gives the provider its response window unless the provider
         # has already answered. A provider may explicitly concede immediately.
-        if owns_customer and not c.provider_responded_at and c.provider_response_due_at and c.provider_response_due_at > utcnow():
+        if owns_customer and response_owed and c.provider_response_due_at and c.provider_response_due_at > utcnow():
             raise ServiceOSException(
                 "PROVIDER_RESPONSE_WINDOW_ACTIVE",
                 "The provider still has time to respond to this warranty claim.", status_code=409,
@@ -800,11 +807,16 @@ class CommerceService:
         if missed_deadline and c.tenant_id:
             from app.engines.usage_credits.service import UsageCreditService
             from app.engines.tenant_engine.health import compute_health_score
+            from app.jobs.complaint_sla import _resolve_penalty_amount, warranty_penalty_source_id
+            # Same key as the scheduled sweep for the same missed deadline, so
+            # the two can never charge it twice; the amount is the policy's,
+            # not a hardcoded 50.
             await UsageCreditService(
                 self.db, actor_role="system", request_id="warranty:provider_sla"
             ).charge_provider_response_sla_penalty(
                 tenant_id=c.tenant_id, source_type="warranty_claim",
-                source_id=str(c.id), amount=Decimal("50.00"),
+                source_id=warranty_penalty_source_id(c.id, c.provider_response_due_at),
+                amount=await _resolve_penalty_amount(self.db, c.tenant_id),
             )
             await compute_health_score(c.tenant_id, db=self.db)
         c.status = "provider_action_required"

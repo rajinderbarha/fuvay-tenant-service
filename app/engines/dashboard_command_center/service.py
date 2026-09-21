@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_SQL
 from app.exceptions import ServiceOSException
 from app.engines.analytics.platform_service import (
     PlatformAnalyticsService, _safe_count, _safe_scalar, _safe_rows, _date_defaults,
@@ -147,7 +148,7 @@ class DashboardCommandCenterService:
               (SELECT COUNT(*) FROM service_bookings WHERE created_at>=CURRENT_DATE AND created_at<CURRENT_DATE+INTERVAL '1 day') AS today_bookings,
               (SELECT COUNT(*) FROM tenants WHERE status IN ('pending_review','onboarding_pending')) AS pending_tenants,
               (SELECT COUNT(*) FROM tenants WHERE verification_status='changes_pending_review' AND meta->>'pending_changes' IS NOT NULL AND terminated_at IS NULL AND archived_at IS NULL) AS pending_changes,
-              (SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN ('resolved','closed','cancelled') AND created_at<NOW()-INTERVAL '3 days') AS overdue_complaints,
+              (SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN """ + RESOLVED_OR_FINAL_SQL + """ AND sla_status IN ('breached','escalated')) AS overdue_complaints,
               (SELECT COUNT(*) FROM provider_signals WHERE risk_level IN ('high','critical')) AS attention_count,
               (SELECT COUNT(*) FROM provider_signals WHERE risk_level='critical') AS critical_attention,
               (SELECT COUNT(*) FROM suspicious_activity_logs WHERE status IN ('open','investigating')) AS open_threats,
@@ -174,7 +175,7 @@ class DashboardCommandCenterService:
               (SELECT COUNT(*) FROM tenants WHERE status IN ('pending_review','onboarding_pending')) AS pending_tenants,
               (SELECT COUNT(*) FROM service_jobs sj LEFT JOIN usage_credit_ledger ucl ON ucl.job_id=sj.id AND ucl.event_type='completed_job_deduction' WHERE sj.status='completed' AND sj.updated_at>NOW()-INTERVAL '7 days' AND ucl.id IS NULL) AS failed_deductions,
               (SELECT COUNT(*) FROM suspicious_activity_logs WHERE status IN ('open','investigating')) AS open_threats,
-              (SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN ('resolved','closed','cancelled') AND created_at<NOW()-INTERVAL '3 days') AS overdue_complaints
+              (SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN """ + RESOLVED_OR_FINAL_SQL + """ AND sla_status IN ('breached','escalated')) AS overdue_complaints
         """)
         return self._health_payload(rows[0] if rows else {})
 
@@ -671,7 +672,7 @@ class DashboardCommandCenterService:
         """)
         sla_breaches = await _safe_count(self.db, """
             SELECT COUNT(*) FROM customer_complaints cc JOIN tenants t ON t.id=cc.tenant_id
-            WHERE t.vertical='home_services' AND cc.sla_status='breached'
+            WHERE t.vertical='home_services' AND cc.sla_status IN ('breached','escalated')
         """)
         service_credits = await _safe_scalar(self.db, """
             SELECT COALESCE(SUM(csc.amount),0) FROM customer_service_credits csc

@@ -391,7 +391,9 @@ class TestModuleVerificationExitsClean:
         mod = self._load_inventory_module()
         routes = [r for r in mod.walk(app.router if hasattr(app, "router") else app)
                   if r["module"] == "app.engines.complaints.provider_router"]
-        assert len(routes) == 10
+        # 11 since POST /v1/provider/rework-requests/{id}/cancel, which lets a
+        # provider hand back a rework the customer will not allow.
+        assert len(routes) == 11
         exempt = mod.CONFIRMED_FALSE_POSITIVE_ROUTES | mod.CONFIRMED_PLATFORM_ADMIN_PERMISSION_ROUTES
         unverified = [
             r for r in routes

@@ -503,3 +503,101 @@ async def test_penalty_amount_comes_from_the_typed_policy_resolver(monkeypatch):
     assert amount == Decimal("75.00")
     assert lookup.await_args.args[1:] == (category, tenant)
     assert "text(" not in inspect.getsource(complaint_sla._resolve_penalty_amount)
+
+
+# ── Second pass: remaining ways a case could stall ───────────────────────────
+
+def test_refund_requests_stay_on_the_resolution_clock():
+    """The refund's one-off 24h penalty left an "under review" refund free to sit."""
+    c = _complaint(STATUS_REFUND_REQUESTED, provider_responded_at=NOW,
+                   provider_action_due_at=NOW - timedelta(minutes=5))
+    assert ComplaintService.running_provider_deadline(c)[1] == "resolution"
+
+
+@pytest.mark.asyncio
+async def test_a_provider_turn_case_without_a_deadline_gets_one(job):
+    complaint_sla, state, charge = job
+    c = _complaint(STATUS_REFUND_REQUESTED, provider_responded_at=NOW)
+    state["rows"] = [c]
+    counts = await complaint_sla.run_sla_check()
+    assert counts["deadline_stamped"] == 1
+    assert c.provider_action_due_at > NOW
+    charge.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+class TestReworkCancel:
+    def _svc(self, complaint, rework):
+        from app.engines.complaints.rework_service import ServiceReworkService
+        svc = ServiceReworkService()
+        svc._complaint_svc = _service()
+        svc._complaint_svc.get_complaint = AsyncMock(return_value=complaint)
+        svc._get_rework = AsyncMock(return_value=rework)
+        svc._log_event = AsyncMock()
+        return svc
+
+    async def test_cancel_hands_the_case_back_on_a_fresh_clock(self):
+        from app.engines.complaints.models import ServiceReworkRequest
+        c = _complaint(STATUS_REWORK_APPROVED, provider_responded_at=NOW,
+                       provider_action_due_at=NOW - timedelta(hours=3), sla_status="breached")
+        rework = ServiceReworkRequest(id=uuid.uuid4(), complaint_id=c.id, tenant_id=c.tenant_id,
+                                      customer_id=c.customer_id, status="scheduled", rework_reason="leak")
+        svc = self._svc(c, rework)
+        await svc.cancel_rework(_db(), rework.id, uuid.uuid4(),
+                                "Customer refused access for the visit", tenant_id=c.tenant_id)
+        assert rework.status == "cancelled"
+        assert c.status == STATUS_AWAITING_PROVIDER
+        assert c.provider_action_due_at > NOW and c.sla_status == "on_time"
+
+    async def test_cancel_needs_a_reason(self):
+        from app.engines.complaints.models import ServiceReworkRequest
+        c = _complaint(STATUS_REWORK_APPROVED)
+        rework = ServiceReworkRequest(id=uuid.uuid4(), complaint_id=c.id, tenant_id=c.tenant_id,
+                                      customer_id=c.customer_id, status="approved", rework_reason="leak")
+        with pytest.raises(ServiceOSException):
+            await self._svc(c, rework).cancel_rework(_db(), rework.id, uuid.uuid4(), "no", tenant_id=c.tenant_id)
+        assert rework.status == "approved"
+
+    async def test_a_completed_rework_cannot_be_cancelled(self):
+        from app.engines.complaints.models import ServiceReworkRequest
+        c = _complaint(STATUS_RESOLVED)
+        rework = ServiceReworkRequest(id=uuid.uuid4(), complaint_id=c.id, tenant_id=c.tenant_id,
+                                      customer_id=c.customer_id, status="completed", rework_reason="leak")
+        with pytest.raises(ServiceOSException):
+            await self._svc(c, rework).cancel_rework(_db(), rework.id, uuid.uuid4(),
+                                                     "Customer changed their mind", tenant_id=c.tenant_id)
+
+
+def test_warranty_penalty_is_keyed_per_missed_deadline():
+    from app.jobs.complaint_sla import warranty_penalty_source_id
+    claim = uuid.uuid4()
+    first = warranty_penalty_source_id(claim, NOW - timedelta(days=2))
+    after_escalation = warranty_penalty_source_id(claim, NOW + timedelta(hours=24))
+    assert first != after_escalation
+    assert warranty_penalty_source_id(claim, NOW) == warranty_penalty_source_id(claim, NOW)
+
+
+def test_an_early_warranty_reply_does_not_excuse_later_escalations():
+    import inspect
+    from app.engines.platform_commerce.service import CommerceService
+    from app.jobs import complaint_sla
+    escalate = inspect.getsource(CommerceService.escalate_claim)
+    assert "provider_responded_at < c.escalated_at" in escalate
+    assert 'Decimal("50.00")' not in escalate
+    assert "WarrantyClaim.provider_responded_at < WarrantyClaim.escalated_at" in inspect.getsource(
+        complaint_sla.run_remedy_sla_check)
+
+
+def test_dashboards_share_one_definition_of_open():
+    """Hand-written lists named statuses that do not exist, so counts read zero."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    stale = re.compile(r"'investigating'|'awaiting_provider'[^_]|'in_progress'\)|\"withdrawn\"|'withdrawn'")
+    for rel in ("app/engines/analytics/provider_analytics.py", "app/engines/analytics/admin_analytics.py",
+                "app/engines/analytics/intelligence_service.py",
+                "app/engines/execution/home_services_dashboard_service.py",
+                "app/engines/final_records/tenant_bookings_jobs_router.py"):
+        src = (root / rel).read_text(encoding="utf-8")
+        complaint_lines = [line for line in src.splitlines() if "complaint" in line.lower() or "status" in line]
+        assert not any(stale.search(line) for line in complaint_lines), rel

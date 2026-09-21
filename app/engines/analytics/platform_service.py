@@ -11,6 +11,7 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_SQL, RESOLVED_OUTCOME_SQL
 
 
 _utcnow = lambda: datetime.now(timezone.utc)
@@ -633,7 +634,7 @@ class PlatformAnalyticsService:
 
         dispute_count = await _safe_count(db,
             f"SELECT COUNT(*) FROM customer_complaints cc JOIN tenants t ON t.id=cc.tenant_id "
-            f"WHERE cc.status IN ('disputed','escalated') "
+            f"WHERE cc.complaint_type = 'payment_issue' "
             f"AND cc.created_at BETWEEN :from_dt AND :to_dt {v_clause}", p)
 
         return {
@@ -663,11 +664,11 @@ class PlatformAnalyticsService:
             f"WHERE cc.created_at BETWEEN :from_dt AND :to_dt {v_clause}", p)
         open_c = await _safe_count(db,
             f"SELECT COUNT(*) FROM customer_complaints cc JOIN tenants t ON t.id=cc.tenant_id "
-            f"WHERE cc.status NOT IN ('resolved','closed') "
+            f"WHERE cc.status NOT IN {RESOLVED_OR_FINAL_SQL} "
             f"AND cc.created_at BETWEEN :from_dt AND :to_dt {v_clause}", p)
         resolved = await _safe_count(db,
             f"SELECT COUNT(*) FROM customer_complaints cc JOIN tenants t ON t.id=cc.tenant_id "
-            f"WHERE cc.status IN ('resolved','closed') "
+            f"WHERE cc.status IN {RESOLVED_OUTCOME_SQL} "
             f"AND cc.created_at BETWEEN :from_dt AND :to_dt {v_clause}", p)
 
         avg_res_hours = await _safe_scalar(db, f"""

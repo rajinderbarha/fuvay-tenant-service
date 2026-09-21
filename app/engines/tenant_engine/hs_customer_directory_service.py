@@ -26,6 +26,7 @@ from decimal import Decimal
 from sqlalchemy import select, func, or_, and_, case, cast, String, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_STATUSES
 from app.engines.final_records.models import ServiceBooking, ServiceJob
 from app.engines.invoice_payment.models import ServiceInvoice, ServicePaymentRecord, FinancialEvent
 from app.engines.complaints.models import CustomerComplaint
@@ -285,7 +286,7 @@ class HomeServicesCustomerDirectoryService:
         rollup = self._customer_rollup_subquery(tenant_id=tenant_id)
         complaint_clauses = [
             CustomerComplaint.customer_id.isnot(None),
-            CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
+            CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES)),
         ]
         payment_clauses = [
             ServicePaymentRecord.customer_id.isnot(None),
@@ -455,7 +456,7 @@ class HomeServicesCustomerDirectoryService:
 
         complaint_clauses = [
             CustomerComplaint.customer_id.isnot(None),
-            CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
+            CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES)),
         ]
         invoice_clauses = [
             ServiceInvoice.customer_id.isnot(None),
@@ -576,7 +577,7 @@ class HomeServicesCustomerDirectoryService:
 
         complaint_clauses = [
             CustomerComplaint.customer_id == customer_id,
-            CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
+            CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES)),
         ]
         if tenant_id:
             complaint_clauses.append(CustomerComplaint.tenant_id == tenant_id)

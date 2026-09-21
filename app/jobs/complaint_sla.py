@@ -156,7 +156,7 @@ async def run_sla_check() -> dict:
     counts = {
         "checked": 0, "at_risk": 0, "breached": 0, "escalated": 0,
         "changed": 0, "penalised": 0, "already_penalised": 0,
-        "resolution_penalised": 0,
+        "resolution_penalised": 0, "deadline_stamped": 0,
     }
     async with get_session_factory()() as db:
         warning_hours = await _sla_warning_hours(db)
@@ -171,12 +171,24 @@ async def run_sla_check() -> dict:
                     ),
                     # A resolution is owed.
                     CustomerComplaint.provider_action_due_at.is_not(None),
+                    # The provider's move with no deadline: rows from before
+                    # the clock covered their status, or any path that set the
+                    # status without stamping one. They get a deadline here
+                    # rather than sitting unmeasured.
+                    and_(
+                        CustomerComplaint.status.in_(list(PROVIDER_ACTION_TIMED_STATUSES)),
+                        CustomerComplaint.provider_action_due_at.is_(None),
+                    ),
                 ),
             ).order_by(CustomerComplaint.created_at).limit(500)
         )).scalars().all()
 
         now = utcnow()
         for complaint in complaints:
+            if (complaint.status in PROVIDER_ACTION_TIMED_STATUSES
+                    and complaint.provider_action_due_at is None):
+                await service.enter_status(db, complaint, complaint.status)
+                counts["deadline_stamped"] += 1
             before = complaint.sla_status
             _due, clock = service.running_provider_deadline(complaint)
             await service.check_and_update_sla(
@@ -251,6 +263,12 @@ async def run_sla_check() -> dict:
     return counts
 
 
+def warranty_penalty_source_id(claim_id, due_at) -> str:
+    """One penalty per missed warranty deadline -- each escalation sets a new one."""
+    stamp = due_at.strftime("%Y%m%dT%H%M") if isinstance(due_at, datetime) else "initial"
+    return f"{claim_id}:{stamp}"
+
+
 async def run_remedy_sla_check() -> dict:
     """Automatically penalise overdue refund and warranty response cases."""
     from app.database import get_session_factory
@@ -269,7 +287,15 @@ async def run_remedy_sla_check() -> dict:
                 WarrantyClaim.status == "provider_action_required",
                 WarrantyClaim.provider_response_due_at.is_not(None),
                 WarrantyClaim.provider_response_due_at <= now,
-                WarrantyClaim.provider_responded_at.is_(None),
+                # Owed until the provider answers the current round; an answer
+                # from before the latest escalation does not count.
+                or_(
+                    WarrantyClaim.provider_responded_at.is_(None),
+                    and_(
+                        WarrantyClaim.escalated_at.is_not(None),
+                        WarrantyClaim.provider_responded_at < WarrantyClaim.escalated_at,
+                    ),
+                ),
             ).limit(500)
         )).scalars().all()
         refund_requests = (await db.execute(
@@ -287,7 +313,7 @@ async def run_remedy_sla_check() -> dict:
                 db,
                 tenant_id=claim.tenant_id,
                 source_type="warranty_claim",
-                source_id=str(claim.id),
+                source_id=warranty_penalty_source_id(claim.id, claim.provider_response_due_at),
                 request_id="job:warranty_sla",
             )
             key = "already_penalised" if result["idempotent"] else "penalised"

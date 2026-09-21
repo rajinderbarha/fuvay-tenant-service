@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_SQL, RESOLVED_OUTCOME_SQL
 from app.engines.analytics.helpers import (
     resolve_date_range, date_range_to_datetimes, safe_metric, analytics_ok,
 )
@@ -84,7 +85,7 @@ class ProviderAnalyticsService:
         """, p))
         summary["open_complaints"]  = await safe_metric(_scalar(db, """
             SELECT COUNT(*) FROM customer_complaints
-            WHERE tenant_id = :tenant_id AND status IN ('open','investigating','awaiting_provider')
+            WHERE tenant_id = :tenant_id AND status NOT IN """ + RESOLVED_OR_FINAL_SQL + """
         """, p))
         summary["unread_notifications"] = await safe_metric(_scalar(db, """
             SELECT COUNT(*) FROM in_app_notifications
@@ -280,18 +281,18 @@ class ProviderAnalyticsService:
         """, p))
         summary["open_complaints"]     = await safe_metric(_scalar(db, """
             SELECT COUNT(*) FROM customer_complaints
-            WHERE tenant_id = :tenant_id AND status IN ('open','investigating','awaiting_provider')
+            WHERE tenant_id = :tenant_id AND status NOT IN """ + RESOLVED_OR_FINAL_SQL + """
         """, p))
         summary["resolved_complaints"] = await safe_metric(_scalar(db, """
             SELECT COUNT(*) FROM customer_complaints
-            WHERE tenant_id = :tenant_id AND status IN ('resolved','closed')
+            WHERE tenant_id = :tenant_id AND status IN """ + RESOLVED_OUTCOME_SQL + """
             AND created_at BETWEEN :from_dt AND :to_dt
         """, p))
         summary["pending_response"]    = await safe_metric(_scalar(db, """
             SELECT COUNT(*) FROM customer_complaints
             WHERE tenant_id = :tenant_id
-            AND provider_response_required = true
-            AND status = 'awaiting_provider'
+            AND status NOT IN """ + RESOLVED_OR_FINAL_SQL + """
+            AND (provider_response_required = true OR status = 'awaiting_provider_response')
         """, p))
         summary["rework_requests"]     = await safe_metric(_scalar(db, """
             SELECT COUNT(*) FROM service_rework_requests
@@ -330,7 +331,7 @@ class ProviderAnalyticsService:
 
         open_complaints = await safe_metric(_scalar(db, """
             SELECT COUNT(*) FROM customer_complaints
-            WHERE tenant_id = :tenant_id AND status IN ('open','investigating','awaiting_provider')
+            WHERE tenant_id = :tenant_id AND status NOT IN """ + RESOLVED_OR_FINAL_SQL + """
         """, p))
         if open_complaints:
             alerts.append({"type": "open_complaints", "count": open_complaints, "severity": "warning"})

@@ -30,6 +30,7 @@ from decimal import Decimal
 from sqlalchemy import select, func, or_, exists, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_STATUSES
 from app.engines.tenant_engine.models import Tenant, TenantBilling
 from app.engines.vertical_catalog.models import TenantVerticalEnrollment, Vertical
 from app.engines.final_records.models import ServiceJob
@@ -396,7 +397,7 @@ class HomeServicesProviderDirectoryService:
         open_count = (await self.db.execute(
             select(func.count(CustomerComplaint.id)).where(
                 *clauses,
-                CustomerComplaint.status.notin_(("resolved", "closed", "rejected")),
+                CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES)),
             )
         )).scalar() or 0
         job_counts = (await self.db.execute(select(

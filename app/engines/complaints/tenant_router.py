@@ -94,7 +94,8 @@ def _blocked_reason(status: str, actions: list[str]) -> str | None:
     # the case had "moved into its remedy flow", which read as someone else's job.
     if status == STATUS_REWORK_APPROVED:
         return ("The customer accepted a free rework visit. Schedule it and mark it complete "
-                "in Refunds & Warranty; completing it resolves this case.")
+                "in Refunds & Warranty; completing it resolves this case. If the visit cannot "
+                "happen, cancel it there and propose another resolution.")
     if status == STATUS_REFUND_REQUESTED:
         return "The customer requested a refund. Approve or decline it in Refunds & Warranty."
     if status == STATUS_REFUND_APPROVED:

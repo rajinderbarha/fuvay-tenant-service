@@ -65,6 +65,10 @@ class ReworkNotesIn(BaseModel):
     notes: Optional[str] = None
 
 
+class ReworkCancelIn(BaseModel):
+    reason: str
+
+
 class RefundReviewIn(BaseModel):
     notes: Optional[str] = None
 
@@ -239,6 +243,19 @@ async def complete_rework(
 ):
     rw = await _rework.mark_rework_completed(db, rework_id, u.user_id, notes=body.notes, request_id=_rid(r), tenant_id=u.tenant_id)
     return ok({"id": str(rw.id), "status": rw.status}, _rid(r), "provider.rework.completed")
+
+
+@provider_rework_router.post("/{rework_id}/cancel")
+async def cancel_rework(
+    rework_id: uuid.UUID,
+    body: ReworkCancelIn,
+    r: Request       = None,
+    u: UserContext   = Depends(require_tenant_owner_mutation),
+    db: AsyncSession = Depends(get_db),
+):
+    rw = await _rework.cancel_rework(db, rework_id, u.user_id, body.reason,
+                                     request_id=_rid(r), tenant_id=_provider_tenant_id(u))
+    return ok({"id": str(rw.id), "status": rw.status}, _rid(r), "provider.rework.cancelled")
 
 
 # ── Refund requests ───────────────────────────────────────────────────────────

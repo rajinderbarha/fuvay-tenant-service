@@ -10,6 +10,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_SQL, RESOLVED_OUTCOME_SQL
 from app.engines.analytics.helpers import (
     resolve_date_range, date_range_to_datetimes, safe_metric, analytics_ok,
 )
@@ -109,7 +110,7 @@ class AdminAnalyticsService:
         """, p))
 
         summary["open_complaints"]            = await safe_metric(_scalar(db,
-            "SELECT COUNT(*) FROM customer_complaints WHERE status IN ('open','investigating','awaiting_provider')"))
+            "SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN " + RESOLVED_OR_FINAL_SQL))
 
         summary["pending_refunds"]            = await safe_metric(_scalar(db,
             "SELECT COUNT(*) FROM refund_requests WHERE status IN ('pending','approved')"))
@@ -408,12 +409,12 @@ class AdminAnalyticsService:
         """, p))
         summary["open_complaints"]     = await safe_metric(_scalar(db, f"""
             SELECT COUNT(*) FROM customer_complaints
-            WHERE status IN ('open','investigating','awaiting_provider')
+            WHERE status NOT IN {RESOLVED_OR_FINAL_SQL}
             AND created_at BETWEEN :from_dt AND :to_dt {tc}
         """, p))
         summary["resolved_complaints"] = await safe_metric(_scalar(db, f"""
             SELECT COUNT(*) FROM customer_complaints
-            WHERE status IN ('resolved','closed')
+            WHERE status IN {RESOLVED_OUTCOME_SQL}
             AND created_at BETWEEN :from_dt AND :to_dt {tc}
         """, p))
         summary["total_refund_requests"] = await safe_metric(_scalar(db, f"""
@@ -459,7 +460,7 @@ class AdminAnalyticsService:
                            "severity": "critical"})
 
         open_complaints = await safe_metric(_scalar(db,
-            "SELECT COUNT(*) FROM customer_complaints WHERE status = 'open'"))
+            "SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN " + RESOLVED_OR_FINAL_SQL))
         if open_complaints:
             alerts.append({"type": "open_complaints", "count": open_complaints, "severity": "warning"})
 

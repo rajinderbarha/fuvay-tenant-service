@@ -23,6 +23,7 @@ import structlog
 from sqlalchemy import and_, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_SQL
 from app.engines.auth.models import User
 from app.engines.serviceability.models import TenantServiceArea
 from app.engines.tenant_engine.models import (
@@ -408,7 +409,7 @@ class AdminTenantService:
                                  AND j.status = 'completed'), 0)                        AS completed_jobs,
                     COALESCE((SELECT COUNT(*) FROM customer_complaints cc
                                WHERE cc.tenant_id = t.id
-                                 AND cc.status NOT IN ('resolved','closed','rejected')), 0) AS open_complaints,
+                                 AND cc.status NOT IN {RESOLVED_OR_FINAL_SQL}), 0) AS open_complaints,
                     COALESCE(tl.current_staff_count, 0)                                AS staff_count,
                     (SELECT u.full_name FROM users u WHERE u.id = t.owner_user_id)     AS owner_name
                 FROM tenants t

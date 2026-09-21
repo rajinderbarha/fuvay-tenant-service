@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.engines.complaints.constants import (
     REWORK_REQUESTED, REWORK_APPROVED, REWORK_ASSIGNED, REWORK_SCHEDULED,
     REWORK_IN_PROGRESS, REWORK_COMPLETED, REWORK_REJECTED, REWORK_CANCELLED,
-    STATUS_REWORK_APPROVED, STATUS_RESOLVED,
+    STATUS_REWORK_APPROVED, STATUS_RESOLVED, STATUS_AWAITING_PROVIDER,
     ALLOWED_TRANSITIONS,
     EVT_REWORK_CREATED, EVT_STATUS_CHANGED,
     ACTOR_PROVIDER, ACTOR_SYSTEM,
@@ -168,6 +168,57 @@ class ServiceReworkService:
             except Exception:
                 pass
 
+        await db.commit()
+        return rework
+
+    async def cancel_rework(
+        self,
+        db: AsyncSession,
+        rework_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        reason: str,
+        request_id: str = "—",
+        tenant_id: uuid.UUID | None = None,
+    ) -> ServiceReworkRequest:
+        """Cancel a rework visit that cannot happen and hand the case back.
+
+        The rework transition table always allowed `cancelled`, but nothing
+        could reach it. A provider whose customer refused the visit was left
+        with a case whose only legal move was completing work that would never
+        happen. The case now returns to the provider on a fresh resolution
+        deadline, and the customer is told why.
+        """
+        if not reason or len(reason.strip()) < 10:
+            raise ServiceOSException(
+                "REWORK_CANCEL_REASON_REQUIRED",
+                "Explain why the rework visit cannot go ahead (at least 10 characters).",
+                status_code=422,
+            )
+        rework = await self._get_rework(db, rework_id, tenant_id=tenant_id)
+        self._assert_rework_transition(rework, REWORK_CANCELLED)
+        rework.status = REWORK_CANCELLED
+        rework.customer_visible_notes = reason.strip()
+
+        complaint = await self._complaint_svc.get_complaint(db, rework.complaint_id)
+        if complaint.status == STATUS_REWORK_APPROVED:
+            old_status = complaint.status
+            complaint.status = STATUS_AWAITING_PROVIDER
+            await self._complaint_svc.enter_status(db, complaint, STATUS_AWAITING_PROVIDER)
+            await self._log_event(db, complaint.id, complaint.tenant_id, ACTOR_PROVIDER, actor_user_id,
+                                  EVT_STATUS_CHANGED, old_status, STATUS_AWAITING_PROVIDER,
+                                  {"rework_id": str(rework.id), "cancel_reason": reason.strip()},
+                                  request_id)
+            try:
+                from app.engines.complaints.notifications import notify_customer_complaint
+                await notify_customer_complaint(
+                    db, complaint, notification_type="complaint.rework_cancelled",
+                    title=f"Rework visit cancelled — {complaint.complaint_number}",
+                    body=(f"Your provider cancelled the rework visit: {reason.strip()} "
+                          "They will propose another way to resolve your complaint.")[:480],
+                    severity="warning",
+                )
+            except Exception:
+                pass
         await db.commit()
         return rework
 

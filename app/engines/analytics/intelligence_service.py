@@ -9,6 +9,7 @@ import structlog
 from sqlalchemy import String, and_, cast, text, select, func, update, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_SQL
 from app.engines.analytics.models import AnalyticsEvent
 from app.engines.analytics.intelligence_models import (
     RagKnowledgeBase, RagQueryLog, IntelRiskScore, IntelAnomaly,
@@ -617,7 +618,7 @@ class IntelligenceService:
                     (SELECT COUNT(*) FROM customer_complaints WHERE tenant_id = :tid
                         AND created_at >= now() - interval '90 days') AS complaints_90d,
                     (SELECT COUNT(*) FROM customer_complaints WHERE tenant_id = :tid
-                        AND status NOT IN ('resolved', 'closed', 'withdrawn')) AS open_complaints,
+                        AND status NOT IN """ + RESOLVED_OR_FINAL_SQL + """) AS open_complaints,
                     (SELECT COALESCE(credit_balance, 0) FROM tenant_billing
                         WHERE tenant_id = :tid ORDER BY updated_at DESC LIMIT 1) AS credit_balance
             """), {"tid": eid})
@@ -1009,7 +1010,7 @@ class IntelligenceService:
                 ), complaint_stats AS (
                     SELECT tenant_id,
                            COUNT(*) FILTER (WHERE created_at >= now() - interval '90 days') AS complaints_90d,
-                           COUNT(*) FILTER (WHERE status NOT IN ('resolved', 'closed', 'withdrawn')) AS open_complaints
+                           COUNT(*) FILTER (WHERE status NOT IN """ + RESOLVED_OR_FINAL_SQL + """) AS open_complaints
                     FROM customer_complaints
                     WHERE tenant_id IS NOT NULL
                     GROUP BY tenant_id

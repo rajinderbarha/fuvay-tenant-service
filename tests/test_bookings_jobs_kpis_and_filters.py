@@ -70,7 +70,10 @@ class TestRouterEnrichment:
     def test_complaint_count_scoped_to_tenant_and_open_statuses(self):
         c = _read(ROUTER)
         assert 'CustomerComplaint.tenant_id == tenant_id' in c
-        assert '"resolved", "closed", "withdrawn"' in c
+        # The shared definition of open, not a hand-written list: the old one
+        # named "withdrawn", which is not a status, and missed cancelled,
+        # rejected and settled.
+        assert 'CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES))' in c
 
     def test_date_filters_parse_and_reject_invalid_input(self):
         c = _read(ROUTER)

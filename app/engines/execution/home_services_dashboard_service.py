@@ -16,6 +16,7 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_SQL
 
 # Presentation-group mapping over the real execution.constants job-status
 # machine -- never a second set of database statuses.
@@ -144,7 +145,7 @@ async def _attention_queue(
 
     open_complaints = (await db.execute(text(
         "SELECT count(*), min(created_at) FROM customer_complaints "
-        "WHERE tenant_id=:tid AND status IN ('open','in_progress')"
+        "WHERE tenant_id=:tid AND status NOT IN " + RESOLVED_OR_FINAL_SQL
     ), {"tid": str(tid)})).fetchone()
     if open_complaints and open_complaints[0]:
         items.append({
@@ -382,7 +383,8 @@ async def _customers_quality(db: AsyncSession, tid: uuid.UUID) -> dict:
         "AND customer_id IS NOT NULL GROUP BY customer_id HAVING count(*) > 1) x"
     ), {"tid": str(tid)})).scalar() or 0
     open_complaints = (await db.execute(text(
-        "SELECT count(*) FROM customer_complaints WHERE tenant_id=:tid AND status IN ('open','in_progress')"
+        "SELECT count(*) FROM customer_complaints WHERE tenant_id=:tid AND status NOT IN "
+        + RESOLVED_OR_FINAL_SQL
     ), {"tid": str(tid)})).scalar() or 0
     avg_rating = (await db.execute(text(
         "SELECT avg(overall_rating) FROM customer_reviews WHERE tenant_id=:tid AND status='approved'"

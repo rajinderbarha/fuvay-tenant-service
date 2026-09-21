@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func, or_, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_STATUSES
 from app.dependencies.auth import get_current_user, require_staff_or_above, UserContext
 from app.dependencies.db import get_db
 from app.core.permissions import require_owner_or_office_staff_mutation
@@ -217,7 +218,7 @@ async def list_bookings_jobs(
         open_complaint = select(CustomerComplaint.id).where(
             CustomerComplaint.tenant_id == tenant_id,
             CustomerComplaint.job_id == ServiceJob.id,
-            CustomerComplaint.status.notin_(("resolved", "closed", "withdrawn")),
+            CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES)),
         ).exists()
         q = q.where(open_complaint if has_complaint else ~open_complaint)
         count_q = count_q.where(open_complaint if has_complaint else ~open_complaint)
@@ -249,7 +250,7 @@ async def list_bookings_jobs(
             select(CustomerComplaint.job_id, func.count())
             .where(CustomerComplaint.tenant_id == tenant_id,
                    CustomerComplaint.job_id.in_(job_ids),
-                   CustomerComplaint.status.notin_(("resolved", "closed", "withdrawn")))
+                   CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES)))
             .group_by(CustomerComplaint.job_id)
         )).all()
         complaint_counts = {str(jid): cnt for jid, cnt in complaint_rows}
@@ -515,7 +516,7 @@ async def get_bookings_jobs_detail(
     open_complaint_count = await db.scalar(
         select(func.count()).select_from(CustomerComplaint).where(
             CustomerComplaint.tenant_id == tenant_id, CustomerComplaint.job_id == job_id,
-            CustomerComplaint.status.notin_(("resolved", "closed", "withdrawn")),
+            CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES)),
         )
     ) or 0
 

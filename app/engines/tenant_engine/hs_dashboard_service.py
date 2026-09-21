@@ -18,6 +18,7 @@ import uuid
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engines.complaints.constants import RESOLVED_OR_FINAL_STATUSES
 from app.engines.tenant_engine.models import Tenant
 from app.engines.tenant_engine.hs_customer_directory_service import HomeServicesCustomerDirectoryService
 from app.engines.final_records.models import ServiceJob
@@ -81,7 +82,7 @@ class HomeServicesDashboardService:
             select(func.count(CustomerComplaint.id))
             .join(Tenant, Tenant.id == CustomerComplaint.tenant_id)
             .where(Tenant.vertical == HOME_SERVICES_VERTICAL,
-                   CustomerComplaint.status.notin_(("resolved", "closed", "rejected")))
+                   CustomerComplaint.status.notin_(list(RESOLVED_OR_FINAL_STATUSES)))
         )).scalar() or 0
 
         return {

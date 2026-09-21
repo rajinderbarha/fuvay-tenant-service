@@ -27,7 +27,7 @@ import { apiFetch, financeApi, providerComplaintApi } from "../../../../lib/api"
 type RemedyMode = "refunds" | "rework" | "warranty";
 type ActionKind =
   | "refund_review" | "refund_approve" | "refund_reject" | "refund_record"
-  | "rework_schedule" | "rework_start" | "rework_complete"
+  | "rework_schedule" | "rework_start" | "rework_complete" | "rework_cancel"
   | "warranty_respond" | "warranty_resolve";
 interface PendingAction { kind: ActionKind; row: Record<string, unknown> }
 
@@ -242,6 +242,12 @@ export default function ProviderCustomerRemediesPage() {
       if (status === "in_progress") {
         acts.push({ label: "Mark complete", onClick: () => setAction({ kind: "rework_complete", row }) });
       }
+      // A visit the customer will not allow cannot be completed. Cancelling
+      // hands the complaint back so another resolution can be offered,
+      // instead of leaving it on a deadline nobody can meet.
+      if (["approved", "assigned", "scheduled", "in_progress"].includes(status)) {
+        acts.push({ label: "Cancel rework", danger: true, onClick: () => setAction({ kind: "rework_cancel", row }) });
+      }
       return acts;
     }
 
@@ -285,6 +291,8 @@ export default function ProviderCustomerRemediesPage() {
           await providerComplaintApi.startRework(id); break;
         case "rework_complete":
           await providerComplaintApi.completeRework(id, notes.trim() || undefined); break;
+        case "rework_cancel":
+          await apiFetch(`/v1/provider/rework-requests/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason: notes.trim() }) }); break;
         case "warranty_respond":
           await financeApi.respondWarrantyClaim(id, notes.trim(), false); break;
         case "warranty_resolve":
@@ -436,6 +444,7 @@ const ACTION_TITLES: Record<ActionKind, string> = {
   rework_schedule: "Schedule rework visit",
   rework_start: "Start rework visit",
   rework_complete: "Complete rework visit",
+  rework_cancel: "Cancel rework visit",
   warranty_respond: "Respond to warranty claim",
   warranty_resolve: "Resolve warranty claim",
 };

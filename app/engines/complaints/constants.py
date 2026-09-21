@@ -53,15 +53,17 @@ FINAL_STATUSES = {STATUS_CLOSED, STATUS_CANCELLED, STATUS_REJECTED}
 # FIRST reply: one "we are looking into it" and the case could sit open forever
 # with nothing measuring it.
 #
-# The provider owns these. `refund_requested` is the provider's move too, but
-# the refund request carries its own response deadline and penalty
-# (RefundRequest.provider_response_due_at), so the complaint does not run a
-# second, overlapping clock for it.
+# The provider owns these, and the resolution deadline runs in all of them.
+# A refund request also carries its own 24-hour answer deadline
+# (RefundRequest.provider_response_due_at), charged once. That alone left a
+# refund marked "under review" free to sit indefinitely after the first
+# penalty, so the resolution deadline covers refund_requested too -- the same
+# two obligations a complaint has: answer quickly, and resolve.
 PROVIDER_TURN_STATUSES = {
     STATUS_OPEN, STATUS_AWAITING_PROVIDER, STATUS_REWORK_APPROVED,
     STATUS_REFUND_REQUESTED, STATUS_REFUND_APPROVED,
 }
-PROVIDER_ACTION_TIMED_STATUSES = PROVIDER_TURN_STATUSES - {STATUS_REFUND_REQUESTED}
+PROVIDER_ACTION_TIMED_STATUSES = set(PROVIDER_TURN_STATUSES)
 # The customer owns these: a resolution is waiting for their accept/reject.
 CUSTOMER_TURN_STATUSES = {STATUS_RESOLUTION_PROPOSED, STATUS_AWAITING_CUSTOMER}
 
@@ -102,7 +104,11 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     STATUS_RESOLUTION_PROPOSED:{STATUS_AWAITING_CUSTOMER, STATUS_AWAITING_PROVIDER, STATUS_RESOLVED,
                                 STATUS_REWORK_APPROVED, STATUS_REFUND_APPROVED},
     STATUS_AWAITING_CUSTOMER:  {STATUS_RESOLVED, STATUS_AWAITING_PROVIDER},
-    STATUS_REWORK_APPROVED:    {STATUS_RESOLVED},
+    # AWAITING_PROVIDER: the provider cancelled a rework that cannot happen
+    # (for example, the customer will not give access). Without this the case
+    # had no legal move but completing a visit that was never going to occur,
+    # while the resolution deadline kept charging the provider.
+    STATUS_REWORK_APPROVED:    {STATUS_RESOLVED, STATUS_AWAITING_PROVIDER},
     # A declined refund used to leave the case in refund_requested with no
     # legal move at all: the provider could not offer anything else and no
     # clock watched it. A refund-only case (the dedicated refund flow) ends
@@ -313,6 +319,24 @@ FINAL_STATUSES_EXT = FINAL_STATUSES | {STATUS_SETTLED}
 #: everywhere, so resolved cases counted as open in the provider's queue and
 #: KPIs, stayed eligible for the first-response penalty, and blocked nothing.
 RESOLVED_OR_FINAL_STATUSES = FINAL_STATUSES_EXT | {STATUS_RESOLVED, STATUS_REFUND_RECORDED}
+
+#: Cases that reached an outcome -- not withdrawn (cancelled) or rejected.
+RESOLVED_OUTCOME_STATUSES = {STATUS_RESOLVED, STATUS_REFUND_RECORDED, STATUS_SETTLED, STATUS_CLOSED}
+
+
+def sql_status_list(statuses) -> str:
+    """A SQL literal list for raw queries. Only ever built from constants."""
+    return "(" + ", ".join(f"'{s}'" for s in sorted(statuses)) + ")"
+
+
+# Dashboards and analytics each carried their own hand-written status list,
+# several naming statuses the engine never writes ("investigating",
+# "awaiting_provider", "in_progress", "withdrawn"). The provider's own
+# dashboard counted only open/in_progress, so a case the customer sent back,
+# or a pending rework or refund, showed as zero. Raw SQL uses these instead:
+#   status NOT IN {RESOLVED_OR_FINAL_SQL}  -> still open
+RESOLVED_OR_FINAL_SQL = sql_status_list(RESOLVED_OR_FINAL_STATUSES)
+RESOLVED_OUTCOME_SQL = sql_status_list(RESOLVED_OUTCOME_STATUSES)
 
 ALLOWED_TRANSITIONS_EXT: dict[str, set[str]] = {
     **ALLOWED_TRANSITIONS,
