@@ -41,7 +41,8 @@ def test_plumbing_type_without_uploaded_artwork_uses_install_card():
     ):
         assert problem_card_image(label) == expected
         rendered = instagram_card_image_url(None, fallback_name=label)
-        assert rendered.startswith("https://api.fuvay.in/assets/social-problem-cards/")
+        assert rendered.startswith("https://res.cloudinary.com/dr1b4ezct/image/upload/")
+        assert rendered.endswith("/serviceos/social-problem-cards/install.png")
 
 
 def test_parse_whatsapp_messages_and_skip_delivery_receipts():
@@ -553,10 +554,60 @@ async def test_instagram_offering_carousel_makes_all_140412_services_discoverabl
     assert [row["title"] for row in turn.picker["rows"]] == [
         "Air Conditioner", "Kitchen Chimney", "Microwave Oven",
     ]
-    assert [row["description"].split(" · ", 1)[0] for row in turn.picker["rows"]] == [
-        "Card 1 of 3", "Card 2 of 3", "Card 3 of 3",
+    # Under each name: what the service covers, never a card counter.
+    assert [row["description"] for row in turn.picker["rows"]] == [
+        "Repair and service", "Repair and cleaning", "Diagnosis and repair",
     ]
     assert all(not row["id"].startswith("rs|") for row in turn.picker["rows"])
+
+
+@pytest.mark.asyncio
+async def test_a_service_without_a_description_still_says_what_it_covers():
+    """Every live service had an empty description, so each card read
+    "Card 1 of 4 · Tap below to choose this service." """
+    from app.engines.messaging_gateway import flow
+    from app.engines.messaging_gateway.service_blurbs import SERVICE_BLURBS
+
+    class Thread:
+        zipcode = "140412"
+        city = "Bassi Pathana"
+
+    class Executor:
+        async def _tool_get_category_offerings(self, category_slug):
+            return {"offerings": [
+                {"slug": "plumbing", "name": "Plumbing", "description": None,
+                 "image_url": "https://cdn.example/plumbing.jpg"},
+                {"slug": "waterproofing", "name": "Waterproofing", "description": "",
+                 "image_url": "https://cdn.example/wp.jpg"},
+                {"slug": "solar-panel", "name": "Solar Panel", "description": None,
+                 "image_url": "https://cdn.example/solar.jpg"},
+            ]}
+
+    for channel in (CHANNEL_INSTAGRAM, CHANNEL_WHATSAPP):
+        turn = await flow._offering_step(None, Executor(), "home_services", channel, 0, Thread())
+        descriptions = [row["description"] for row in turn.picker["rows"]
+                        if row["id"].startswith("of|")]
+        assert descriptions == [
+            SERVICE_BLURBS["plumbing"],
+            SERVICE_BLURBS["waterproofing"],
+            "Book a professional for Solar Panel",
+        ]
+        assert not any("Card" in text for text in descriptions)
+
+
+def test_every_service_line_fits_the_smallest_meta_field():
+    """The same row is a WhatsApp list description (72) and an Instagram
+    card subtitle (80); Meta rejects the whole message when one runs long."""
+    from app.engines.messaging_gateway.constants import WA_ROW_DESCRIPTION_CHARS
+    from app.engines.messaging_gateway.service_blurbs import SERVICE_BLURBS, service_blurb
+
+    assert all(len(line) <= WA_ROW_DESCRIPTION_CHARS for line in SERVICE_BLURBS.values())
+    # An admin description wins, trimmed to its first sentence and to fit.
+    assert service_blurb("plumbing", "Plumbing", "Leaks fixed fast. Same-day visits.") == (
+        "Leaks fixed fast."
+    )
+    long_line = service_blurb("x", "X", "word " * 40)
+    assert len(long_line) <= WA_ROW_DESCRIPTION_CHARS and long_line.endswith("…")
 
 
 @pytest.mark.asyncio
@@ -642,7 +693,8 @@ async def test_problem_tool_adds_the_matching_colored_problem_card_artwork():
         "name": "AC not cooling",
         "description": "Weak cooling",
         "image_url": (
-            "https://api.fuvay.in/assets/social-problem-cards/cooling.png"
+            "https://res.cloudinary.com/dr1b4ezct/image/upload/"
+            "serviceos/social-problem-cards/cooling.png"
         ),
     }]
 
@@ -2470,7 +2522,9 @@ async def test_a_plain_http_card_image_uses_public_fallback(monkeypatch):
     ], channel=CHANNEL_INSTAGRAM, config=ig, presentation="carousel")
 
     element = calls[0]["message"]["attachment"]["payload"]["elements"][0]
-    assert element["image_url"].startswith("https://api.fuvay.in/assets/social-problem-cards/")
+    # The plain-http upload is replaced by the hosted card Meta can fetch.
+    assert element["image_url"].startswith("https://res.cloudinary.com/dr1b4ezct/image/upload/")
+    assert "/serviceos/social-problem-cards/" in element["image_url"]
     assert element["title"] == "Air Conditioner"
 
 

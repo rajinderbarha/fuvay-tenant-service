@@ -2507,10 +2507,15 @@ def _category_step(categories: list, channel: str, page: int,
 
 async def _offering_step(db, executor, category_slug: str, channel: str, page: int,
                          thread=None, *, reserve: int = 0) -> Turn:
+    from app.engines.messaging_gateway.service_blurbs import service_blurb
+
     result = await executor._tool_get_category_offerings(category_slug=category_slug)
     options = [
         {"id": PICKER_SEP.join((PICK_OFFERING, category_slug, o["slug"])),
-         "title": o["name"], "description": o.get("description"),
+         "title": o["name"],
+         # The line under the name says what the service covers, so the
+         # customer can tell "Plumbing" from "Waterproofing" before tapping.
+         "description": service_blurb(o.get("slug"), o.get("name"), o.get("description")),
          "image_url": o.get("image_url") or o.get("icon_url"),
          # Meta shows this button title as the customer's reply after a tap.
          # Repeating the option label makes the selected service unambiguous.
@@ -2522,16 +2527,14 @@ async def _offering_step(db, executor, category_slug: str, channel: str, page: i
         # Instagram displays only the first generic-template card at rest.
         # Without an explicit count customers understandably read that as the
         # complete catalog and never discover the horizontally-hidden cards.
-        # Keep the choices card-only (no numbered text fallback), but make the
-        # carousel and its size unambiguous both above and inside every card.
-        total = len(options)
+        # Keep the choices card-only (no numbered text fallback) and say how
+        # many there are above the carousel. Inside each card the subtitle
+        # describes the service: a "Card 1 of 4" counter there told the
+        # customer nothing about what they were choosing.
         prompt = (
-            f"{total} services are available. Swipe left through the cards, "
+            f"{len(options)} services are available. Swipe left through the cards, "
             "then tap the service you need."
         )
-        for index, option in enumerate(options, start=1):
-            description = str(option.get("description") or "Tap below to choose this service.")
-            option["description"] = f"Card {index} of {total} · {description}"
 
     logger.info(
         "messaging_gateway.offerings.rendered",

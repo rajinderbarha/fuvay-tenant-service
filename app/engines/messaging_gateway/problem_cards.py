@@ -2,13 +2,24 @@
 from __future__ import annotations
 
 import ipaddress
+from functools import lru_cache
 from urllib.parse import urlsplit, urlunsplit
+
+import structlog
 
 from app.config import get_settings
 
-# These files are bundled in assets/social-problem-cards and mounted by the API.
-# The previous Cloudinary path was only constructed here; nothing uploaded the
-# bundled PNGs there, so Meta received image URLs that could not be fetched.
+logger = structlog.get_logger("messaging_gateway.problem_cards")
+
+# Where Meta fetches the fallback card art. The PNGs in
+# assets/social-problem-cards are hosted here byte-for-byte (checked
+# 2026-09-22); a changed PNG must be re-uploaded under the same public id.
+# Meta fetches from its own servers, so this must be public HTTPS: the API
+# itself is plain HTTP on the VPS, and api.fuvay.in is not routed to it.
+DEFAULT_CARD_BASE_URL = (
+    "https://res.cloudinary.com/dr1b4ezct/image/upload/"
+    "serviceos/social-problem-cards"
+)
 _OLD_ASSET_PATH = "/serviceos/social-problem-cards/"
 _CARD_KEYS = frozenset({"cooling", "leak", "noise", "power", "smell", "clean", "install", "other"})
 
@@ -49,10 +60,25 @@ def problem_card_family(name: str) -> tuple[str, str]:
     )
 
 
+@lru_cache(maxsize=8)
+def _card_base(configured: str) -> str:
+    """The configured card host, or the hosted copy if Meta could not reach it."""
+    base = configured.strip().rstrip("/")
+    if _public_https_url(base):
+        return base
+    # A localhost, LAN or plain-http override blanks every card with no error
+    # anywhere. Keep the cards working and leave one line in the log.
+    logger.warning("messaging_gateway.card_base_not_public", configured=configured)
+    return DEFAULT_CARD_BASE_URL
+
+
+def _card_asset_url(key: str) -> str:
+    return f"{_card_base(str(get_settings().INSTAGRAM_CARD_PUBLIC_BASE_URL or ''))}/{key}.png"
+
+
 def problem_card_image(name: str) -> str:
     key, _ = problem_card_family(name)
-    base = get_settings().INSTAGRAM_CARD_PUBLIC_BASE_URL.rstrip("/")
-    return f"{base}/{key}.png"
+    return _card_asset_url(key)
 
 
 def problem_card_symbol(name: str) -> str:
@@ -79,16 +105,17 @@ def _public_https_url(value: str) -> bool:
 def instagram_card_image_url(value: object, *, fallback_name: str = "") -> str:
     """Return small, square artwork that Meta can fetch reliably."""
     raw = str(value or "").strip()
-    parsed = urlsplit(raw) if _public_https_url(raw) else urlsplit("")
-    if parsed.hostname == "res.cloudinary.com" and _OLD_ASSET_PATH in parsed.path:
-        # Old fallback values can survive in saved picker/booking context,
-        # including ones with a Cloudinary transformation before the asset id.
-        asset_key = parsed.path.rsplit("/", 1)[-1].removesuffix(".png")
-        if asset_key in _CARD_KEYS:
-            base = get_settings().INSTAGRAM_CARD_PUBLIC_BASE_URL.rstrip("/")
-            return f"{base}/{asset_key}.png"
     if not _public_https_url(raw):
         raw = problem_card_image(fallback_name)
+    else:
+        parsed = urlsplit(raw)
+        if parsed.hostname == "res.cloudinary.com" and _OLD_ASSET_PATH in parsed.path:
+            # A saved picker/booking context can still carry a bundled card
+            # URL with an old crop in front of the asset id. Rebuild it from
+            # the key, so it gets the current host and the padding below.
+            asset_key = parsed.path.rsplit("/", 1)[-1].removesuffix(".png")
+            if asset_key in _CARD_KEYS:
+                raw = _card_asset_url(asset_key)
     parsed = urlsplit(raw)
     if (
         (parsed.hostname or "").lower() == "res.cloudinary.com"

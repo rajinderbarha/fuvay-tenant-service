@@ -67,7 +67,7 @@ def test_a_stale_describe_your_problem_prompt_expires():
 
 
 @pytest.mark.asyncio
-async def test_tapping_something_else_disarms_the_complaint_prompt():
+async def test_tapping_something_else_disarms_the_complaint_prompt(monkeypatch):
     """The customer chose a complaint type, then tapped Confirm handover.
 
     Their next message ("thanks, all good") used to be filed as the complaint.
@@ -86,7 +86,9 @@ async def test_tapping_something_else_disarms_the_complaint_prompt():
     async def fake_draft(_db, _thread):
         return {"id": uuid.uuid4(), "status": "confirmed"}
 
-    flow._draft = fake_draft  # type: ignore[assignment]
+    # monkeypatch restores the real `_draft`; assigning it leaked the fake
+    # into every later test that walks the flow.
+    monkeypatch.setattr(flow, "_draft", fake_draft)
     await flow.advance(
         db, thread, text="", reply_id=f"ho{flow.PICKER_SEP}{uuid.uuid4()}{flow.PICKER_SEP}acknowledge",
         channel="instagram", identity=identity,

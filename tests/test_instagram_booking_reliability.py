@@ -5,8 +5,15 @@ import pytest
 
 from app.engines.messaging_gateway.constants import CHANNEL_INSTAGRAM
 from app.engines.messaging_gateway.problem_cards import (
+    DEFAULT_CARD_BASE_URL,
     INSTAGRAM_CARD_TRANSFORMATION,
     instagram_card_image_url,
+)
+
+# The hosted card, padded square for Meta.
+HOSTED_LEAK = (
+    "https://res.cloudinary.com/dr1b4ezct/image/upload/"
+    f"{INSTAGRAM_CARD_TRANSFORMATION}/serviceos/social-problem-cards/leak.png"
 )
 
 
@@ -30,9 +37,11 @@ def test_old_cropped_card_url_is_replaced_with_padding():
 
 
 def test_missing_artwork_gets_a_public_https_fallback():
-    assert instagram_card_image_url(None, fallback_name="Water leakage").startswith(
-        "https://api.fuvay.in/assets/social-problem-cards/"
-    )
+    """Seen live: the fallback pointed at api.fuvay.in, which is routed to
+    Vercel and answers 404, so every card without its own picture rendered
+    blank. The same PNGs are hosted on Cloudinary and fetch fine."""
+    assert instagram_card_image_url(None, fallback_name="Water leakage") == HOSTED_LEAK
+    assert DEFAULT_CARD_BASE_URL.startswith("https://res.cloudinary.com/")
 
 
 @pytest.mark.parametrize("url", [
@@ -43,19 +52,40 @@ def test_missing_artwork_gets_a_public_https_fallback():
     "https://cdn.example/has a space.png",
 ])
 def test_unfetchable_artwork_uses_the_bundled_png(url):
-    assert instagram_card_image_url(url, fallback_name="Water leakage") == (
-        "https://api.fuvay.in/assets/social-problem-cards/leak.png"
-    )
+    assert instagram_card_image_url(url, fallback_name="Water leakage") == HOSTED_LEAK
 
 
-def test_old_cloudinary_fallback_is_replaced_with_the_bundled_png():
+def test_a_saved_cropped_card_url_is_rebuilt_with_padding():
+    """Old picker/booking context can carry the card with the c_fill crop."""
     old = (
         "https://res.cloudinary.com/dr1b4ezct/image/upload/"
         "c_fill,g_auto,h_960,w_960,q_auto:good,f_jpg/"
         "serviceos/social-problem-cards/leak.png"
     )
-    assert instagram_card_image_url(old, fallback_name="Booking status") == (
-        "https://api.fuvay.in/assets/social-problem-cards/leak.png"
+    assert instagram_card_image_url(old, fallback_name="Booking status") == HOSTED_LEAK
+
+
+@pytest.mark.parametrize("override", [
+    "http://129.121.137.155:8000/assets/social-problem-cards",
+    "https://localhost/assets/social-problem-cards",
+    "",
+])
+def test_a_card_host_meta_cannot_reach_falls_back_to_the_hosted_copy(monkeypatch, override):
+    from app.engines.messaging_gateway import problem_cards
+
+    monkeypatch.setattr(problem_cards, "get_settings",
+                        lambda: type("S", (), {"INSTAGRAM_CARD_PUBLIC_BASE_URL": override})())
+    assert instagram_card_image_url(None, fallback_name="Water leakage") == HOSTED_LEAK
+
+
+def test_a_public_https_card_host_is_honoured(monkeypatch):
+    from app.engines.messaging_gateway import problem_cards
+
+    monkeypatch.setattr(problem_cards, "get_settings", lambda: type("S", (), {
+        "INSTAGRAM_CARD_PUBLIC_BASE_URL": "https://cards.example.com/art/",
+    })())
+    assert problem_cards.problem_card_image("Water leakage") == (
+        "https://cards.example.com/art/leak.png"
     )
 
 
