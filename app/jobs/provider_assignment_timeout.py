@@ -12,7 +12,9 @@ import uuid
 import structlog
 from sqlalchemy import func, select
 
+from app.engines.execution.constants import TERMINAL_JOB_STATUSES
 from app.engines.execution.models import ServiceJobExecutionEvent
+from app.exceptions import ServiceOSException
 from app.engines.final_records.models import ServiceJob
 from app.engines.home_service_assignment.assignment_deadlines import (
     TECHNICIAN_ASSIGNMENT_PENDING_STATUSES, for_job,
@@ -27,22 +29,25 @@ ELIGIBLE_STATUSES = TECHNICIAN_ASSIGNMENT_PENDING_STATUSES
 EVENT_TYPE = "technician_assignment_overdue"
 
 
-async def _best_eligible_staff(db, service, job):
+async def _ranked_eligible_staff(db, service, job) -> list[uuid.UUID]:
+    """Eligible technicians for this job, least-loaded first.
+
+    Workload counts every non-terminal job the technician still holds. The
+    old list named statuses the engine never writes (`in_progress`,
+    `estimate_*`) and missed `service_started`, `work_done` and friends, so a
+    technician mid-job looked free.
+    """
     options = await service.list_eligible_staff_for_job(job.id, job.tenant_id)
     candidates = options.get("eligible_staff") or []
     if not candidates:
-        return None
+        return []
     ids = [candidate["staff_member_id"] for candidate in candidates]
-    active_statuses = (
-        "assigned", "accepted", "scheduled", "on_the_way", "reached_site",
-        "inspection_started", "estimate_submitted", "estimate_approved", "in_progress",
-    )
     workload_rows = (await db.execute(
         select(ServiceJob.assigned_staff_id, func.count(ServiceJob.id))
         .where(
             ServiceJob.tenant_id == job.tenant_id,
             ServiceJob.assigned_staff_id.in_(ids),
-            ServiceJob.status.in_(active_statuses),
+            ServiceJob.status.notin_(list(TERMINAL_JOB_STATUSES)),
         ).group_by(ServiceJob.assigned_staff_id)
     )).all()
     workload = {str(staff_id): int(count) for staff_id, count in workload_rows}
@@ -50,7 +55,7 @@ async def _best_eligible_staff(db, service, job):
         workload.get(str(item["staff_member_id"]), 0),
         str(item.get("name") or "").lower(), str(item["staff_member_id"]),
     ))
-    return uuid.UUID(str(candidates[0]["staff_member_id"]))
+    return [uuid.UUID(str(candidate["staff_member_id"])) for candidate in candidates]
 
 
 async def sweep(db, *, limit: int = 50) -> dict:
@@ -101,31 +106,44 @@ async def sweep(db, *, limit: int = 50) -> dict:
             escalated += 1
 
         if getattr(policy, "assignment_auto_assign_enabled", True):
-            staff_id = await _best_eligible_staff(db, service, job)
-            if staff_id:
+            last_error = None
+            assigned_to = None
+            for staff_id in await _ranked_eligible_staff(db, service, job):
                 try:
-                    await service.assign_job(
-                        job_id=job.id, staff_member_id=staff_id, tenant_id=job.tenant_id,
-                        actor_user_id=None,
-                        notes="Automatically assigned after the provider assignment deadline.",
-                        request_id="job:auto_assign_after_deadline",
-                        assignment_type=ASSIGN_TYPE_AUTO, actor_role="platform",
-                    )
-                except ValueError as exc:
-                    # Availability can change between candidate calculation and
-                    # assignment. Keep the job/provider intact and let the next
-                    # sweep retry instead of aborting every other overdue job.
-                    event.event_metadata = {
-                        **(event.event_metadata or {}),
-                        "outcome": "auto_assignment_retry_required",
-                        "last_error": str(exc)[:120],
-                    }
-                else:
-                    event.event_metadata = {
-                        **(event.event_metadata or {}), "outcome": "technician_auto_assigned",
-                        "staff_member_id": str(staff_id),
-                    }
-                    auto_assigned += 1
+                    # A savepoint per attempt: a refused assignment must not
+                    # poison the transaction that also carries every other
+                    # job's escalation event.
+                    async with db.begin_nested():
+                        await service.assign_job(
+                            job_id=job.id, staff_member_id=staff_id, tenant_id=job.tenant_id,
+                            actor_user_id=None,
+                            notes="Automatically assigned after the provider assignment deadline.",
+                            request_id="job:auto_assign_after_deadline",
+                            assignment_type=ASSIGN_TYPE_AUTO, actor_role="platform",
+                        )
+                except (ValueError, ServiceOSException) as exc:
+                    # A technician's calendar can clash with this visit, and
+                    # the provider can be at its work-in-progress limit
+                    # (ServiceOSException). Try the next technician; if none
+                    # can take it, the next sweep retries. Catching only
+                    # ValueError let the capacity error abort the whole sweep
+                    # and roll back every other job's escalation with it.
+                    last_error = str(getattr(exc, "detail", None) or exc)[:120]
+                    continue
+                assigned_to = staff_id
+                break
+            if assigned_to is not None:
+                event.event_metadata = {
+                    **(event.event_metadata or {}), "outcome": "technician_auto_assigned",
+                    "staff_member_id": str(assigned_to),
+                }
+                auto_assigned += 1
+            elif last_error:
+                event.event_metadata = {
+                    **(event.event_metadata or {}),
+                    "outcome": "auto_assignment_retry_required",
+                    "last_error": last_error,
+                }
 
         if first_escalation:
             from app.engines.tenant_engine.health import refresh_provider_operational_health

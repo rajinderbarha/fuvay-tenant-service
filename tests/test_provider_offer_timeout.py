@@ -22,6 +22,26 @@ def policy(**overrides):
     return NS(**values)
 
 
+class _Savepoint:
+    """`db.begin_nested()` returns an async context manager, not a coroutine.
+
+    The sweep wraps each job in its own savepoint so one provider at capacity
+    cannot roll back every other job's escalation with it.
+    """
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+def _sweep_db():
+    session = AsyncMock()
+    session.begin_nested = MagicMock(side_effect=lambda: _Savepoint())
+    return session
+
+
 def job(*, minutes_old=31, scheduled_date=None, scheduled_time_window=None,
         is_emergency=False, status="pending_assignment"):
     now = datetime.now(timezone.utc)
@@ -94,7 +114,7 @@ async def test_timeout_auto_assigns_inside_same_provider(monkeypatch):
     candidate_result.scalars.return_value.all.return_value = [target]
     workload_result = MagicMock()
     workload_result.all.return_value = []
-    db = AsyncMock()
+    db = _sweep_db()
     db.execute.side_effect = [candidate_result, workload_result]
     db.scalar.return_value = None
     db.add = MagicMock()
@@ -134,7 +154,7 @@ async def test_timeout_recovers_legacy_unassigned_statuses(monkeypatch, legacy_s
     candidate_result.scalars.return_value.all.return_value = [target]
     workload_result = MagicMock()
     workload_result.all.return_value = []
-    db = AsyncMock()
+    db = _sweep_db()
     db.execute.side_effect = [candidate_result, workload_result]
     db.scalar.return_value = None
     db.add = MagicMock()
@@ -164,7 +184,7 @@ async def test_no_eligible_technician_keeps_job_open(monkeypatch):
     target = job()
     candidate_result = MagicMock()
     candidate_result.scalars.return_value.all.return_value = [target]
-    db = AsyncMock()
+    db = _sweep_db()
     db.execute.return_value = candidate_result
     db.scalar.return_value = None
     db.add = MagicMock()

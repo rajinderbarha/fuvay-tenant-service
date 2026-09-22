@@ -47,7 +47,11 @@ class ReasonCode(str, Enum):
 PRE_ASSIGNMENT_STATUSES = {JS_PENDING_ASSIGNMENT}
 
 # "Assigned/scheduled" bucket — assigned staff may get operational access.
-ASSIGNED_STATUSES = {JS_ASSIGNED, JS_ACCEPTED, JS_SCHEDULED}
+# `customer_not_available` is recoverable: the job is reassigned or
+# rescheduled from here, and the technician needs the contact details to
+# arrange that. Treating it as cancelled cut off access to the very customer
+# they were trying to reach.
+ASSIGNED_STATUSES = {JS_ASSIGNED, JS_ACCEPTED, JS_SCHEDULED, JS_CUSTOMER_NOT_AVAIL}
 
 # Active field-work bucket.
 ACTIVE_WORK_STATUSES = {
@@ -59,7 +63,7 @@ ACTIVE_WORK_STATUSES = {
 WORK_DONE_STATUSES = {JS_WORK_DONE}
 
 TERMINAL_COMPLETED_STATUSES = {"completed"}
-TERMINAL_CANCELLED_STATUSES = {JS_CANCELLED, JS_FAILED, JS_CLOSED_ESTIMATE_DECLINED, JS_CUSTOMER_NOT_AVAIL}
+TERMINAL_CANCELLED_STATUSES = {JS_CANCELLED, JS_FAILED, JS_CLOSED_ESTIMATE_DECLINED}
 
 # Grace period after WORK_DONE / completion during which relay communication
 # (never raw contact) stays open for confirmation/follow-up.

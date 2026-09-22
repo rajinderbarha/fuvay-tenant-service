@@ -37,6 +37,10 @@ from app.redis_client import get_redis, cache_set, cache_delete
 from app.schemas.base import encode_cursor, decode_cursor
 
 logger = structlog.get_logger("commerce.service")
+
+#: How long a provider has to RESOLVE a warranty claim after saying they are
+#: working on it. Without this, only the first response was ever timed.
+WARRANTY_RESOLUTION_HOURS = 72
 utcnow = lambda: datetime.now(timezone.utc)
 
 
@@ -724,7 +728,9 @@ class CommerceService:
             invoice.total_amount if invoice else (job.completion_data or {}).get("collected_amount", 0)
         ))
         requested_amount = Decimal(str(amount if amount is not None else eligible_amount))
-        if requested_amount <= 0 or requested_amount > eligible_amount:
+        # A warranty can ask for rework rather than a cash settlement, and a
+        # fully discounted service still has a service-quality obligation.
+        if requested_amount < 0 or requested_amount > eligible_amount:
             raise ServiceOSException(
                 "WARRANTY_AMOUNT_INVALID",
                 "Requested remedy cannot exceed the completed service amount.",
@@ -770,8 +776,13 @@ class CommerceService:
             c.status = "provider_resolved"
             c.provider_resolved_at = utcnow()
             c.resolved_at = utcnow()
+            c.provider_response_due_at = None
         else:
             c.status = "provider_in_progress"
+            # "We are looking into it" used to stop every clock: a claim could
+            # sit in progress for ever. The provider now owes a resolution by
+            # a deadline the SLA sweep enforces.
+            c.provider_response_due_at = utcnow() + timedelta(hours=WARRANTY_RESOLUTION_HOURS)
         await self._publish("warranty_claim.provider_responded", str(c.tenant_id), str(c.id), {"resolved": resolved})
         return self._claim_dict(c)
 
@@ -827,16 +838,27 @@ class CommerceService:
         return self._claim_dict(c)
 
     async def list_tenant_claims(self, tid, status_filter, limit, cursor):
-        q = select(WarrantyClaim).where(WarrantyClaim.tenant_id==tid).order_by(WarrantyClaim.created_at.desc())
+        q = select(WarrantyClaim).where(WarrantyClaim.tenant_id==tid).order_by(
+            WarrantyClaim.created_at.desc(), WarrantyClaim.id.desc(),
+        )
         if status_filter: q = q.where(WarrantyClaim.status==status_filter)
         if cursor:
             try:
                 cr = decode_cursor(cursor)
-                q = q.where(WarrantyClaim.created_at < datetime.fromisoformat(cr["created_at"]))
+                cursor_created = datetime.fromisoformat(cr["created_at"])
+                cursor_id = uuid.UUID(cr["id"]) if cr.get("id") else None
+                q = q.where(
+                    (WarrantyClaim.created_at < cursor_created)
+                    if cursor_id is None else
+                    ((WarrantyClaim.created_at < cursor_created) |
+                     ((WarrantyClaim.created_at == cursor_created) & (WarrantyClaim.id < cursor_id)))
+                )
             except Exception: pass
         q = q.limit(limit + 1); r = await self.db.execute(q)
         claims = r.scalars().all(); has_next = len(claims) > limit; claims = claims[:limit]
-        nc = encode_cursor({"created_at": claims[-1].created_at.isoformat()}) if has_next and claims else None
+        nc = encode_cursor({
+            "created_at": claims[-1].created_at.isoformat(), "id": str(claims[-1].id),
+        }) if has_next and claims else None
         return {"claims": [self._claim_dict(c) for c in claims], "has_next": has_next, "next_cursor": nc}
 
     async def list_customer_claims(self, customer_id, status_filter, limit, cursor):
@@ -848,13 +870,22 @@ class CommerceService:
         if cursor:
             try:
                 cr = decode_cursor(cursor)
-                q = q.where(WarrantyClaim.created_at < datetime.fromisoformat(cr["created_at"]))
+                cursor_created = datetime.fromisoformat(cr["created_at"])
+                cursor_id = uuid.UUID(cr["id"]) if cr.get("id") else None
+                q = q.where(
+                    (WarrantyClaim.created_at < cursor_created)
+                    if cursor_id is None else
+                    ((WarrantyClaim.created_at < cursor_created) |
+                     ((WarrantyClaim.created_at == cursor_created) & (WarrantyClaim.id < cursor_id)))
+                )
             except Exception:
                 pass
         rows = (await self.db.execute(q.limit(limit + 1))).scalars().all()
         has_next = len(rows) > limit
         claims = rows[:limit]
-        next_cursor = encode_cursor({"created_at": claims[-1].created_at.isoformat()}) if has_next and claims else None
+        next_cursor = encode_cursor({
+            "created_at": claims[-1].created_at.isoformat(), "id": str(claims[-1].id),
+        }) if has_next and claims else None
         return {"claims": [self._claim_dict(c) for c in claims], "has_next": has_next, "next_cursor": next_cursor}
 
     async def _update_warranty_signal(self, tid):
@@ -901,9 +932,12 @@ class CommerceService:
         if bp and bp.gstin_verified:
             await self._award_badge(tid, "verified", {"gstin_verified": True}); earned.append("verified")
         lookback = utcnow() - timedelta(days=180)
+        # Any real claim in the window disqualifies the badge. The old list
+        # ("pending"/"approved") matched statuses the engine never writes, so
+        # every provider earned "warranty free" however many claims they had.
         cr = await self.db.execute(select(func.count(WarrantyClaim.id)).where(
             WarrantyClaim.tenant_id==tid, WarrantyClaim.created_at>=lookback,
-            WarrantyClaim.status.in_(["pending","approved"])))
+            WarrantyClaim.status.notin_(["rejected","cancelled"])))
         if (cr.scalar_one_or_none() or 0) == 0:
             await self._award_badge(tid, "warranty_free", {"claims_180d": 0}); earned.append("warranty_free")
         return {"badges_earned": earned, "badges_expired": [], "badges_maintained": []}

@@ -269,6 +269,33 @@ def warranty_penalty_source_id(claim_id, due_at) -> str:
     return f"{claim_id}:{stamp}"
 
 
+async def _overdue_pages(db, statement, due_column, id_column, *, page_size: int = 500):
+    """Keyset-page overdue cases so a penalised first page cannot starve later ones.
+
+    Penalties are idempotent, but the cases remain overdue until the provider
+    responds. Re-querying only the first 500 on every sweep never reaches case
+    501. A stable (deadline, id) cursor visits the complete backlog each run.
+    """
+    cursor = None
+    while True:
+        page = statement
+        if cursor is not None:
+            due_at, case_id = cursor
+            page = page.where(or_(
+                due_column > due_at,
+                and_(due_column == due_at, id_column > case_id),
+            ))
+        rows = (await db.execute(
+            page.order_by(due_column, id_column).limit(page_size)
+        )).scalars().all()
+        if not rows:
+            return
+        yield rows
+        cursor = (rows[-1].provider_response_due_at, rows[-1].id)
+        if len(rows) < page_size:
+            return
+
+
 async def run_remedy_sla_check() -> dict:
     """Automatically penalise overdue refund and warranty response cases."""
     from app.database import get_session_factory
@@ -282,54 +309,66 @@ async def run_remedy_sla_check() -> dict:
         "penalised": 0, "already_penalised": 0,
     }
     async with get_session_factory()() as db:
-        warranty_claims = (await db.execute(
-            select(WarrantyClaim).where(
-                WarrantyClaim.status == "provider_action_required",
+        warranty_query = select(WarrantyClaim).where(
+                # `provider_in_progress` counts too: the provider promised to
+                # fix it and now owes a resolution by its own deadline.
                 WarrantyClaim.provider_response_due_at.is_not(None),
                 WarrantyClaim.provider_response_due_at <= now,
-                # Owed until the provider answers the current round; an answer
-                # from before the latest escalation does not count.
                 or_(
-                    WarrantyClaim.provider_responded_at.is_(None),
+                    # A first response is owed until the provider answers the
+                    # CURRENT round; an answer from before the latest
+                    # escalation does not count.
                     and_(
-                        WarrantyClaim.escalated_at.is_not(None),
-                        WarrantyClaim.provider_responded_at < WarrantyClaim.escalated_at,
+                        WarrantyClaim.status == "provider_action_required",
+                        or_(
+                            WarrantyClaim.provider_responded_at.is_(None),
+                            and_(
+                                WarrantyClaim.escalated_at.is_not(None),
+                                WarrantyClaim.provider_responded_at < WarrantyClaim.escalated_at,
+                            ),
+                        ),
                     ),
+                    # The provider said they were fixing it and then let the
+                    # resolution deadline pass.
+                    WarrantyClaim.status == "provider_in_progress",
                 ),
-            ).limit(500)
-        )).scalars().all()
-        refund_requests = (await db.execute(
-            select(RefundRequest).where(
+            )
+        refund_query = select(RefundRequest).where(
                 RefundRequest.status.in_((REFUND_REQUESTED, REFUND_PROVIDER_REVIEW)),
                 RefundRequest.provider_response_due_at.is_not(None),
                 RefundRequest.provider_response_due_at <= now,
                 RefundRequest.tenant_id.is_not(None),
-            ).limit(500)
-        )).scalars().all()
-
-        for claim in warranty_claims:
-            counts["warranty_checked"] += 1
-            result = await _charge_sla_penalty(
-                db,
-                tenant_id=claim.tenant_id,
-                source_type="warranty_claim",
-                source_id=warranty_penalty_source_id(claim.id, claim.provider_response_due_at),
-                request_id="job:warranty_sla",
             )
-            key = "already_penalised" if result["idempotent"] else "penalised"
-            counts[key] += 1
 
-        for refund in refund_requests:
-            counts["refund_checked"] += 1
-            result = await _charge_sla_penalty(
-                db,
-                tenant_id=refund.tenant_id,
-                source_type="refund_request",
-                source_id=str(refund.id),
-                request_id="job:refund_sla",
-            )
-            key = "already_penalised" if result["idempotent"] else "penalised"
-            counts[key] += 1
+        async for warranty_claims in _overdue_pages(
+            db, warranty_query, WarrantyClaim.provider_response_due_at, WarrantyClaim.id,
+        ):
+            for claim in warranty_claims:
+                counts["warranty_checked"] += 1
+                result = await _charge_sla_penalty(
+                    db,
+                    tenant_id=claim.tenant_id,
+                    source_type="warranty_claim",
+                    source_id=warranty_penalty_source_id(claim.id, claim.provider_response_due_at),
+                    request_id="job:warranty_sla",
+                )
+                key = "already_penalised" if result["idempotent"] else "penalised"
+                counts[key] += 1
+
+        async for refund_requests in _overdue_pages(
+            db, refund_query, RefundRequest.provider_response_due_at, RefundRequest.id,
+        ):
+            for refund in refund_requests:
+                counts["refund_checked"] += 1
+                result = await _charge_sla_penalty(
+                    db,
+                    tenant_id=refund.tenant_id,
+                    source_type="refund_request",
+                    source_id=str(refund.id),
+                    request_id="job:refund_sla",
+                )
+                key = "already_penalised" if result["idempotent"] else "penalised"
+                counts[key] += 1
 
         await db.commit()
 

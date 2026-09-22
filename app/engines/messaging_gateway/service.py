@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text as sa_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,7 @@ from app.core.security import (
 from app.engines.messaging_gateway import flow, meta_client, pickers, rating_request
 from app.engines.messaging_gateway.constants import (
     CMD_COMPLAINT, CMD_HELP, CMD_HUMAN, CMD_LINK, CMD_RESET, CMD_START, CMD_STOP, CMD_TRACK,
+    CMD_WARRANTY,
     CMD_VERIFY, COMMAND_PREFIX,
     CUSTOMER_SERVICE_WINDOW_HOURS, DURABLE_ACTION_PICKS,
     HANDOFF_TEXT, HELP_TEXT, KNOWN_COMMANDS, LIVE_BOOKING_STATUSES,
@@ -121,6 +122,57 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+
+#: How long a "type your description" prompt stays armed. After this the
+#: customer's next message is read as ordinary chat again.
+SOCIAL_TEXT_STATE_TTL = timedelta(minutes=30)
+
+
+def _text_state_expired(state: dict) -> bool:
+    since = state.get("since")
+    if not since:
+        # Written before timestamps existed: treat as stale rather than
+        # letting an old prompt capture whatever the customer types next.
+        return True
+    try:
+        started = datetime.fromisoformat(str(since))
+    except ValueError:
+        return True
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - started > SOCIAL_TEXT_STATE_TTL
+
+
+#: Error codes that genuinely mean "this decision was already made / is no
+#: longer open". Anything else is a real failure the customer should hear
+#: about -- reporting a stock or server problem as "already answered" left
+#: the technician waiting on an approval that never happened.
+_ALREADY_DECIDED_CODES = {
+    "QUOTE_INVALID_STATUS_TRANSITION", "QUOTE_ALREADY_LOCKED", "QUOTE_NOT_CURRENT",
+    "QUOTE_IDEMPOTENCY_CONFLICT", "QUOTE_EXPIRED",
+    "PARTS_REQUEST_ALREADY_DECIDED", "PARTS_REQUEST_CUSTOMER_DECISION_NOT_ALLOWED",
+    "PARTS_REQUEST_NOT_FOUND",
+    "DIRECT_PAYMENT_ALREADY_CONFIRMED", "DIRECT_PAYMENT_LOCKED_AFTER_CONFIRM",
+    "HANDOVER_NOT_REQUESTED",
+}
+DECISION_FAILED = (
+    "That could not be saved just now. Please try again in a moment. "
+    "If it keeps failing, send /human."
+)
+
+
+def _decision_error_text(exc: Exception, already_text: str) -> str:
+    code = str(getattr(exc, "error_code", None) or exc).split(":")[0].strip()
+    if code in _ALREADY_DECIDED_CODES:
+        return already_text
+    if code == "DIRECT_PAYMENT_LOCKED_BY_DISPUTE":
+        return "This payment is under review in your complaint case. Send /complaint to see it."
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, str) and detail and getattr(exc, "status_code", 500) < 500:
+        return detail
+    return DECISION_FAILED
+
+
 def command_remainder(text: str) -> str:
     """Whatever followed the command, e.g. "/fuvay AC not cooling" -> "AC not cooling"."""
     stripped = (text or "").strip()
@@ -128,8 +180,15 @@ def command_remainder(text: str) -> str:
     return parts[1].strip() if len(parts) > 1 else ""
 
 
-def _booking_progress(status: str) -> tuple[str, str]:
-    """Return a compact four-stage tracker and the matching card label."""
+def _booking_progress(
+    status: str, *, technician_assigned: bool = True,
+) -> tuple[str, str]:
+    """Return a compact four-stage tracker and the matching card label.
+
+    `accepted` means the PROVIDER took the booking, which happens before a
+    technician exists. Ticking "Assigned" then contradicted the line right
+    below it ("Technician assignment in progress").
+    """
     normalized = (
         (status or "pending").strip().lower().replace("-", "_").replace(" ", "_")
     )
@@ -150,6 +209,8 @@ def _booking_progress(status: str) -> tuple[str, str]:
         stage = 3
     if normalized in {"completed", "complete", "closed", "delivered"}:
         stage = 4
+    if stage == 2 and not technician_assigned:
+        stage = 1
 
     labels = ("Booked", "Assigned", "ਕੰਮ ਜਾਰੀ", "Complete")
     tracker = "  →  ".join(
@@ -507,6 +568,16 @@ class MessagingGatewayService:
                         provider_message_id=msg.provider_message_id)
             return {"status": STATUS_DUPLICATE, "reply_sent": False}
 
+        # One sender's messages are processed one at a time. Meta delivers a
+        # double tap as two webhooks at once; both read the same draft, and
+        # the loser answered from state the winner had not committed yet
+        # ("You have no booking open right now" beside "Booking confirmed").
+        # The lock is released when this transaction commits.
+        await self.db.execute(
+            sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"chat:{msg.channel}:{msg.from_id}"},
+        )
+
         # ── Whole-channel ceiling ────────────────────────────────────────────
         # Every other limit here is per sender, and an Instagram id costs
         # nothing to make: ten throwaway accounts get ten times the per-sender
@@ -643,6 +714,10 @@ class MessagingGatewayService:
         )
         reply: str | None = None
         picker: dict | None = None
+        if command is not None:
+            # A command is the customer steering somewhere else; an open
+            # "describe the problem" prompt must not capture what follows.
+            await self.clear_social_text_states(thread)
 
         # ── Commands ───────────────────────────────────────────────
         if flow_error:
@@ -655,12 +730,20 @@ class MessagingGatewayService:
         elif command == CMD_HUMAN:
             thread.human_handoff = True
             reply = HANDOFF_TEXT
+            await self._alert_human_handoff(thread)
         elif command == CMD_TRACK:
             action = await flow._track_step(thread, self, "", msg.channel)
             reply, picker = action.text, action.picker
         elif command == CMD_COMPLAINT:
             await self.ensure_session(thread)
             action = await flow._complaint_step(thread, self, "", msg.channel)
+            reply, picker = action.text, action.picker
+        elif command == CMD_WARRANTY:
+            # Warranty support had no command and no entry point for a
+            # returning customer: after /fuvay they only ever saw the
+            # pincode question and the service catalog.
+            await self.ensure_session(thread)
+            action = await flow._warranty_step(thread, self, "", msg.channel)
             reply, picker = action.text, action.picker
         elif command == CMD_LINK:
             reply = await self._start_identity_link(thread, command_remainder(msg.text))
@@ -706,8 +789,13 @@ class MessagingGatewayService:
             # Never advance a draft invisibly after /stop. An explicit
             # /fuvay opts the customer back in and starts a clean flow.
             reply = None
-        elif thread.human_handoff:
-            reply = None  # a person owns this thread; stay quiet
+        elif thread.human_handoff and not (tapped and tap_kind in DURABLE_ACTION_PICKS):
+            # A person owns this thread, so the bot stays quiet -- but a
+            # control the BUSINESS asked the customer to tap (approve a part,
+            # confirm handover or payment, rate the job) must still work.
+            # Dropping those silently left technicians waiting on approvals
+            # the customer believed they had given.
+            reply = None
         elif (
             not tapped
             and not (msg.text or "").strip()
@@ -777,6 +865,37 @@ class MessagingGatewayService:
         return {"status": record.status, "reply_sent": sent,
                 "thread_id": str(thread.id), "command": command}
 
+    async def _alert_human_handoff(self, thread: MessagingThread) -> None:
+        """Tell the platform team a customer asked for a person.
+
+        `/human` silences the bot for that thread. Without an alert nobody
+        knew to open the Instagram inbox, so the customer waited on a human
+        who had not been told.
+        """
+        try:
+            from app.engines.auth.models import User
+            from app.engines.platform_notifications.models import InAppNotification
+
+            admins = (await self.db.execute(select(User.id).where(
+                User.role.in_(("super_admin", "platform_admin")),
+                User.is_active.is_(True),
+            ))).scalars().all()
+            for admin_id in admins:
+                self.db.add(InAppNotification(
+                    user_id=admin_id, tenant_id=None,
+                    notification_type="messaging.human_handoff_requested",
+                    title="Customer asked for a person",
+                    body=(f"{thread.channel} chat "
+                          f"{thread.display_name or thread.channel_user_id} "
+                          "requested a human. The bot is now silent on that thread."),
+                    action_url="/admin/messaging-channels",
+                    action_label="Open conversations",
+                    source_record_type="messaging_threads", source_record_id=thread.id,
+                    severity="warning",
+                ))
+        except Exception as exc:  # noqa: BLE001 - never fail the reply over an alert
+            logger.warning("messaging_gateway.handoff_alert_failed", error=str(exc))
+
     def _welcome(self, thread: MessagingThread) -> str:
         """The greeting, addressed by first name when the channel gives us one."""
         name = f" {thread.display_name.split()[0]}" if thread.display_name else ""
@@ -814,7 +933,33 @@ class MessagingGatewayService:
 
     async def social_complaint_state(self, thread: MessagingThread) -> dict | None:
         session, context = await self._social_context(thread)
-        return dict(context.get("social_complaint") or {}) or None
+        state = dict(context.get("social_complaint") or {}) or None
+        if state and _text_state_expired(state):
+            context.pop("social_complaint", None)
+            session.context_data = context
+            return None
+        return state
+
+    async def clear_social_text_states(self, thread: MessagingThread) -> None:
+        """Forget any complaint/warranty prompt still waiting for typed text.
+
+        Those prompts turn the customer's NEXT message into a complaint or a
+        claim. Once the customer does anything else -- taps another control
+        or sends a command -- the prompt is abandoned; keeping it armed filed
+        an unrelated "thanks, all good" as a complaint against the provider.
+        """
+        if not thread.ai_session_id:
+            return
+        from app.engines.ai_conversation.models import AIConversationSession
+
+        session = await self.db.get(AIConversationSession, thread.ai_session_id)
+        if session is None:
+            return
+        context = dict(session.context_data or {})
+        if "social_complaint" in context or "social_warranty" in context:
+            context.pop("social_complaint", None)
+            context.pop("social_warranty", None)
+            session.context_data = context
 
     async def set_social_complaint_state(
         self, thread: MessagingThread, state: dict | None,
@@ -831,7 +976,7 @@ class MessagingGatewayService:
         if not thread.customer_id:
             return []
         from app.engines.complaints.complaint_service import ComplaintService
-        from app.engines.complaints.constants import FINAL_STATUSES_EXT, STATUS_RESOLVED
+        from app.engines.complaints.constants import RESOLVED_OR_FINAL_STATUSES
 
         rows = await ComplaintService().list_customer_complaints(
             self.db, thread.customer_id,
@@ -846,7 +991,10 @@ class MessagingGatewayService:
                 "booking_id": str(case.booking_id) if case.booking_id else None,
             }
             for case in rows
-            if case.status not in FINAL_STATUSES_EXT | {STATUS_RESOLVED}
+            # RESOLVED_OR_FINAL_STATUSES is the canonical "nothing left to do"
+            # set; the old list missed refund_recorded, so a paid-out case
+            # still showed as something to track.
+            if case.status not in RESOLVED_OR_FINAL_STATUSES
         ]
 
     async def complaint_bookings(self, thread: MessagingThread) -> list[dict]:
@@ -928,8 +1076,13 @@ class MessagingGatewayService:
         return bool(await self.complaint_cases(thread) or await self.complaint_bookings(thread))
 
     async def social_warranty_state(self, thread: MessagingThread) -> dict | None:
-        _session, context = await self._social_context(thread)
-        return dict(context.get("social_warranty") or {}) or None
+        session, context = await self._social_context(thread)
+        state = dict(context.get("social_warranty") or {}) or None
+        if state and _text_state_expired(state):
+            context.pop("social_warranty", None)
+            session.context_data = context
+            return None
+        return state
 
     async def set_social_warranty_state(
         self, thread: MessagingThread, state: dict | None,
@@ -1045,6 +1198,7 @@ class MessagingGatewayService:
     ) -> dict:
         state = {
             "mode": "new",
+            "since": datetime.now(timezone.utc).isoformat(),
             **{key: job.get(key) for key in (
                 "job_id", "booking_id", "booking_number", "service", "problem",
                 "warranty_expires_at",
@@ -1052,6 +1206,7 @@ class MessagingGatewayService:
         }
         if claim_type:
             state["claim_type"] = claim_type
+            state["since"] = datetime.now(timezone.utc).isoformat()
         await self.set_social_complaint_state(thread, None)
         await self.set_social_warranty_state(thread, state)
         return state
@@ -1081,6 +1236,28 @@ class MessagingGatewayService:
         await self.set_social_warranty_state(thread, None)
         return result
 
+    async def reopen_warranty_claim(
+        self, thread: MessagingThread, claim_id: str,
+    ) -> dict:
+        """Send a claim back to the provider from chat ("problem not fixed").
+
+        The customer app has had this ("ask the provider to review again")
+        since the remedies screen shipped; chat had no equivalent, and a job
+        can only ever carry one claim, so a returning problem had no route.
+        """
+        if not thread.customer_id:
+            raise ServiceOSException("WARRANTY_ACCESS_DENIED", "Link your account first.")
+        from app.engines.platform_commerce.service import CommerceService
+
+        return await CommerceService(
+            self.db, request_id=self.request_id,
+            actor_id=thread.customer_id, actor_role="customer",
+        ).escalate_claim(
+            uuid.UUID(str(claim_id)),
+            "Customer reported in chat that the problem is not fixed.",
+            customer_id=thread.customer_id,
+        )
+
     async def warranty_status_view(
         self, thread: MessagingThread, claim_id: str,
     ) -> dict:
@@ -1098,6 +1275,7 @@ class MessagingGatewayService:
     ) -> dict:
         state = {
             "mode": "new",
+            "since": datetime.now(timezone.utc).isoformat(),
             **{key: booking.get(key) for key in (
                 "record_type", "record_id", "booking_id", "booking_number",
                 "category_id", "offering_id", "service", "problem",
@@ -1106,6 +1284,7 @@ class MessagingGatewayService:
         }
         if complaint_type:
             state["complaint_type"] = complaint_type
+            state["since"] = datetime.now(timezone.utc).isoformat()
         await self.set_social_warranty_state(thread, None)
         await self.set_social_complaint_state(thread, state)
         return state
@@ -1114,7 +1293,10 @@ class MessagingGatewayService:
         self, thread: MessagingThread, complaint_id: str,
     ) -> None:
         await self.set_social_complaint_state(
-            thread, {"mode": "message", "complaint_id": complaint_id},
+            thread, {
+                "mode": "message", "complaint_id": complaint_id,
+                "since": datetime.now(timezone.utc).isoformat(),
+            },
         )
 
     async def file_social_complaint(
@@ -1195,8 +1377,25 @@ class MessagingGatewayService:
                 "type": proposed.resolution_type,
                 "description": proposed.description,
                 "notes": proposed.customer_visible_notes,
+                # A refund offer without its amount asked the customer to
+                # accept a number they could not see.
+                "amount": str(proposed.amount) if proposed.amount is not None else None,
             } if proposed else None),
         }
+
+    async def withdraw_social_complaint(
+        self, thread: MessagingThread, complaint_id: str,
+    ) -> None:
+        """Withdraw a complaint from chat (the app has always been able to)."""
+        if not thread.customer_id:
+            raise ServiceOSException("COMPLAINT_ACCESS_DENIED", "Link your account first.")
+        from app.engines.complaints.complaint_service import ComplaintService
+
+        await ComplaintService().cancel_customer_complaint(
+            self.db, thread.customer_id, uuid.UUID(str(complaint_id)),
+            reason="Customer withdrew the complaint in chat.",
+            request_id=self.request_id,
+        )
 
     async def decide_social_complaint_resolution(
         self, thread: MessagingThread, complaint_id: str, resolution_id: str,
@@ -1272,9 +1471,19 @@ class MessagingGatewayService:
         if not options.get("can_cancel"):
             return CANCEL_NOT_ALLOWED
         try:
+            from app.engines.home_service_assignment.constants import (
+                CANCELLATION_REASON_REQUIRES_DETAIL,
+            )
+            # "Another reason" needs a detail server-side. A chat tap carries
+            # no free text, so say where the reason came from rather than
+            # letting the cancellation fail on every attempt.
+            detail = (
+                "Customer chose 'Another reason' in Instagram chat."
+                if reason in CANCELLATION_REASON_REQUIRES_DETAIL else None
+            )
             await HomeServiceJobAssignmentService(self.db).customer_cancel_booking(
                 booking_id=options["booking_id"], customer_id=thread.customer_id,
-                reason=reason, expected_version=options.get("version"),
+                reason=reason, detail=detail, expected_version=options.get("version"),
                 request_id=f"chat:{thread.id}:{booking_number}",
             )
         except Exception as exc:  # noqa: BLE001
@@ -1408,6 +1617,7 @@ class MessagingGatewayService:
         except Exception as exc:  # noqa: BLE001 - stale/repeated taps are normal
             logger.info("messaging_gateway.quote_decision_rejected",
                         quote_id=quote_id, decision=decision, error=str(exc))
+            return _decision_error_text(exc, QUOTE_DECIDED_ALREADY)
         return QUOTE_DECIDED_ALREADY
 
     async def pending_closure_actions(self, thread: MessagingThread) -> list[dict]:
@@ -1447,15 +1657,37 @@ class MessagingGatewayService:
         payments = await DirectPaymentsService(
             self.db, uuid.UUID(int=0), f"chat:{thread.id}",
         ).customer_pending_list(str(thread.customer_id))
+        from app.engines.invoice_payment.direct_payments_constants import (
+            CA_CONFIRM, MISMATCH_ACTIONS,
+        )
         for payment in payments.get("items") or []:
-            if payment.get("customer_confirmed") or payment.get("customer_action"):
+            if payment.get("customer_confirmed") or payment.get("dispute_open"):
+                # Confirmed, or locked in a dispute case: the customer answers
+                # in the complaint, not here. Offering "Did you pay?" on a
+                # disputed record looped forever ("no longer waiting" + the
+                # same question again).
                 continue
+            action = payment.get("customer_action")
+            if action and action not in MISMATCH_ACTIONS and action != CA_CONFIRM:
+                continue
+            booking_number = None
+            if payment.get("booking_id"):
+                booking_number = (await self.db.execute(
+                    select(ServiceBooking.booking_number).where(
+                        ServiceBooking.id == uuid.UUID(str(payment["booking_id"])),
+                    )
+                )).scalar_one_or_none()
             actions.append({
                 "kind": "payment", "payment_id": payment["payment_id"],
+                "booking_number": booking_number,
                 "job_id": payment.get("job_id"), "job_ref": payment.get("job_ref"),
                 "provider": payment.get("provider_business"),
                 "amount": payment.get("service_amount"),
                 "currency": payment.get("currency"), "method": payment.get("method"),
+                # A customer who said "I did not pay" (perhaps by mistake) can
+                # still confirm once they have paid; nothing else in chat let
+                # them change that answer.
+                "reported_issue": action in MISMATCH_ACTIONS,
             })
         return actions
 
@@ -1476,7 +1708,7 @@ class MessagingGatewayService:
         except Exception as exc:  # stale/repeated controls are expected
             logger.info("messaging_gateway.handover_rejected",
                         job_id=str(job_id), error=str(exc))
-            return HANDOVER_DECIDED_ALREADY
+            return _decision_error_text(exc, HANDOVER_DECIDED_ALREADY)
 
     async def decide_payment(
         self, thread: MessagingThread, payment_id: str, decision: str,
@@ -1506,6 +1738,7 @@ class MessagingGatewayService:
         except Exception as exc:  # stale/repeated controls are expected
             logger.info("messaging_gateway.payment_decision_rejected",
                         payment_id=str(payment_id), decision=decision, error=str(exc))
+            return _decision_error_text(exc, PAYMENT_DECIDED_ALREADY)
         return PAYMENT_DECIDED_ALREADY
 
     async def parts_totals(self, thread: MessagingThread, job_id: str) -> dict:
@@ -1550,7 +1783,7 @@ class MessagingGatewayService:
             # thing to a customer — the decision is no longer theirs to make.
             logger.info("messaging_gateway.parts_decision_rejected",
                         parts_request_id=str(parts_request_id), error=str(exc))
-            return PARTS_DECIDED_ALREADY
+            return _decision_error_text(exc, PARTS_DECIDED_ALREADY)
         return PARTS_APPROVED if decision == "approve" else PARTS_DECLINED
 
     async def live_bookings(self, thread: MessagingThread) -> list[dict]:
@@ -1738,7 +1971,10 @@ class MessagingGatewayService:
         )).scalars().first()
         raw_status = (job.status if job else booking.status) or "pending"
         status = raw_status.replace("_", " ").title()
-        progress_line, progress_label = _booking_progress(raw_status)
+        progress_line, progress_label = _booking_progress(
+            raw_status,
+            technician_assigned=bool(getattr(job, "assigned_staff_id", None)),
+        )
 
         from app.engines.admin_catalog.models import (
             MasterIssueType, MasterService, ServiceCategory,

@@ -759,7 +759,14 @@ class HomeServiceChatbotBookingService:
                     "The selected problem is not available for this service.",
                     status_code=422,
                 )
-            problem_changed = draft.selected_problem_id != problem_id
+            # Only a CHANGE of problem invalidates the type. The first pick is
+            # not a change: the chat asks Type and Brand before the problem,
+            # and clearing the type here made it ask "Which type?" a second
+            # time, silently replacing the customer's first answer.
+            problem_changed = (
+                draft.selected_problem_id is not None
+                and draft.selected_problem_id != problem_id
+            )
             draft.selected_problem_id = problem_id
             changes["selected_problem_id"] = str(problem_id)
             # A customer can go back and choose a different Problem. Never

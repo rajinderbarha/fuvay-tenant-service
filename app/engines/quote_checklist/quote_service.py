@@ -35,7 +35,7 @@ from app.engines.quote_checklist.models import (
 from app.engines.final_records.models import ServiceJob
 from app.engines.final_records.booking_job_sync import sync_booking_of_job
 from app.engines.execution.constants import (
-    JS_QUOTE_REQUIRED, JS_CLOSED_ESTIMATE_DECLINED, JOB_TRANSITIONS,
+    JS_QUOTE_REQUIRED, JS_CLOSED_ESTIMATE_DECLINED, JS_SERVICE_STARTED, JOB_TRANSITIONS,
 )
 
 
@@ -664,7 +664,26 @@ class ServiceJobQuoteService:
             )
         )
         q.status = QS_CUSTOMER_REJECTED
-        await self._sync_job_status(db, q.job_id, JS_CLOSED_ESTIMATE_DECLINED)
+        from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+        job = await self._get_job(db, str(q.job_id))
+        if await HomeServiceJobExecutionService().quote_gates_work(db, job):
+            # The estimate WAS the job (inspection / custom quote): declining
+            # it ends the job, and only the visit fee remains payable.
+            await self._sync_job_status(db, q.job_id, JS_CLOSED_ESTIMATE_DECLINED)
+        elif job.status == JS_QUOTE_REQUIRED:
+            # A fixed-price job's estimate is optional extra work. Declining
+            # it used to close the whole job -- the booked work, its payment,
+            # warranty and complaint path all died with a "no thanks" tap.
+            # The booked job simply carries on without the extra.
+            from app.engines.execution.models import ServiceJobExecutionEvent
+            started = (await db.execute(
+                select(ServiceJobExecutionEvent.id).where(
+                    ServiceJobExecutionEvent.job_id == q.job_id,
+                    ServiceJobExecutionEvent.new_status == JS_SERVICE_STARTED,
+                ).limit(1)
+            )).first() is not None
+            if started:
+                await self._sync_job_status(db, q.job_id, JS_SERVICE_STARTED)
         await self._log_event(
             db, q, QEV_CUSTOMER_REJECTED, "customer", user_id,
             old_status=old_status, new_status=QS_CUSTOMER_REJECTED,

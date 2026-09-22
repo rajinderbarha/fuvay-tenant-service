@@ -268,6 +268,12 @@ class MobileCompletionProofService:
             proof.handover_requested_at = _now()
             db.add(proof)
             await db.commit()
+        # Asking for handover sent the customer nothing: an Instagram
+        # customer only saw the request if they happened to message first,
+        # and closure cannot proceed until they confirm.
+        from app.engines.messaging_gateway.booking_updates import send_handover_request
+        if await send_handover_request(db, job):
+            await db.commit()
         return _proof_view(proof)
 
     async def send_reminder(self, db: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID, job_id: uuid.UUID) -> dict:
@@ -282,6 +288,10 @@ class MobileCompletionProofService:
         proof.handover_last_reminder_at = _now()
         db.add(proof)
         await db.commit()
+        # "Send reminder" only stamped a timestamp; nothing was ever sent.
+        from app.engines.messaging_gateway.booking_updates import send_handover_request
+        if await send_handover_request(db, job, reminder=True):
+            await db.commit()
         return _proof_view(proof)
 
     async def acknowledge_handover(self, db: AsyncSession, customer_id: uuid.UUID, job_id: uuid.UUID) -> dict:

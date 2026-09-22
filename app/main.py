@@ -176,6 +176,12 @@ All errors return `application/problem+json` with machine-readable `error_code`.
     uploads_dir.mkdir(exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
+    # These PNGs ship with the API and are used when a catalog row has no
+    # public image. The messaging API gives Meta an absolute HTTPS URL here.
+    card_art_dir = pathlib.Path(__file__).resolve().parent.parent / "assets" / "social-problem-cards"
+    app.mount("/assets/social-problem-cards", StaticFiles(directory=str(card_art_dir)),
+              name="social-problem-cards")
+
     return app
 
 

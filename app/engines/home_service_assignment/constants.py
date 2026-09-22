@@ -63,6 +63,7 @@ ERR_PROVIDER_OFFER_EXPIRED        = "JOB_ASSIGNMENT_PROVIDER_OFFER_EXPIRED"
 ERR_ALREADY_ASSIGNED             = "JOB_ASSIGNMENT_ALREADY_ASSIGNED"
 ERR_STAFF_NOT_FOUND              = "JOB_ASSIGNMENT_STAFF_NOT_FOUND"
 ERR_STAFF_NOT_ELIGIBLE           = "JOB_ASSIGNMENT_STAFF_NOT_ELIGIBLE"
+ERR_STAFF_SCHEDULE_CONFLICT      = "JOB_ASSIGNMENT_STAFF_SCHEDULE_CONFLICT"
 ERR_STAFF_WRONG_TENANT           = "JOB_ASSIGNMENT_STAFF_WRONG_TENANT"
 ERR_STAFF_INACTIVE               = "JOB_ASSIGNMENT_STAFF_INACTIVE"
 ERR_ROLE_NOT_ALLOWED             = "JOB_ASSIGNMENT_ROLE_NOT_ALLOWED"
@@ -94,7 +95,10 @@ CUSTOMER_CANCELLABLE_JOB_STATUSES = {
 # arrival. Cancellation remains blocked at that point, but rescheduling is a
 # distinct action and returns the technician to a fresh scheduled visit.
 CUSTOMER_RESCHEDULABLE_JOB_STATUSES = {
-    *CUSTOMER_CANCELLABLE_JOB_STATUSES, "reached_site",
+    # `customer_not_available` is exactly the case a reschedule exists for:
+    # the technician came, the customer was out, and the visit needs a new
+    # time. It was the one status from which the customer could do neither.
+    *CUSTOMER_CANCELLABLE_JOB_STATUSES, "reached_site", "customer_not_available",
 }
 
 # CANCEL-RESCHEDULE-FOUNDATION policy decisions (resolved 2026-08-02):

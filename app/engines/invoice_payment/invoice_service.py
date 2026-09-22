@@ -294,7 +294,18 @@ class ServiceInvoiceService:
                 ServiceJobQuote.status == "customer_approved",
             ).order_by(ServiceJobQuote.version_number.desc()).limit(1)
         )).scalars().first()
-        source = INV_SRC_APPROVED_QUOTE if quote is not None else INV_SRC_BOOKING_BASE
+        # On an inspection / custom-quote job the approved estimate IS the
+        # price. On a fixed-price job it can only be optional extra work, so
+        # it is billed ON TOP of the booked price -- replacing the booked
+        # price with the extra silently dropped the base charge.
+        quote_is_price = True
+        if quote is not None:
+            from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+            quote_is_price = await HomeServiceJobExecutionService().quote_gates_work(db, job)
+        source = (
+            INV_SRC_APPROVED_QUOTE if quote is not None and quote_is_price
+            else INV_SRC_BOOKING_BASE
+        )
         now = _utcnow()
         inv = ServiceInvoice(
             id=uuid.uuid4(), invoice_number=_invoice_number(),
@@ -308,10 +319,12 @@ class ServiceInvoiceService:
         )
         db.add(inv)
         await db.flush()
-        if quote is not None:
+        if quote is not None and quote_is_price:
             await self._copy_from_quote(db, inv, str(quote.id), quote=quote)
         else:
             await self._copy_from_booking(db, inv, str(job.booking_id))
+            if quote is not None:
+                await self._copy_from_quote(db, inv, str(quote.id), quote=quote)
         await self._add_approved_parts(db, inv)
         await db.flush()
         await self._refresh_totals(db, inv)

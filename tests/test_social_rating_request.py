@@ -109,7 +109,8 @@ class _DB:
 def ask(monkeypatch):
     """A completed, unrated booking whose customer has an open Instagram thread."""
     customer_id = uuid.uuid4()
-    job = NS(id=uuid.uuid4(), offering_id=uuid.uuid4(), customer_id=customer_id)
+    job = NS(id=uuid.uuid4(), offering_id=uuid.uuid4(), customer_id=customer_id,
+             completion_data=None)
     booking = NS(id=uuid.UUID(BOOKING_ID), booking_number="BK-1042", customer_id=customer_id)
     thread = _thread(customer_id=customer_id)
     state = NS(job=job, booking=booking, thread=thread, rated=None, sent=[],
@@ -222,6 +223,28 @@ async def test_nothing_is_sent_without_an_open_thread_or_a_completed_job(ask):
     assert await rating_request._ask(_DB(), ask.job.id) is False
     assert await rating_request._ask(_DB(), uuid.uuid4()) is False
     assert ask.sent == []
+    assert ask.job.completion_data[rating_request.FOLLOWUP_PENDING_KEY]["reason"] == "no_eligible_thread"
+
+
+@pytest.mark.asyncio
+async def test_reopened_thread_clears_pending_marker_after_both_deliveries(ask):
+    ask.job.completion_data = {
+        rating_request.FOLLOWUP_PENDING_KEY: {
+            "reason": "no_eligible_thread", "since": "2026-09-01T00:00:00+00:00",
+        },
+    }
+
+    async def deliver(_db, job, _thread, *, config):
+        assert config == IG
+        job.completion_data = {
+            **job.completion_data,
+            "instagram_warranty_pdf": {"sent_at": "2026-09-21T00:00:00+00:00"},
+        }
+        return True
+
+    ask.warranty.side_effect = deliver
+    assert await rating_request._ask(_DB(), ask.job.id) is True
+    assert rating_request.FOLLOWUP_PENDING_KEY not in ask.job.completion_data
 
 
 @pytest.mark.asyncio
@@ -232,11 +255,21 @@ async def test_nothing_is_sent_while_the_channel_is_switched_off(ask, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_a_failed_send_leaves_the_thread_untouched(ask):
+async def test_a_failed_rating_prompt_still_attempts_the_warranty(ask):
     ask.send_result = {"sent": False, "reason": "transport_error"}
-    assert await rating_request._ask(_DB(), ask.job.id) is False
+    assert await rating_request._ask(_DB(), ask.job.id) is True
     assert ask.thread.last_options is None and ask.thread.last_outbound_at is None
-    ask.warranty.assert_not_awaited()
+    assert rating_request.RATING_DELIVERY_KEY not in (ask.job.completion_data or {})
+    ask.warranty.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_failed_rating_and_warranty_remain_retryable(ask):
+    ask.send_result = {"sent": False, "reason": "transport_error"}
+    ask.warranty.return_value = False
+    assert await rating_request._ask(_DB(), ask.job.id) is False
+    assert rating_request.RATING_DELIVERY_KEY not in (ask.job.completion_data or {})
+    ask.warranty.assert_awaited_once()
 
 
 @pytest.mark.asyncio

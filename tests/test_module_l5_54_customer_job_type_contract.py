@@ -156,9 +156,11 @@ class TestProblemToJobTypeResolution:
 
     @pytest.mark.asyncio
     async def test_changing_problem_clears_previous_type_selection(self):
+        """A DIFFERENT problem invalidates the type answered for the old one."""
         from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
         svc = HomeServiceChatbotBookingService(db=AsyncMock())
-        draft = _mock_draft(offering_type_id=uuid.uuid4())
+        draft = _mock_draft(selected_problem_id=uuid.uuid4(),
+                            offering_type_id=uuid.uuid4())
         mapping = MagicMock()
         mapping.job_type_id = None
         mapping.metadata_json = None
@@ -177,6 +179,40 @@ class TestProblemToJobTypeResolution:
             )
 
         assert draft.offering_type_id is None
+
+    @pytest.mark.asyncio
+    async def test_first_problem_keeps_the_type_already_answered(self):
+        """Seen live: every Instagram booking asked "Which type?" twice.
+
+        The type is asked BEFORE the problem, so the first problem pick
+        found `selected_problem_id` empty and treated that as a change,
+        wiping the answer the customer had just given. The question came
+        round again and the second answer silently won -- a Cassette AC
+        could be booked and priced as a Window AC.
+        """
+        from app.engines.home_service_booking.service import HomeServiceChatbotBookingService
+        svc = HomeServiceChatbotBookingService(db=AsyncMock())
+        answered_type = uuid.uuid4()
+        draft = _mock_draft(selected_problem_id=None,
+                            offering_type_id=answered_type)
+        mapping = MagicMock()
+        mapping.job_type_id = None
+        mapping.metadata_json = None
+        svc.db.execute = AsyncMock(return_value=_first(mapping))
+        svc.db.commit = AsyncMock()
+        svc.db.refresh = AsyncMock()
+
+        with patch.object(svc, "_require_draft", AsyncMock(return_value=draft)), \
+             patch.object(svc, "_assert_not_terminal", MagicMock()), \
+             patch.object(svc, "_emit_event", AsyncMock()), \
+             patch.object(svc, "_enrich_draft", AsyncMock(return_value={})):
+            await svc.update_draft_fields(
+                draft_id=draft.id,
+                customer_id=None,
+                payload={"selected_problem_id": str(uuid.uuid4())},
+            )
+
+        assert draft.offering_type_id == answered_type
 
     @pytest.mark.asyncio
     async def test_reselecting_same_problem_keeps_answered_type(self):

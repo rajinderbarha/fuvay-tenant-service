@@ -187,7 +187,7 @@ async def test_optional_photo_and_schedule_fields_may_be_null():
 
 
 @pytest.mark.asyncio
-async def test_expired_warranty_is_hidden_from_customer_job_detail():
+async def test_expired_warranty_certificate_remains_in_customer_job_detail():
     customer_id = uuid.uuid4()
     tenant_id = uuid.uuid4()
     booking = _booking(customer_id)
@@ -203,7 +203,7 @@ async def test_expired_warranty_is_hidden_from_customer_job_detail():
     result = await _run(booking, job)
 
     assert result.data["job"]["warranty_active"] is False
-    assert result.data["job"]["warranty_certificate"] is None
+    assert result.data["job"]["warranty_certificate"]["certificate_number"] == "WR-EXPIRED"
 
 
 @pytest.mark.asyncio

@@ -47,6 +47,11 @@ def _map_value_error(exc: ValueError) -> ServiceOSException:
     return ServiceOSException(code, code.replace("_", " ").capitalize() + ".", status_code=status)
 
 
+#: Where an estimate may be prepared for a job type that has no inspection.
+_ESTIMATE_WITHOUT_INSPECTION_STATUSES = {
+    "reached_site", "service_started", "quote_required",
+}
+
 class MobileEstimateService:
     async def _resolve_staff_member_id(self, db: AsyncSession, user_id: uuid.UUID) -> uuid.UUID:
         from app.engines.home_service_assignment.staff_model import ProviderTeamMember
@@ -118,7 +123,13 @@ class MobileEstimateService:
         if current:
             quote_detail = await _quote_svc.get_quote(db, current["id"], tenant_id=str(tenant_id))
 
-        readiness = self._build_readiness(quote_detail, inspection_source)
+        from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+        work_start = await HomeServiceJobExecutionService().get_work_start_status(db, job)
+        readiness = self._build_readiness(
+            quote_detail, inspection_source,
+            inspection_required=work_start.get("inspection_required") is not False,
+            job_status=job.status,
+        )
         allowed_actions = self._build_allowed_actions(quote_detail, readiness, job)
 
         return {
@@ -168,10 +179,20 @@ class MobileEstimateService:
             "tax_total": quote["tax_amount"], "grand_total": quote["total_amount"],
         }
 
-    def _build_readiness(self, quote: dict | None, inspection_source: dict) -> dict:
+    def _build_readiness(
+        self, quote: dict | None, inspection_source: dict,
+        *, inspection_required: bool = True, job_status: str | None = None,
+    ) -> dict:
         blockers = []
-        if not inspection_source["completed"]:
-            blockers.append("INSPECTION_NOT_COMPLETE")
+        if inspection_required:
+            if not inspection_source["completed"]:
+                blockers.append("INSPECTION_NOT_COMPLETE")
+        elif job_status not in _ESTIMATE_WITHOUT_INSPECTION_STATUSES:
+            # A job type without an inspection step (custom quote, or optional
+            # extra work on a fixed price) is estimated on site. Requiring an
+            # inspection it can never have deadlocked custom-quote jobs at the
+            # customer's door.
+            blockers.append("TECHNICIAN_NOT_ON_SITE")
         can_save = not blockers
         can_submit = bool(quote and quote.get("items")) and can_save and (not quote or quote["status"] in ITEM_EDITABLE_QUOTE_STATUSES)
         return {"can_save": can_save, "can_submit": can_submit, "blockers": blockers}

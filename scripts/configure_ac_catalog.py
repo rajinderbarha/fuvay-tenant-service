@@ -579,7 +579,7 @@ async def configure() -> None:
                 cfg.allow_all_coverage = cfg.allow_selected_coverage = cfg.allow_exclusion_coverage = True
                 cfg.display_order = dim_order
 
-            await _ensure_question(db, service, job_type, "ac_type", "What type of AC is it?",
+            await _ensure_question(db, service, job_type, "ac_type", "ਇਹ ਕਿਸ type ਦਾ ac ਹੈ?",
                                    "single_select", 0, dimension=type_dimension)
             await _ensure_question(db, service, job_type, "brand", "Which AC brand is it?",
                                    "single_select", 1, dimension=brand_dimension)

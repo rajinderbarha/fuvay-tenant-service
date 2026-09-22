@@ -19,10 +19,54 @@ def test_cloudinary_artwork_is_normalized_for_meta():
     assert normalized.endswith("large.webp")
 
 
+def test_old_cropped_card_url_is_replaced_with_padding():
+    original = (
+        "https://res.cloudinary.com/demo/image/upload/"
+        "c_fill,g_auto,h_960,w_960,q_auto:good,f_jpg/v123/catalog/logo.png"
+    )
+    normalized = instagram_card_image_url(original, fallback_name="Logo")
+    assert f"/image/upload/{INSTAGRAM_CARD_TRANSFORMATION}/v123/" in normalized
+    assert "c_fill" not in normalized
+
+
 def test_missing_artwork_gets_a_public_https_fallback():
     assert instagram_card_image_url(None, fallback_name="Water leakage").startswith(
-        "https://res.cloudinary.com/"
+        "https://api.fuvay.in/assets/social-problem-cards/"
     )
+
+
+@pytest.mark.parametrize("url", [
+    "http://192.168.1.9:8000/uploads/card.png",
+    "https://192.168.1.9/uploads/card.png",
+    "https://localhost/uploads/card.png",
+    "https://",
+    "https://cdn.example/has a space.png",
+])
+def test_unfetchable_artwork_uses_the_bundled_png(url):
+    assert instagram_card_image_url(url, fallback_name="Water leakage") == (
+        "https://api.fuvay.in/assets/social-problem-cards/leak.png"
+    )
+
+
+def test_old_cloudinary_fallback_is_replaced_with_the_bundled_png():
+    old = (
+        "https://res.cloudinary.com/dr1b4ezct/image/upload/"
+        "c_fill,g_auto,h_960,w_960,q_auto:good,f_jpg/"
+        "serviceos/social-problem-cards/leak.png"
+    )
+    assert instagram_card_image_url(old, fallback_name="Booking status") == (
+        "https://api.fuvay.in/assets/social-problem-cards/leak.png"
+    )
+
+
+def test_bundled_instagram_card_is_served_as_png():
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    response = TestClient(create_app()).get("/assets/social-problem-cards/leak.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 @pytest.mark.asyncio

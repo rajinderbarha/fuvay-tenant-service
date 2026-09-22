@@ -1304,18 +1304,31 @@ class TestDraftExpiryService:
         ):
             result = await svc.expire_all()
 
-        assert result["total_expired"] == 7  # stubs return 0, real estate returns 7
+        # Every engine that reports a count contributes to the total.
+        assert result["total_expired"] == sum(
+            result[key]["expired_count"] for key in (
+                "real_estate_lead_drafts", "home_service_booking_drafts",
+                "coaching_appointment_drafts", "coaching_slot_holds",
+            )
+        )
+        assert result["real_estate_lead_drafts"]["expired_count"] == 7
 
     async def test_stub_engines_return_not_implemented(self):
+        """Home-service drafts really expire now; coaching is still a stub.
+
+        Nothing ever wrote the terminal status, so an abandoned home-service
+        draft stayed "active" for ever and the three-draft cap counted rows
+        the customer could no longer see or finish.
+        """
         from app.engines.real_estate_lead.draft_expiry import DraftExpiryService
         svc = DraftExpiryService(db=self.db)
         hs  = await svc.expire_home_service_booking_drafts()
         ca  = await svc.expire_coaching_appointment_drafts()
         sh  = await svc.expire_coaching_slot_holds()
-        assert hs["note"]  == "not_implemented"
+        assert "note" not in hs
+        assert "expired_count" in hs
         assert ca["note"]  == "not_implemented"
         assert sh["note"]  == "not_implemented"
-        assert hs["expired_count"] == 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────

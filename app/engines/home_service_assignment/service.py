@@ -564,6 +564,15 @@ class HomeServiceJobAssignmentService:
             # dispatcher sees a technician on leave as blocked in the list instead of
             # picking them and being refused at the point of assignment.
             reasons.extend(await self._availability_block_reasons(job, s.id))
+            # The assign path refuses a technician whose calendar clashes with
+            # this visit. Listing them as eligible sent the provider to a
+            # generic "not eligible" refusal with no reason.
+            if not reasons:
+                conflict = await self.staff_assignment_conflict_reason(
+                    job, s.id, exclude_job_id=job.id,
+                )
+                if conflict:
+                    reasons.append(conflict)
 
             base = {
                 "staff_member_id": str(s.id),
@@ -633,7 +642,8 @@ class HomeServiceJobAssignmentService:
         if await self.staff_assignment_conflict_reason(
             job, staff_member_id, exclude_job_id=job_id,
         ):
-            raise ValueError(ERR_STAFF_NOT_ELIGIBLE)
+            from app.engines.home_service_assignment.constants import ERR_STAFF_SCHEDULE_CONFLICT
+            raise ValueError(ERR_STAFF_SCHEDULE_CONFLICT)
 
         # Validate staff eligibility
         staff, blocked = await self.validate_staff_eligibility(job, staff_member_id)
@@ -1157,6 +1167,24 @@ class HomeServiceJobAssignmentService:
             slot = await aggregate_slot_available(self.db, job.tenant_id, scheduled_date)
             if not slot.get("available"):
                 raise ValueError(ERR_SLOT_UNAVAILABLE)
+            if scheduled_time_window:
+                # Day-level availability is not a slot. Booking creation takes
+                # this same lock and checks the WINDOW; without it a reschedule
+                # could put more visits in one window than the provider can
+                # staff.
+                from sqlalchemy import text as capacity_sql
+                from app.engines.home_service_booking.provider_slot_service import slot_has_capacity
+                await self.db.execute(
+                    capacity_sql("SELECT pg_advisory_xact_lock(hashtextextended(:capacity_key, 0))"),
+                    {"capacity_key": f"home-service-capacity:{job.tenant_id}"},
+                )
+                if not await slot_has_capacity(
+                    self.db, tenant_id=job.tenant_id, day=scheduled_date,
+                    time_window=scheduled_time_window,
+                    master_service_id=job.offering_id, job_type_id=job.job_type_id,
+                    exclude_job_id=job.id,
+                ):
+                    raise ValueError(ERR_SLOT_UNAVAILABLE)
 
         old_date = job.scheduled_date.isoformat() if job.scheduled_date else None
         old_status = job.status
@@ -1169,7 +1197,9 @@ class HomeServiceJobAssignmentService:
         job.reminder_1h_sent_at = None
         job.provider_reminder_30m_sent_at = None
         job.staff_reminder_30m_sent_at = None
-        if old_status == "reached_site":
+        if old_status in ("reached_site", "customer_not_available"):
+            # A new appointment means a fresh visit: the earlier arrival no
+            # longer describes it, and the job returns to the schedule.
             job.status = JOB_STATUS_SCHEDULED
             job.arrival_verified_at = None
             job.arrival_distance_meters = None
@@ -1414,6 +1444,10 @@ class HomeServiceJobAssignmentService:
                        "accepted_at": accepted_at.isoformat()},
             request_id=request_id,
         )
+        # The booking confirmation promised a message when a technician was
+        # assigned. Nothing sent one.
+        from app.engines.messaging_gateway.booking_updates import send_technician_assigned
+        await send_technician_assigned(self.db, job)
 
         return {
             "job_id":            str(job_id),

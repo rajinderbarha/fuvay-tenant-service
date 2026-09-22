@@ -269,10 +269,14 @@ async def test_direct_payment_full_lifecycle_live():
                 admin_rows = admin_invoices.json()["data"]
                 assert len([row for row in admin_rows if row["job_id"] == str(job_id)]) == 1
 
-                # 5. A second finalize attempt is rejected, not double-fired.
+                # 5. A second finalize reads as success and is not double-fired.
+                # The technician's phone loses responses on site; a retry of a
+                # request that already worked must not show them an error on a
+                # job they just finished. The work itself happens once.
                 app.dependency_overrides[get_current_user] = lambda: make_technician_context(str(tenant_id), user_id=str(staff_user_id))
                 finalize_again = await client.post(f"/v1/staff/service-jobs/{job_id}/mobile-direct-payment/finalize", headers=headers)
-                assert finalize_again.status_code >= 400
+                assert finalize_again.status_code == 200
+                assert finalize_again.json()["data"]["idempotent"] is True
                 ledger_count = (await db.execute(text(
                     "SELECT count(*) FROM usage_credit_ledger WHERE job_id=:jid AND event_type='completed_job_deduction'"
                 ), {"jid": job_id})).scalar_one()

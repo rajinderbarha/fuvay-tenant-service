@@ -315,6 +315,16 @@ class RefundRequestService:
         if approved_cap is not None and recorded_amount > approved_cap:
             raise ServiceOSException("VALIDATION_ERROR",
                 "Recorded amount cannot exceed the approved amount.", status_code=422)
+        # Recording LESS than the customer accepted used to resolve the case
+        # anyway: a ₹1 entry closed a ₹100 refund and the customer had no
+        # move left. The provider must record what was agreed.
+        if approved_cap is not None and recorded_amount < approved_cap:
+            raise ServiceOSException(
+                "REFUND_AMOUNT_INVALID",
+                f"Record the full approved refund of {approved_cap}. "
+                "If less was actually paid, agree a new amount with the customer first.",
+                status_code=422,
+            )
         refund.status              = REFUND_RECORDED
         refund.recorded_amount     = recorded_amount
         refund.proof_media_url     = proof_media_url
@@ -537,7 +547,11 @@ class RefundRequestService:
             total = sum((v for v in values if v is not None), Decimal("0"))
             return str(total)
 
-        needs_action = [r for r in rows if r.status in (REFUND_REQUESTED, REFUND_PROVIDER_REVIEW)]
+        # An approved refund still owes the customer money: the provider has
+        # to record the repayment. Leaving it out of "needs action" showed 0
+        # beside a queue of refunds waiting to be paid.
+        needs_action = [r for r in rows
+                        if r.status in (REFUND_REQUESTED, REFUND_PROVIDER_REVIEW, REFUND_APPROVED)]
         approved = [r for r in rows if r.status == REFUND_APPROVED]
         settled = [r for r in rows if r.status in (REFUND_RECORDED, REFUND_VERIFIED)]
         return {

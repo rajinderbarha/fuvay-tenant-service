@@ -21,8 +21,31 @@ class DraftExpiryService:
         return await svc.expire_old_drafts()
 
     async def expire_home_service_booking_drafts(self) -> dict:
-        # TODO Sprint 19+ — Home Service booking draft expiry not yet implemented.
-        return {"expired_count": 0, "note": "not_implemented"}
+        """Retire home-service drafts whose `expires_at` has passed.
+
+        Nothing ever wrote the terminal status, so an abandoned draft stayed
+        "active" for ever: every read had to remember to filter on
+        `expires_at`, and the three-draft cap counted rows the customer could
+        no longer see or finish.
+        """
+        from sqlalchemy import update
+        from app.engines.home_service_booking.constants import (
+            DRAFT_STATUS_EXPIRED, TERMINAL_STATUSES,
+        )
+        from app.engines.home_service_booking.models import HomeServiceBookingDraft
+        from app.models.base import utcnow
+
+        now = utcnow()
+        result = await self.db.execute(
+            update(HomeServiceBookingDraft)
+            .where(
+                HomeServiceBookingDraft.status.notin_(list(TERMINAL_STATUSES)),
+                HomeServiceBookingDraft.expires_at.isnot(None),
+                HomeServiceBookingDraft.expires_at <= now,
+            )
+            .values(status=DRAFT_STATUS_EXPIRED, updated_at=now)
+        )
+        return {"expired_count": int(result.rowcount or 0)}
 
     async def expire_coaching_appointment_drafts(self) -> dict:
         # TODO Sprint 19+ — Coaching appointment draft expiry not yet implemented.

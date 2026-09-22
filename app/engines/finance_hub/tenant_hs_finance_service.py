@@ -398,8 +398,13 @@ class TenantHomeServicesFinanceService:
                           "count": rework, "amount": None, "blocking": True})
 
         wc_rows = (await self.db.execute(
+            # The warranty engine writes provider_action_required /
+            # provider_in_progress / provider_resolved. The old list named
+            # statuses nothing has ever written, so open claims never showed
+            # as a hold at all.
             text("SELECT count(*) n, coalesce(sum(amount_requested),0) amt FROM warranty_claims "
-                 "WHERE tenant_id=:tid AND status IN ('pending','under_review','approved')"),
+                 "WHERE tenant_id=:tid AND status IN "
+                 "('provider_action_required','provider_in_progress','admin_review')"),
             {"tid": str(self.tenant_id)},
         )).fetchone()
         if wc_rows and wc_rows.n:

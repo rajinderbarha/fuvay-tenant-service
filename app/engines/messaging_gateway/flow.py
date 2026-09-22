@@ -181,6 +181,8 @@ CANCEL_REASON_LABELS = {
     "price_concern": "Too expensive",
     "schedule_conflict": "Schedule clash",
     "no_longer_needed": "No longer needed",
+    # Quick replies cut at 20 characters; this reads whole within that.
+    "provider_asked_to_cancel_or_pay_direct": "Asked to pay outside",
     "other": "Another reason",
 }
 #: A technician has opened up the unit and needs a part. Nothing else in the
@@ -223,6 +225,10 @@ PAYMENT_NOT_PAID_ROW = "I did not pay"
 PAYMENT_CONFIRMED = "Payment confirmed. The technician can now close the job. Once the work is completed, we will send your rating options and warranty PDF here."
 PAYMENT_MISMATCH_REPORTED = "Payment issue reported. The provider must resolve it before closing the job."
 PAYMENT_DECIDED_ALREADY = "That payment is no longer waiting for your confirmation."
+PAYMENT_REPORTED_HEADER = (
+    "You told us you did not pay {amount} for this service. The provider has "
+    "been asked to check it. If you have paid since, confirm it below."
+)
 PAYMENT_NOT_PAID_WARNING = (
     "Report this only if you did not make the payment shown. The provider will "
     "have to resolve the mismatch before the job can close."
@@ -265,11 +271,16 @@ DUPLICATE_CONFIRM = -3
 class Turn:
     """What to send back: a sentence, a picker, or both."""
 
-    __slots__ = ("text", "picker")
+    __slots__ = ("text", "picker", "is_menu")
 
-    def __init__(self, text: str | None = None, picker: dict | None = None):
+    def __init__(self, text: str | None = None, picker: dict | None = None,
+                 is_menu: bool = False):
         self.text = text
         self.picker = picker
+        #: True for the "what would you like to do" menu. Typing at a menu is
+        #: ordinary conversation, not a missed tap, so it is not answered
+        #: with "Please tap one of the options shown below".
+        self.is_menu = is_menu
 
 
 # Meta does not provide an API for a business to hide Instagram's or
@@ -319,6 +330,14 @@ async def advance(
         # made customers accidentally select a type, brand or problem instead
         # of tapping the card they could actually see.
         reply_id = await _resolve_numbered_choice(thread, text)
+
+    if reply_id and identity is not None:
+        tap_kind = reply_id.partition(PICKER_SEP)[0]
+        clear_states = getattr(identity, "clear_social_text_states", None)
+        if tap_kind not in {PICK_COMPLAINT, PICK_WARRANTY} and clear_states is not None:
+            # Tapping anything else abandons an open "describe the problem"
+            # prompt, so the next typed message is ordinary chat again.
+            await clear_states(thread)
 
     # Complaint descriptions and case updates are the two intentional free-text
     # steps in an otherwise tap-only chat. They are persisted in the existing
@@ -378,6 +397,8 @@ async def advance(
         current = await _next_step(
             db, thread, executor, draft, channel, 0, identity,
         )
+        if current.is_menu:
+            return current
         if _requires_option_tap(current):
             current.text = (
                 f"{TAP_AN_OPTION}\n\n{current.text}"
@@ -407,7 +428,12 @@ async def advance(
             # All other old controls still belong to the confirmed booking.
             if kind in {PICK_CATEGORY, PICK_OFFERING}:
                 return await _restart(db, thread, executor, channel, identity)
-            return await _booked_menu_for(identity, thread, "", ALREADY_BOOKED)
+            # This tap belongs to a draft that IS booked, so never answer it
+            # with "you have no booking open" -- a double tap on Confirm read
+            # its own booking before the winning tap had committed.
+            return await _booked_menu_for(
+                identity, thread, "", ALREADY_BOOKED, from_confirmed_draft=True,
+            )
         # Two taps never touch the draft — they only choose which list to show
         # next — so they are answered directly rather than through the draft.
         direct = await _navigate(db, executor, reply_id, draft, thread, channel,
@@ -437,6 +463,7 @@ async def advance(
             return await _booked_menu_for(
                 identity, thread,
                 str((draft or {}).get("_confirmed_booking_number") or ""), note,
+                from_confirmed_draft=True,
             )
         if note and page == DONE:
             return Turn(note)
@@ -506,8 +533,19 @@ async def _navigate(db, executor, reply_id: str, draft, thread, channel: str,
     if kind == PICK_PHONE and rest == "send":
         if identity is None or not _phone_confirmation_pending(identity, thread):
             return Turn(ASK_PHONE)
-        await identity.confirm_phone_verification(thread)
-        return _otp_step(identity, thread)
+        note = str(await identity.confirm_phone_verification(thread) or "")
+        if "code has been sent" not in note:
+            # The send was refused (rate limit, unusable number). Saying "the
+            # OTP we just sent" when nothing was sent left the customer
+            # waiting for a code that never arrives.
+            return Turn(note or ASK_PHONE)
+        step = _otp_step(identity, thread)
+        # Non-production deployments return the generated code so the step is
+        # completable before an SMS provider is configured.
+        if "Development code:" in note and step.picker:
+            step.picker["body"] += "\n\nDevelopment code: " + note.partition(
+                "Development code:")[2].strip()
+        return step
 
     if kind == PICK_TRACK:
         if identity is None:
@@ -838,11 +876,10 @@ async def _apply_tap(db, thread, executor, reply_id: str, draft: dict | None):
 
     if kind == PICK_CONFIRM:
         if rest == _NO:
-            thread.ai_session_id = None  # next turn opens a clean draft
-            thread.zipcode = None
-            thread.city = None
-            thread.pending_customer_id = None
-            thread.pending_phone_ciphertext = None
+            # The same retirement every other restart performs: a draft left
+            # active still counted against the three-draft cap.
+            await abandon_social_booking_drafts(db, thread)
+            reset_booking_state(thread)
             return RESTARTED, 0, None
         return await _confirm(db, thread, executor, draft)
 
@@ -1000,7 +1037,10 @@ async def _apply_text(db, thread, executor, text: str, draft: dict | None,
             )
         return None, draft
 
-    if not thread.city:
+    if not thread.city and (db is None or await _serviceable_categories(db, thread.zipcode)):
+        # Only a COVERED pincode whose coverage row names no city ever asks
+        # for one. Without this guard, anything typed after "we do not cover
+        # 999999" became the city ("We do not cover Hi (999999) yet").
         thread.city = text[:120]
         if draft:
             await executor._tool_update_home_service_draft(
@@ -1135,7 +1175,7 @@ def _booked_menu(text: str, rows: list[dict] | None = None,
     things they might actually want, so they are offered as taps rather than
     as commands to remember.
     """
-    return Turn(text, {
+    return Turn(text, is_menu=True, picker={
         "body": BOOKED_OPTIONS if has_booking else NO_BOOKING_OPTIONS,
         "rows": rows if rows is not None else [
             {"id": f"{PICK_TRACK}{PICKER_SEP}", "title": TRACK_ROW},
@@ -1147,7 +1187,8 @@ def _booked_menu(text: str, rows: list[dict] | None = None,
     })
 
 
-async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> Turn:
+async def _booked_menu_for(identity, thread, booking_number: str, text: str,
+                           *, from_confirmed_draft: bool = False) -> Turn:
     """The menu, built from what this customer actually still has open.
 
     Offering "Track my booking" to someone whose only booking was just
@@ -1174,6 +1215,13 @@ async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> 
             options = await identity.cancel_options(thread, booking_number)
             if options.get("can_cancel"):
                 rows.append({"id": f"{PICK_CANCEL}{PICKER_SEP}{booking_number}",
+                             "title": CANCEL_ROW})
+        elif len(bookings) == 1:
+            # One booking and the server says it is too late to cancel: do not
+            # offer a row whose only possible answer is "no longer allowed".
+            options = await identity.cancel_options(thread, bookings[0]["number"])
+            if options.get("can_cancel"):
+                rows.append({"id": f"{PICK_CANCEL}{PICKER_SEP}{bookings[0]['number']}",
                              "title": CANCEL_ROW})
         else:
             rows.append({"id": f"{PICK_CANCEL}{PICKER_SEP}", "title": CANCEL_ROW})
@@ -1202,6 +1250,14 @@ async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> 
                 str(service.get("booking_number") or "") == str(issue_booking_number)
                 for service in eligible_services
             ):
+                rows.append({
+                    "id": PICKER_SEP.join((PICK_COMPLAINT, "new")),
+                    "title": REPORT_ISSUE_ROW,
+                })
+            elif not bookings and eligible_services:
+                # Nothing live, but a finished service can still have a
+                # reportable problem (property damage, technician conduct).
+                # The row vanished entirely once the job completed.
                 rows.append({
                     "id": PICKER_SEP.join((PICK_COMPLAINT, "new")),
                     "title": REPORT_ISSUE_ROW,
@@ -1237,7 +1293,7 @@ async def _booked_menu_for(identity, thread, booking_number: str, text: str) -> 
             )
 
     rows.append({"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": NEW_BOOKING_ROW})
-    if identity is not None and not bookings and text == ALREADY_BOOKED:
+    if identity is not None and not bookings and text == ALREADY_BOOKED and not from_confirmed_draft:
         # Only said when we actually looked and found nothing — "this booking
         # cannot be changed" is still the honest answer when there is nobody
         # to ask about live bookings.
@@ -1343,11 +1399,12 @@ async def _complaint_step(
         if complaint_type not in allowed_types:
             return Turn("Please choose one of the issue types shown.")
         await identity.begin_social_complaint(thread, state, complaint_type)
-        return Turn(
+        return Turn(None, _typed_answer_picker(
             "Please describe what happened, including the important details. "
             "Your next message will be sent directly to the provider, who is responsible "
-            "for responding and resolving this complaint."
-        )
+            "for responding and resolving this complaint.",
+            PICKER_SEP.join((PICK_COMPLAINT, "cancel")),
+        ))
 
     if action == "case":
         complaint_id = tail
@@ -1367,11 +1424,19 @@ async def _complaint_step(
             "id": PICKER_SEP.join((PICK_COMPLAINT, "update", complaint_id)),
             "title": "Send an update",
         }]
+        # A complaint raised by mistake could only be withdrawn from the app.
+        if str(view.get("status") or "") == "open":
+            rows.append({
+                "id": PICKER_SEP.join((PICK_COMPLAINT, "withdraw", complaint_id)),
+                "title": "Withdraw complaint",
+            })
         resolution = view.get("resolution")
         if resolution:
+            headline = resolution["type"].replace("_", " ").title()
+            if resolution.get("amount"):
+                headline += f" of {_money('INR', resolution['amount'])}"
             lines.extend((
-                "", "PROPOSED RESOLUTION",
-                resolution["type"].replace("_", " ").title(),
+                "", "PROPOSED RESOLUTION", headline,
                 resolution.get("description") or "The provider proposed a resolution.",
             ))
             if resolution.get("notes"):
@@ -1403,9 +1468,29 @@ async def _complaint_step(
 
     if action == "update":
         await identity.begin_social_complaint_message(thread, tail)
-        return Turn(
+        return Turn(None, _typed_answer_picker(
             "Type the update you want to add. Your next message will be shared "
-            "with the provider on this complaint."
+            "with the provider on this complaint.",
+            PICKER_SEP.join((PICK_COMPLAINT, "cancel")),
+        ))
+
+    if action == "cancel":
+        clear_states = getattr(identity, "clear_social_text_states", None)
+        if clear_states is not None:
+            await clear_states(thread)
+        return await _booked_menu_for(identity, thread, "", "Nothing was sent.")
+
+    if action == "withdraw":
+        try:
+            await identity.withdraw_social_complaint(thread, tail)
+        except Exception as exc:
+            return await _complaint_step(
+                thread, identity, f"case{PICKER_SEP}{tail}", channel,
+                notice=str(getattr(exc, "detail", None) or exc),
+            )
+        return await _complaint_step(
+            thread, identity, "cases", channel,
+            notice="That complaint has been withdrawn.",
         )
 
     if action in {"accept", "reject"}:
@@ -1422,6 +1507,22 @@ async def _complaint_step(
         )
 
     return await _complaint_step(thread, identity, "", channel)
+
+
+def _typed_answer_picker(body: str, cancel_id: str) -> dict:
+    """A prompt whose answer is TYPED, with an explicit way out.
+
+    Without a visible Cancel the only escape from "your next message will be
+    sent to the provider" was to know /fuvay.
+    """
+    return {
+        "body": body,
+        "rows": [{"id": cancel_id, "title": "Cancel"}],
+        "list_button": "Choose",
+        "section_title": "Your message",
+        "presentation": "buttons",
+        "allow_text": True,
+    }
 
 
 def _complaint_type_turn(booking: dict, channel: str) -> Turn:
@@ -1531,10 +1632,17 @@ async def _warranty_step(
         if tail not in allowed:
             return Turn("Please choose one of the warranty issue types shown.")
         await identity.begin_social_warranty(thread, state, tail)
-        return Turn(
-            "Please describe the warranty problem in detail. Your next message "
-            "will create a claim for the provider to resolve."
-        )
+        return Turn(None, _typed_answer_picker(
+            "Please describe the warranty problem in detail (at least 20 characters). "
+            "Your next message will create a claim for the provider to resolve.",
+            PICKER_SEP.join((PICK_WARRANTY, "cancel")),
+        ))
+
+    if action == "cancel":
+        clear_states = getattr(identity, "clear_social_text_states", None)
+        if clear_states is not None:
+            await clear_states(thread)
+        return await _booked_menu_for(identity, thread, "", "Nothing was sent.")
 
     if action == "case":
         try:
@@ -1551,10 +1659,39 @@ async def _warranty_step(
             lines.extend(("", "Provider response:", str(case["provider_resolution"])))
         elif case.get("provider_response_due_at"):
             lines.append(
-                f"Provider response due: {str(case['provider_response_due_at']).replace('T', ' ')[:16]}"
+                f"Provider response due: {_local_time(case['provider_response_due_at'])}"
             )
         detail_text = "\n".join(lines)
-        return Turn(f"{notice}\n\n{detail_text}" if notice else detail_text)
+        # A claim the provider called resolved, or one they have not answered
+        # in time, must have a way back. Chat had none: the customer app's
+        # "ask the provider to review again" had no chat equivalent, and a
+        # job already carrying a claim can never raise a second one.
+        rows = []
+        if case.get("status") in {"provider_in_progress", "provider_resolved", "provider_action_required"}:
+            rows.append({
+                "id": PICKER_SEP.join((PICK_WARRANTY, "reopen", str(tail))),
+                "title": "Problem not fixed",
+            })
+        rows.append({"id": f"{PICK_WARRANTY}{PICKER_SEP}", "title": "Warranty support"})
+        picker = {
+            "body": "What would you like to do with this claim?",
+            "rows": rows, "list_button": "Choose", "section_title": "Warranty claim",
+            "presentation": "quick_replies" if channel == CHANNEL_INSTAGRAM else "buttons",
+        }
+        return Turn(f"{notice}\n\n{detail_text}" if notice else detail_text, picker)
+
+    if action == "reopen":
+        try:
+            await identity.reopen_warranty_claim(thread, tail)
+        except Exception as exc:
+            return await _warranty_step(
+                thread, identity, f"case{PICKER_SEP}{tail}", channel,
+                notice=str(getattr(exc, "detail", None) or exc),
+            )
+        return await _warranty_step(
+            thread, identity, f"case{PICKER_SEP}{tail}", channel,
+            notice="We have asked the provider to look at this again.",
+        )
 
     return await _warranty_step(thread, identity, "", channel)
 
@@ -1699,8 +1836,13 @@ async def _quote_step(
 
 async def _closure_step(
     identity, thread, channel: str, booking_number: str = "",
+    *, include_reported: bool = False,
 ) -> Turn | None:
-    """Render the customer actions that unblock staff/tenant final closure."""
+    """Render the customer actions that unblock staff/tenant final closure.
+
+    A payment the customer already reported as unpaid is offered again only
+    when they track that booking -- it must not intercept every message.
+    """
     if identity is None:
         return None
     try:
@@ -1714,6 +1856,8 @@ async def _closure_step(
             action for action in pending
             if str(action.get("booking_number") or "") == booking_number
         ]
+    if not include_reported:
+        pending = [action for action in pending if not action.get("reported_issue")]
     if not pending:
         return None
 
@@ -1726,11 +1870,36 @@ async def _closure_step(
             lines.append(str(action["service"]))
         return Turn("\n".join(lines), {
             "body": "Was the completed work handed over to you?",
-            "rows": [{
-                "id": PICKER_SEP.join((PICK_HANDOVER, action["job_id"], "acknowledge")),
-                "title": HANDOVER_ACK_ROW,
-            }],
+            "rows": [
+                {
+                    "id": PICKER_SEP.join((PICK_HANDOVER, action["job_id"], "acknowledge")),
+                    "title": HANDOVER_ACK_ROW,
+                },
+                # Confirming was the ONLY move: a customer looking at
+                # unfinished work had nothing to tap and no other way to say
+                # so from chat.
+                {
+                    "id": PICKER_SEP.join((PICK_COMPLAINT, "new")),
+                    "title": "Report a problem",
+                },
+            ],
             "list_button": "Choose", "section_title": "Service handover",
+            "presentation": "buttons",
+        })
+
+    if action["kind"] == "payment" and action.get("reported_issue"):
+        amount = _money(action.get("currency") or "INR", action.get("amount") or "0")
+        lines = [PAYMENT_REPORTED_HEADER.format(amount=amount)]
+        if action.get("job_ref"):
+            lines.extend(("", f"Job {action['job_ref']}"))
+        return Turn("\n".join(lines), {
+            "body": f"Have you now paid {amount} to the provider?",
+            "rows": [
+                {"id": PICKER_SEP.join((PICK_PAYMENT, action["payment_id"], "confirm")),
+                 "title": PAYMENT_CONFIRM_ROW},
+                {"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": NEW_BOOKING_ROW},
+            ],
+            "list_button": "Choose", "section_title": "Direct payment",
             "presentation": "buttons",
         })
 
@@ -1755,6 +1924,25 @@ async def _closure_step(
             "presentation": "buttons",
         })
     return None
+
+
+def _local_time(value) -> str:
+    """A deadline in the customer's own clock, labelled.
+
+    These were rendered straight from UTC with no zone, so a customer in
+    India read every warranty and complaint deadline 5.5 hours early.
+    """
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    try:
+        moment = value if isinstance(value, datetime) else datetime.fromisoformat(
+            str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return str(value)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p IST")
 
 
 def _money(currency: str, amount) -> str:
@@ -1851,7 +2039,9 @@ async def _track_step(thread, identity, booking_number: str, channel: str) -> Tu
     if action is None:
         action = await _quote_step(identity, thread, channel, booking_number)
     if action is None:
-        action = await _closure_step(identity, thread, channel, booking_number)
+        action = await _closure_step(
+            identity, thread, channel, booking_number, include_reported=True,
+        )
     if action is not None:
         return action
     if booking_number:
@@ -1928,7 +2118,9 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
             return closure
 
     if _is_finished(draft):
-        return await _booked_menu_for(identity, thread, "", ALREADY_BOOKED)
+        # Reached by ordinary conversation ("hi"), not by a stale tap: answer
+        # with what they can do, not with "this cannot be changed here".
+        return await _booked_menu_for(identity, thread, "", "")
 
     # The service area is settled FIRST. Asking it last meant a customer could
     # pick a service, a problem and answer half a dozen catalog questions
@@ -2732,9 +2924,14 @@ async def _confirm_step(executor, draft: dict, thread) -> Turn:
         missing = ', '.join(summary.get('missing') or [])
         return Turn(result.get('error') or f"Please complete your booking details before confirming{': ' + missing if missing else '.'}")
     price = summary.get("price_estimate") or {}
+    type_name, brand_name = await _dimension_names(getattr(executor, "db", None), draft)
     lines = ["✅ Review your booking / booking ਦੀ ਜਾਂਚ"]
     for label, value in (
         ("Service / ਸੇਵਾ", summary.get("offering_name")),
+        # The type and brand decide the price and the technician's skill;
+        # the customer must see what the booking was made for.
+        ("Type / ਕਿਸਮ", type_name),
+        ("Brand / ਬ੍ਰਾਂਡ", brand_name),
         ("Problem / ਸਮੱਸਿਆ", summary.get("issue_summary") or draft.get("issue_summary")),
         ("Time / ਸਮਾਂ", _when(summary, draft)),
         ("Address / ਪਤਾ", _address(summary, draft)),
@@ -2754,6 +2951,7 @@ async def _confirm_step(executor, draft: dict, thread) -> Turn:
         price_label = (
             "VISIT & INSPECTION FEE / ਜਾਂਚ ਫੀਸ"
             if price.get("requires_inspection_estimate")
+            else "ESTIMATED PRICE / ਅੰਦਾਜ਼ਨ ਕੀਮਤ" if _is_price_range(price)
             else "TOTAL PRICE / ਕੁੱਲ ਕੀਮਤ"
         )
         lines.extend(["", f"💳 {price_label}", str(price["display_price"])])
@@ -2904,6 +3102,15 @@ def _price_block(price: dict) -> str | None:
         or price.get("pricing_mode") == "inspection"
     )
     if not inspection:
+        if _is_price_range(price):
+            # A range is not a total: calling "₹400–₹900" the TOTAL PRICE
+            # promised a figure nobody had fixed yet.
+            return (
+                "━━━━━━━━━━━━━━\n"
+                f"💳 ESTIMATED PRICE / ਅੰਦਾਜ਼ਨ ਕੀਮਤ\n{strong_amount}\n"
+                "━━━━━━━━━━━━━━\n"
+                "Final amount ਕੰਮ ਦੇਖ ਕੇ ਇਸ range ਵਿੱਚ ਤੈਅ ਹੋਵੇਗਾ।"
+            )
         return (
             "━━━━━━━━━━━━━━\n"
             f"💳 𝗧𝗢𝗧𝗔𝗟 𝗣𝗥𝗜𝗖𝗘 / ਕੁੱਲ ਕੀਮਤ\n{strong_amount}\n"
@@ -2916,7 +3123,9 @@ def _price_block(price: dict) -> str | None:
         strong_amount,
         "━━━━━━━━━━━━━━",
         "",
-        "Repair ਦਾ final estimate inspection ਤੋਂ ਬਾਅਦ ਮਿਲੇਗਾ।",
+        # Custom-quote job types have no formal inspection step; the promise
+        # is that the technician checks the job before the estimate.
+        "ਕੰਮ ਦਾ final estimate technician ਦੇ job check ਕਰਨ ਤੋਂ ਬਾਅਦ ਮਿਲੇਗਾ।",
     ]
     adjustment = _visit_fee_adjustment(price)
     if adjustment:
@@ -2925,6 +3134,33 @@ def _price_block(price: dict) -> str | None:
     # can repeat the adjustment promise, and makes the compact slot card look
     # like a second terms page. The structured policy above is authoritative.
     return "\n".join(lines)
+
+
+def _is_price_range(price: dict) -> bool:
+    low, high = price.get("customer_min_price"), price.get("customer_max_price")
+    try:
+        return low is not None and high is not None and Decimal(str(low)) != Decimal(str(high))
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+
+
+async def _dimension_names(db, draft: dict) -> tuple[str | None, str | None]:
+    """Display names of the draft's chosen type and brand, if any."""
+    if db is None:
+        return None, None
+    names = []
+    for table, field in (("service_types", "offering_type_id"), ("brands", "brand_id")):
+        value = draft.get(field)
+        if not value:
+            names.append(None)
+            continue
+        try:
+            names.append((await db.execute(
+                text(f"SELECT name FROM {table} WHERE id = :id"), {"id": str(value)},
+            )).scalar_one_or_none())
+        except Exception:  # noqa: BLE001 - a label must never break the summary
+            names.append(None)
+    return names[0], names[1]
 
 
 def _visit_fee_adjustment(price: dict) -> str | None:

@@ -41,8 +41,7 @@ def test_plumbing_type_without_uploaded_artwork_uses_install_card():
     ):
         assert problem_card_image(label) == expected
         rendered = instagram_card_image_url(None, fallback_name=label)
-        assert rendered.startswith("https://res.cloudinary.com/")
-        assert "/c_fill,g_auto,h_960,w_960,q_auto:good,f_jpg/" in rendered
+        assert rendered.startswith("https://api.fuvay.in/assets/social-problem-cards/")
 
 
 def test_parse_whatsapp_messages_and_skip_delivery_receipts():
@@ -643,8 +642,7 @@ async def test_problem_tool_adds_the_matching_colored_problem_card_artwork():
         "name": "AC not cooling",
         "description": "Weak cooling",
         "image_url": (
-            "https://res.cloudinary.com/dr1b4ezct/image/upload/"
-            "serviceos/social-problem-cards/cooling.png"
+            "https://api.fuvay.in/assets/social-problem-cards/cooling.png"
         ),
     }]
 
@@ -868,11 +866,13 @@ async def test_a_confirmed_booking_cannot_be_changed_by_tapping_an_old_message()
     assert page == flow.BOOKED              # terminal, and a booking exists
     assert "already confirmed" in note
 
-    # And the same for any later turn, tapped or typed. With no way to ask
-    # what is live (no identity), the menu offers only the thing that is
-    # always true — booking something else.
+    # The refusal belongs to the tap that earned it. An ordinary later turn
+    # ("hi") opens the booked menu clean: repeating "this cannot be changed
+    # here" at someone who only said hello answers a question they never
+    # asked. With no way to ask what is live (no identity), that menu offers
+    # only the thing that is always true — booking something else.
     turn = await flow._next_step(None, Thread(), None, confirmed, CHANNEL_WHATSAPP, 0)
-    assert "already confirmed" in turn.text
+    assert "already confirmed" not in turn.text
     assert [r["id"] for r in turn.picker["rows"]] == ["rs|1"]
 
 
@@ -1213,7 +1213,9 @@ def test_price_block_is_clean_and_visually_prioritises_the_amount():
     assert inspection.startswith(
         "━━━━━━━━━━━━━━\n🔎 𝗩𝗜𝗦𝗜𝗧 & 𝗜𝗡𝗦𝗣𝗘𝗖𝗧𝗜𝗢𝗡 𝗙𝗘𝗘 / ਜਾਂਚ ਫੀਸ\n₹𝟮𝟵𝟵"
     )
-    assert "Repair ਦਾ final estimate inspection ਤੋਂ ਬਾਅਦ ਮਿਲੇਗਾ।" in inspection
+    # A custom-quote job type has no formal inspection step, so the promise
+    # names what actually happens: the technician looks at the job first.
+    assert "ਕੰਮ ਦਾ final estimate technician ਦੇ job check ਕਰਨ ਤੋਂ ਬਾਅਦ ਮਿਲੇਗਾ।" in inspection
     assert "final bill ਵਿੱਚ adjust ਹੋ ਜਾਵੇਗੀ" in inspection
     assert "Approve the repair estimate" not in inspection
 
@@ -2468,7 +2470,7 @@ async def test_a_plain_http_card_image_uses_public_fallback(monkeypatch):
     ], channel=CHANNEL_INSTAGRAM, config=ig, presentation="carousel")
 
     element = calls[0]["message"]["attachment"]["payload"]["elements"][0]
-    assert element["image_url"].startswith("https://res.cloudinary.com/")
+    assert element["image_url"].startswith("https://api.fuvay.in/assets/social-problem-cards/")
     assert element["title"] == "Air Conditioner"
 
 
@@ -3567,9 +3569,19 @@ async def test_the_menu_only_offers_what_is_actually_open():
     assert "cancelled" in done.text
     assert [r["id"] for r in done.picker["rows"]] == ["rs|1"]
 
-    # With something live, both Track and Cancel are there.
+    # With something live, both Track and Cancel are there. With exactly one
+    # booking the Cancel row names it, so the row is offered only when the
+    # server still allows cancelling that booking -- a bare "cx|" was shown
+    # unconditionally and then answered "no longer allowed" on the next tap.
     open_menu = await flow._booked_menu_for(Identity(list(one)), Thread(), "", "hi")
-    assert [r["id"] for r in open_menu.picker["rows"]] == ["tr|", "cx|", "rs|1"]
+    assert [r["id"] for r in open_menu.picker["rows"]] == ["tr|", "cx|BK-1", "rs|1"]
+
+    class TooLate(Identity):
+        async def cancel_options(self, thread, booking_number):
+            return {"can_cancel": False, "reasons": []}
+
+    closed = await flow._booked_menu_for(TooLate(list(one)), Thread(), "", "hi")
+    assert [r["id"] for r in closed.picker["rows"]] == ["tr|", "rs|1"]
 
 
 @pytest.mark.asyncio
@@ -3737,6 +3749,8 @@ async def test_a_stopped_thread_does_not_advance_silently(monkeypatch):
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.commit = AsyncMock()
+    db.execute = AsyncMock()   # per-sender advisory lock
+    db.get = AsyncMock(return_value=None)   # no armed complaint prompt
     thread = MagicMock()
     thread.id = uuid.uuid4()
     thread.opted_out = True
@@ -3775,6 +3789,8 @@ async def test_instagram_fuvay_clears_old_area_and_sends_zipcode_prompt(monkeypa
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.commit = AsyncMock()
+    db.execute = AsyncMock()   # per-sender advisory lock
+    db.get = AsyncMock(return_value=None)   # no armed complaint prompt
     thread = MagicMock()
     thread.id = uuid.uuid4()
     thread.display_name = "Aman Customer"
@@ -4225,7 +4241,9 @@ class _FakeDB:
     async def rollback(self):
         pass
 
-    async def execute(self, _stmt):
+    async def execute(self, _stmt, _params=None):
+        # handle_inbound takes a per-sender advisory lock, which binds
+        # parameters; a real AsyncSession.execute accepts them positionally.
         return _FakeResult()
 
 

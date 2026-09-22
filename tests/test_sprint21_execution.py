@@ -39,6 +39,7 @@ def _mock_job(status="assigned", assigned_staff_id=None):
     j.assigned_staff_id = assigned_staff_id or STAFF_ID
     j.failure_reason  = None
     j.updated_at      = None
+    j.scheduled_date  = None   # travel-day gate only applies to a dated visit
     j.to_dict         = lambda: {"id": str(JOB_ID), "status": j.status}
     return j
 

@@ -108,6 +108,51 @@ def _err(code: str, detail: str, status_code: int = 422, **kw) -> ServiceOSExcep
     return ServiceOSException(error_code=code, detail=detail, status_code=status_code, **kw)
 
 
+#: payment_status values written when the linked dispute case ends. The
+#: complaint id stays on the record for audit; these say the lock is over.
+PAYMENT_DISPUTE_RESOLVED = "dispute_resolved"
+PAYMENT_DISPUTE_WITHDRAWN = "dispute_withdrawn"
+
+
+def dispute_is_open(pay) -> bool:
+    """A dispute locks the record only while its case is still open."""
+    if pay.payment_status in (PAYMENT_DISPUTE_RESOLVED, PAYMENT_DISPUTE_WITHDRAWN):
+        return False
+    return bool(pay.dispute_complaint_id) or pay.payment_status == "disputed"
+
+
+async def release_payment_dispute(db, complaint, new_status: str) -> None:
+    """Unlock the payment record when its dispute case reaches an end state.
+
+    A case that reached an outcome (resolved, refund recorded, settled,
+    closed) reconciles the payment. A case withdrawn or rejected returns the
+    record to its ordinary flow, where the customer can confirm or the
+    provider can correct the declaration.
+    """
+    from app.engines.complaints.constants import (
+        RESOLVED_OR_FINAL_STATUSES, RESOLVED_OUTCOME_STATUSES,
+    )
+    if new_status not in RESOLVED_OR_FINAL_STATUSES:
+        return
+    pay = (await db.execute(
+        select(ServicePaymentRecord).where(
+            ServicePaymentRecord.dispute_complaint_id == complaint.id,
+        )
+    )).scalars().first()
+    if pay is None or not dispute_is_open(pay):
+        return
+    now = _utcnow()
+    if new_status in RESOLVED_OUTCOME_STATUSES:
+        pay.payment_status = PAYMENT_DISPUTE_RESOLVED
+        pay.reconciliation_status = RS_CONFIRMED
+    else:
+        pay.payment_status = PAYMENT_DISPUTE_WITHDRAWN
+        pay.reconciliation_status = None
+        pay.reconciliation_status = DirectPaymentsService.derive_status(pay)
+    pay.updated_at = now
+    db.add(pay)
+
+
 class DirectPaymentsService:
     """All methods are tenant-scoped by construction -- tenant_id comes from
     the caller's JWT (UserContext.tenant_id), never from a request body."""
@@ -250,9 +295,21 @@ class DirectPaymentsService:
         # Repair / post-assessment pricing MUST have an approved current
         # estimate before any amount can be declared. A revision-requested,
         # rejected or draft quote leaves this unresolved on purpose.
+        # Only an estimate that IS the job's price makes it repair-like. On a
+        # fixed-price job an estimate is optional extra work: a declined or
+        # pending extra must not block declaring the booked price.
+        quote_is_price = False
+        if quote is not None:
+            from app.engines.execution.home_service_service import HomeServiceJobExecutionService
+            quote_is_price = await HomeServiceJobExecutionService().quote_gates_work(self.db, job)
         repair_like = bool(
             (pricing_behavior and "assess" in str(pricing_behavior).lower())
-            or (quote is not None)
+            or quote_is_price
+        )
+        extra_quote_amount = (
+            _d(quote.customer_payable_amount) or _d(quote.total_amount)
+            if quote is not None and not quote_is_price and quote.status == QS_CUSTOMER_APPROVED
+            else Decimal("0")
         )
 
         expected: Decimal | None = None
@@ -263,7 +320,7 @@ class DirectPaymentsService:
         if invoice is not None and _d(invoice.customer_payable_amount) > 0:
             expected = _d(invoice.customer_payable_amount)
             source = "invoice_snapshot"
-        elif quote is not None and quote.status == QS_CUSTOMER_APPROVED:
+        elif quote is not None and quote.status == QS_CUSTOMER_APPROVED and quote_is_price:
             work_amount = _d(quote.customer_payable_amount) or _d(quote.total_amount)
             # Customer continued after inspection: the visit fee already
             # charged on the published snapshot is credited against the work.
@@ -283,6 +340,10 @@ class DirectPaymentsService:
                     expected = _d(c)
                     source = "booking_price_snapshot"
                     break
+            if expected is not None and extra_quote_amount > 0:
+                # Approved optional extra work on a fixed-price job is billed
+                # on top of the booked price, exactly as the invoice does.
+                expected += extra_quote_amount
             if expected is None and visit_fee > 0:
                 # Customer declined after inspection: work amount is not
                 # payable; the visit fee remains payable per the snapshot.
@@ -298,6 +359,11 @@ class DirectPaymentsService:
         if source != "invoice_snapshot" and expected is not None:
             parts_amount = await self._approved_parts_total(job.id)
             expected += parts_amount
+        elif source == "invoice_snapshot" and invoice is not None:
+            # Report what the invoice actually bills for parts; showing ₹0
+            # next to a total that includes them confused the breakdown.
+            from app.engines.invoice_payment.invoice_service import approved_parts_amount
+            parts_amount = await approved_parts_amount(self.db, invoice.id)
 
         return {
             "expected_amount":      str(expected) if expected is not None else None,
@@ -315,11 +381,16 @@ class DirectPaymentsService:
 
     # ── Derived reconciliation status (section 11) ───────────────────────────
 
-    def derive_status(self, pay: ServicePaymentRecord) -> str:
-        if pay.dispute_complaint_id:
+    @staticmethod
+    def derive_status(pay: ServicePaymentRecord) -> str:
+        if dispute_is_open(pay):
             return RS_DISPUTED
-        if pay.payment_status == "disputed":
-            return RS_DISPUTED
+        if pay.payment_status == PAYMENT_DISPUTE_RESOLVED:
+            # The Complaints & Resolution Center reached an outcome both sides
+            # accepted (or that expired unanswered). That outcome IS the
+            # reconciliation; without this the record stayed "disputed" for
+            # ever and the job could never be completed.
+            return RS_CONFIRMED
         if pay.customer_confirmation_action in MISMATCH_ACTIONS:
             return RS_MISMATCHED
         if pay.customer_confirmed:
@@ -669,7 +740,7 @@ class DirectPaymentsService:
                         "label": "Receipt uploaded", "view_path": None,
                         "legacy_reference": True}
 
-        can_edit = (not pay.customer_confirmed) and not pay.dispute_complaint_id
+        can_edit = (not pay.customer_confirmed) and not dispute_is_open(pay)
         next_reminder_at = None
         if pay.last_reminder_at:
             next_reminder_at = _iso(pay.last_reminder_at +
@@ -750,7 +821,7 @@ class DirectPaymentsService:
                 "edit_declaration": can_edit,
                 "edit_declaration_hint": "Available before customer confirmation",
                 "open_dispute": status in (RS_AWAITING_CUSTOMER, RS_MISMATCHED, RS_CONFIRMED)
-                                and not pay.dispute_complaint_id,
+                                and not dispute_is_open(pay),
                 "open_job": True,
                 "upload_evidence": can_edit,
             },
@@ -972,7 +1043,7 @@ class DirectPaymentsService:
         correction_reason: str | None = None, difference_reason: str | None = None,
     ) -> dict:
         pay = await self._get_record(payment_id)
-        if pay.dispute_complaint_id:
+        if dispute_is_open(pay):
             raise _err(ERR_DP_LOCKED_BY_DISPUTE,
                        "Ordinary edits are locked while a payment dispute is open. "
                        "Corrections happen through dispute resolution.", 409)
@@ -1066,7 +1137,7 @@ class DirectPaymentsService:
                                     "reminders_sent": pay.reminder_count})
 
         job = await self._job(pay.job_id)
-        fired = await self._notify_customer_confirmation_request(pay, job)
+        fired = await self._notify_customer_confirmation_request(pay, job, reminder=True)
         pay.reminder_count += 1
         pay.last_reminder_at = now
         pay.updated_at = now
@@ -1086,9 +1157,22 @@ class DirectPaymentsService:
                                  else "remind_customer"),
         }
 
-    async def _notify_customer_confirmation_request(self, pay, job) -> bool:
+    async def _notify_customer_confirmation_request(self, pay, job, *, reminder: bool = False) -> bool:
         """Real notification through the canonical path. Contains NO raw
-        contact detail -- only job number, business name and the amount."""
+        contact detail -- only job number, business name and the amount.
+
+        Also delivered to the chat the booking came from: the in-app
+        notification never reaches a customer who booked on Instagram and has
+        no app, and closure waits on their confirmation.
+        """
+        chat_sent = False
+        try:
+            from app.engines.messaging_gateway.booking_updates import send_payment_request
+            chat_sent = await send_payment_request(self.db, job, pay, reminder=reminder)
+            if chat_sent:
+                await self.db.commit()
+        except Exception:  # noqa: BLE001 - a message must not fail the payment
+            chat_sent = False
         try:
             from app.engines.platform_notifications.notification_service import NotificationService
             from app.engines.tenant_engine.models import Tenant
@@ -1108,16 +1192,16 @@ class DirectPaymentsService:
                 source_record_type="service_payment_records", source_record_id=pay.id,
                 recipients=[{"user_id": pay.customer_id, "recipient_type": "customer"}],
             )
-            return ev is not None
+            return bool(ev is not None or chat_sent)
         except Exception:
-            return False
+            return chat_sent
 
     # ── Dispute (section 16) ────────────────────────────────────────────────
 
     async def open_dispute(self, *, payment_id: uuid.UUID, actor_user_id: str,
                            description: str, actor_type: str = "staff") -> dict:
         pay = await self._get_record(payment_id)
-        if pay.dispute_complaint_id:
+        if dispute_is_open(pay):
             raise _err(ERR_DP_DISPUTE_EXISTS,
                        "A payment dispute is already open for this record.", 409)
         if self.derive_status(pay) not in (RS_AWAITING_CUSTOMER, RS_MISMATCHED, RS_CONFIRMED):
@@ -1222,7 +1306,7 @@ class DirectPaymentsService:
             return {"payment_id": str(pay.id), "status": self.derive_status(pay),
                     "customer_confirmed": True, "idempotent": True,
                     "confirmed_at": _iso(pay.customer_confirmed_at)}
-        if pay.dispute_complaint_id:
+        if dispute_is_open(pay):
             raise _err(ERR_DP_LOCKED_BY_DISPUTE,
                        "This payment is under review. Respond in the linked complaint case.", 409)
         now = _utcnow()
@@ -1271,7 +1355,7 @@ class DirectPaymentsService:
             raise _err(ERR_DP_NOT_FOUND, "Direct payment record not found.", 404)
         if str(pay.customer_id) != str(customer_id):
             raise _err(ERR_DP_ACCESS_DENIED, "This payment record is not yours.", 403)
-        if pay.dispute_complaint_id:
+        if dispute_is_open(pay):
             raise _err(ERR_DP_LOCKED_BY_DISPUTE,
                        "This payment is under review. Respond in the linked complaint case.", 409)
         now = _utcnow()
@@ -1361,6 +1445,9 @@ class DirectPaymentsService:
                 "status":          self.derive_status(pay),
                 "customer_confirmed": pay.customer_confirmed,
                 "customer_action": pay.customer_confirmation_action,
+                "dispute_open": dispute_is_open(pay),
+                "dispute_complaint_id": (str(pay.dispute_complaint_id)
+                                         if pay.dispute_complaint_id else None),
                 "notice": "You paid this amount directly to the provider. "
                           "Fuvay did not collect it.",
             })

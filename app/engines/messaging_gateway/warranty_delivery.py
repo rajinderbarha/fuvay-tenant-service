@@ -1,7 +1,7 @@
 """Deliver the saved provider warranty as a PDF after the Instagram rating ask."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 import structlog
@@ -15,6 +15,22 @@ from app.engines.messaging_gateway.constants import CHANNEL_INSTAGRAM
 
 logger = structlog.get_logger(__name__)
 DELIVERY_KEY = "instagram_warranty_pdf"
+#: Set when storage produced a URL Instagram can never fetch. Retrying is
+#: pointless until the deployment's storage changes, and each attempt stored
+#: another copy of the certificate.
+BLOCKED_KEY = "instagram_warranty_pdf_blocked"
+BLOCKED_RETRY_HOURS = 24
+
+
+def _storage_recently_unusable(job) -> bool:
+    blocked = (getattr(job, "completion_data", None) or {}).get(BLOCKED_KEY) or {}
+    try:
+        at = datetime.fromisoformat(str(blocked.get("at")))
+    except (TypeError, ValueError):
+        return False
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - at < timedelta(hours=BLOCKED_RETRY_HOURS)
 
 
 def _https_url(value: str | None) -> bool:
@@ -56,7 +72,13 @@ async def _send(db, job, thread, snapshot: dict, config: dict) -> bool:
         return True
 
     document_url = delivery.get("document_url")
-    if not _https_url(document_url):
+    if not document_url and _storage_recently_unusable(job):
+        # Storage cannot publish an HTTPS URL for this deployment. Rendering
+        # and storing the PDF again on every retry only filled the bucket
+        # with copies nobody could be sent; try again in a day instead, in
+        # case the storage configuration changes.
+        return False
+    if not document_url:
         pdf = render_certificate_pdf(snapshot)
         stored = await MediaStorageService(db=db).store_file(
             file_bytes=pdf,
@@ -66,10 +88,6 @@ async def _send(db, job, thread, snapshot: dict, config: dict) -> bool:
             owner_id=str(job.customer_id),
         )
         document_url = stored.public_url
-        if not _https_url(document_url):
-            logger.warning("messaging_gateway.warranty.no_public_https_url",
-                           job_id=str(job.id), storage_driver=stored.storage_driver)
-            return False
         delivery = {
             "document_url": document_url,
             "storage_driver": stored.storage_driver,
@@ -77,6 +95,21 @@ async def _send(db, job, thread, snapshot: dict, config: dict) -> bool:
             "storage_bucket": stored.storage_bucket,
             "certificate_number": snapshot.get("certificate_number"),
         }
+        if not _https_url(document_url):
+            logger.warning("messaging_gateway.warranty.no_public_https_url",
+                           job_id=str(job.id), storage_driver=stored.storage_driver)
+            job.completion_data = {
+                **(job.completion_data or {}),
+                BLOCKED_KEY: {
+                    "reason": "no_public_https_url",
+                    "storage_driver": stored.storage_driver,
+                    "at": datetime.now(timezone.utc).isoformat(),
+                },
+            }
+            await db.flush()
+            return False
+        # Keep the stored document so a failed SEND reuses this PDF instead
+        # of rendering and storing another copy.
         job.completion_data = {**(job.completion_data or {}), DELIVERY_KEY: delivery}
         await db.flush()
 

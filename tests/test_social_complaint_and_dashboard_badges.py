@@ -111,8 +111,12 @@ async def test_instagram_complaint_selects_booking_then_type_then_description():
     describe = await flow._complaint_step(
         thread, identity, "type|service_quality", CHANNEL_INSTAGRAM,
     )
-    assert describe.picker is None
-    assert "next message" in describe.text.lower()
+    # The prompt arms the customer's NEXT message, so it has to be possible
+    # to change your mind: without a Cancel the only escape was to type
+    # something, which then became the complaint.
+    assert describe.picker["allow_text"] is True
+    assert [row["id"] for row in describe.picker["rows"]] == ["cmp|cancel"]
+    assert "next message" in describe.picker["body"].lower()
     assert identity.state["complaint_type"] == "service_quality"
 
 
@@ -400,7 +404,35 @@ async def test_pre_work_home_service_complaint_is_not_eligible():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", ["work_done", "completed", "invoice_issued", "paid"])
+async def test_work_done_quality_problem_is_still_a_complaint():
+    """`work_done` is the technician saying they are finished, not closure.
+
+    Treating it as "completed" sent the customer to warranty, which only
+    opens at `completed` and refused them too -- a customer who saw the
+    problem while the technician was still there had nowhere to report it.
+    """
+    from app.engines.complaints.eligibility_service import ComplaintEligibilityService
+
+    customer_id = uuid.uuid4()
+    service = ComplaintEligibilityService()
+    service._fetch_record = AsyncMock(return_value=SimpleNamespace(
+        status="work_done", customer_id=customer_id,
+        created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
+    ))
+    service._home_service_work_started = AsyncMock(return_value=True)
+    service._customer_owns_record = AsyncMock(return_value=True)
+    service.get_complaint_policy = AsyncMock(return_value=None)
+    service.check_duplicate_open_complaint = AsyncMock(return_value=False)
+
+    result = await service.check_eligible(
+        AsyncMock(), customer_id, "service_job", uuid.uuid4(),
+        complaint_type="service_quality",
+    )
+    assert result["eligible"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["completed", "invoice_issued", "paid"])
 async def test_completed_quality_problem_is_warranty_not_complaint(status):
     from app.engines.complaints.constants import ERR_COMPLAINT_TYPE_NOT_SUPPORTED
     from app.engines.complaints.eligibility_service import ComplaintEligibilityService
@@ -461,8 +493,9 @@ async def test_warranty_support_collects_issue_type_then_description():
     describe = await flow._warranty_step(
         thread, identity, "type|problem_returned", CHANNEL_INSTAGRAM,
     )
-    assert describe.picker is None
-    assert "next message" in describe.text.lower()
+    assert describe.picker["allow_text"] is True
+    assert [row["id"] for row in describe.picker["rows"]] == ["wty|cancel"]
+    assert "next message" in describe.picker["body"].lower()
     assert identity.state["claim_type"] == "problem_returned"
 
 

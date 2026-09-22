@@ -55,8 +55,14 @@ JOB_TRANSITIONS: dict[str, set[str]] = {
     # The per-job workflow guard narrows this edge, and the work-start guard
     # independently enforces quote/payment/checklist requirements, so adding
     # the platform-valid edge cannot let an inspection workflow skip approval.
+    # JS_QUOTE_REQUIRED: a custom-quote job type prices the work on site
+    # without a formal inspection step. Its estimate is sent straight from
+    # arrival; without this edge sending it failed with
+    # QUOTE_JOB_STATUS_SYNC_INVALID_TRANSITION and the technician was stuck
+    # at the door (Start inspection: not required; Start work: estimate
+    # required; estimate: could not be sent).
     JS_REACHED_SITE:       {
-        JS_INSPECTION_STARTED, JS_SERVICE_STARTED,
+        JS_INSPECTION_STARTED, JS_SERVICE_STARTED, JS_QUOTE_REQUIRED,
         JS_CUSTOMER_NOT_AVAIL, JS_CANCELLED,
     },
     # JS_QUOTE_REQUIRED is reachable from here because both
@@ -87,9 +93,14 @@ JOB_TRANSITIONS: dict[str, set[str]] = {
     # service layer already enforces.
     JS_SERVICE_STARTED:    {JS_WORK_DONE, JS_QUOTE_REQUIRED, JS_CANCELLED},
     JS_WORK_DONE:          {"completed"},    # HS8B — completion via POST .../complete only
-    JS_QUOTE_REQUIRED:     {JS_SERVICE_STARTED, JS_CLOSED_ESTIMATE_DECLINED},
+    # JS_CANCELLED: a customer who never answers an estimate (or keeps asking
+    # for revisions) left the provider no legal way to close the job.
+    JS_QUOTE_REQUIRED:     {JS_SERVICE_STARTED, JS_CLOSED_ESTIMATE_DECLINED, JS_CANCELLED},
     "completed":           set(),           # terminal
-    JS_CUSTOMER_NOT_AVAIL: {JS_ACCEPTED, JS_SCHEDULED},
+    # Recoverable (reassign / reschedule), but a provider must also be able to
+    # close a visit the customer will not take. The stall watchdog escalates
+    # this status and its message tells a human to "continue or cancel".
+    JS_CUSTOMER_NOT_AVAIL: {JS_ACCEPTED, JS_SCHEDULED, JS_CANCELLED},
     JS_CANCELLED:          set(),
     JS_FAILED:             set(),
     JS_CLOSED_ESTIMATE_DECLINED: set(),     # terminal

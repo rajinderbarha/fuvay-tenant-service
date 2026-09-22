@@ -62,6 +62,13 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _local_today():
+    """Today where the work happens; scheduled_date is a local calendar date."""
+    from zoneinfo import ZoneInfo
+
+    return datetime.now(ZoneInfo("Asia/Kolkata")).date()
+
+
 async def customer_already_contacted(db: AsyncSession, job_id) -> bool:
     """Whether the provider has logged the required first customer call.
 
@@ -228,6 +235,34 @@ class HomeServiceJobExecutionService:
             )
         )).scalars().first()
         return workflow  # None if no published blueprint workflow exists yet
+
+    async def quote_gates_work(self, db: AsyncSession, job) -> bool:
+        """Whether this job's price IS the estimate (inspection/custom quote).
+
+        True for a job whose work may only start after the customer approves
+        an estimate. False for a fixed-price job, where an estimate can only
+        be an optional extra on top of the booked price: declining it must
+        not close the job, and approving it must add to -- not replace -- the
+        booked price. Fails closed (True) when the workflow cannot be
+        resolved, which keeps the previous behaviour for legacy jobs.
+        """
+        workflow = await self._resolve_job_type_workflow(db, job)
+        if workflow is None:
+            return True
+        if bool(workflow.quote_approval_required) or (
+            getattr(workflow, "pricing_behavior", None)
+            in {"inspection_required", "custom_quote"}
+        ):
+            return True
+        from app.engines.final_records.models import ServiceBooking
+        booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
+        if isinstance(booking, ServiceBooking):
+            snapshot = booking.price_snapshot or {}
+            return bool(snapshot.get("requires_inspection_estimate")) or (
+                snapshot.get("pricing_mode") in {"inspection", "inspection_required", "custom_quote"}
+                or snapshot.get("pricing_model") in {"inspection", "inspection_required", "custom_quote"}
+            )
+        return False
 
     async def _assert_quote_approval_satisfied(self, db: AsyncSession, job) -> None:
         """Central work-start guard (spec section 5, corrected by 2A.1).
@@ -530,6 +565,24 @@ class HomeServiceJobExecutionService:
     async def mark_on_the_way(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
+        # The app shows "Call customer & confirm requirements" as the first
+        # task, but nothing enforced it: travel could start (and the customer
+        # be told a technician was coming) before anyone had spoken to them.
+        if not await customer_already_contacted(db, job.id):
+            raise ServiceOSException(
+                "CUSTOMER_CONTACT_REQUIRED",
+                "Call the customer and confirm the requirements before starting travel.",
+                status_code=409,
+            )
+        # Travel belongs to the visit day. Marking "on the way" days early
+        # sent the customer an on-the-way message for a visit still to come.
+        if job.scheduled_date and job.scheduled_date > _local_today():
+            raise ServiceOSException(
+                "TRAVEL_BEFORE_VISIT_DAY",
+                f"This visit is scheduled for {job.scheduled_date.isoformat()}. "
+                "Travel can be started on the day of the visit.",
+                status_code=409,
+            )
         await self._set_status(db, job, JS_ON_THE_WAY, EV_ON_THE_WAY, user_id, "staff", request_id=request_id)
         # Repair/enrol the scheduled-arrival SLA at the moment travel starts.
         # This protects legacy jobs that predate assignment-time SLA stamping.
@@ -537,6 +590,8 @@ class HomeServiceJobExecutionService:
             from app.engines.execution.sla_breach_service import stamp_due_at
             await stamp_due_at(db, job.id)
         await db.flush()
+        from app.engines.messaging_gateway.booking_updates import send_on_the_way
+        await send_on_the_way(db, job)
         return job.to_dict()
 
     async def log_customer_contacted(
@@ -646,18 +701,28 @@ class HomeServiceJobExecutionService:
         job.sla_next_penalty_at = None
         job.sla_stopped_at = _now()
         await db.flush()
+        from app.engines.messaging_gateway.booking_updates import send_arrived
+        await send_arrived(db, job)
         return {**job.to_dict(), "arrival_verification": arrival}
 
     async def start_inspection(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
         workflow = await self._resolve_job_type_workflow(db, job)
-        if workflow is not None and not workflow.inspection_required:
-            raise ServiceOSException(
-                "INSPECTION_NOT_REQUIRED",
-                "This fixed-price service does not require an inspection. Start the work instead.",
-                status_code=409,
+        # Same rule the job-detail projection uses (get_work_start_status):
+        # an inspection-priced blueprint inspects even if its boolean is
+        # unset. The two disagreed, so the app offered an inspection the
+        # server then refused.
+        inspection_required = workflow is None or bool(workflow.inspection_required) or (
+            getattr(workflow, "pricing_behavior", None) == "inspection_required"
+        )
+        if not inspection_required:
+            message = (
+                "This job has no inspection step. Create and send the estimate instead."
+                if await self.quote_gates_work(db, job) else
+                "This fixed-price service does not require an inspection. Start the work instead."
             )
+            raise ServiceOSException("INSPECTION_NOT_REQUIRED", message, status_code=409)
         if not job.arrival_verified_at:
             raise ServiceOSException(
                 "ARRIVAL_VERIFICATION_REQUIRED",
@@ -881,6 +946,10 @@ class HomeServiceJobExecutionService:
         if actor_role == "provider":
             from app.engines.tenant_engine.health import refresh_provider_operational_health
             await refresh_provider_operational_health(db, tenant_id)
+        # A customer whose booking the provider cancelled heard nothing at
+        # all: they waited for a technician who was never coming.
+        from app.engines.messaging_gateway.booking_updates import send_provider_cancelled
+        await send_provider_cancelled(db, job, reason)
         return job.to_dict()
 
     # ── notes / media ─────────────────────────────────────────────────────────

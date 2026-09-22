@@ -14,7 +14,11 @@ import { PhoneCall } from "lucide-react";
 // a 422 either way, per HS8/HS8B).
 const ACTION_METHODS: Record<string, keyof typeof homeServiceStaffJobsApi> = {
   "accept": "accept",
-  "call-customer": "callCustomer",
+  // The CTA is "Call customer & confirm requirements", and confirming is what
+  // the backend's contact-first gate looks for. Dialling alone (the phone
+  // button above) never satisfies it, so this must log the confirmation or
+  // the job can no longer start travel.
+  "call-customer": "customerContacted",
   "on-the-way": "onTheWay",
   "reached-site": "reachedSite",
   "start-inspection": "startInspection",

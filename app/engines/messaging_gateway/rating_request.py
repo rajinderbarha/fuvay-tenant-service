@@ -40,6 +40,7 @@ RATING_SORRY = (
 RATING_ALREADY_GIVEN = "You have already rated this service {stars}/5. Thank you!"
 RATING_UNAVAILABLE = "This service can no longer be rated here."
 RATING_DELIVERY_KEY = "instagram_rating_prompt_sent_at"
+FOLLOWUP_PENDING_KEY = "instagram_followup_pending"
 
 #: At or below this, the thank-you also offers a person to talk to.
 LOW_RATING = 2
@@ -113,6 +114,10 @@ async def _ask(db, job_id: uuid.UUID) -> bool:
     if target is None:
         return False
     job, booking = target
+    completion_data = getattr(job, "completion_data", None) or {}
+    if (completion_data.get(RATING_DELIVERY_KEY)
+            and (completion_data.get(warranty_delivery.DELIVERY_KEY) or {}).get("sent_at")):
+        return False
     thread = await _reachable_thread(
         db, booking.customer_id,
         source_channel=getattr(booking, "source_channel", None),
@@ -121,7 +126,17 @@ async def _ask(db, job_id: uuid.UUID) -> bool:
     if thread is None:
         # Instagram allows a business-initiated message only within 24 hours
         # of the customer's own last message, and has no template to fall
-        # back on. The customer app can still collect this rating.
+        # back on. Keep an explicit durable pending marker; the worker retries
+        # when the exact booking sender next opens a customer-service window.
+        # The customer app remains the immediate rating/certificate fallback.
+        if not completion_data.get(FOLLOWUP_PENDING_KEY):
+            job.completion_data = {
+                **completion_data,
+                FOLLOWUP_PENDING_KEY: {
+                    "reason": "no_eligible_thread",
+                    "since": datetime.now(timezone.utc).isoformat(),
+                },
+            }
         logger.info("messaging_gateway.rating_request.no_open_thread",
                     job_id=str(job_id))
         return False
@@ -146,27 +161,37 @@ async def _ask(db, job_id: uuid.UUID) -> bool:
             channel=thread.channel, config=config,
             list_button="Rate", section_title="Rate your service",
         )
-        if not result.get("sent"):
-            return False
-        thread.last_outbound_at = datetime.now(timezone.utc)
-        job.completion_data = {
-            **(getattr(job, "completion_data", None) or {}),
-            RATING_DELIVERY_KEY: thread.last_outbound_at.isoformat(),
-        }
-        if not thread.last_options:
-            # Only when no numbered list is open: a customer halfway through a new
-            # booking keeps their typed numbers, and can still tap a star chip.
-            thread.last_options = [row["id"] for row in rows]
-        logger.info("messaging_gateway.rating_request.sent",
-                    job_id=str(job_id), thread_id=str(thread.id))
-        # Make typed rating replies visible to the webhook while the PDF uploads.
-        await db.commit()
-        rating_sent = True
+        if result.get("sent"):
+            thread.last_outbound_at = datetime.now(timezone.utc)
+            job.completion_data = {
+                **(getattr(job, "completion_data", None) or {}),
+                RATING_DELIVERY_KEY: thread.last_outbound_at.isoformat(),
+            }
+            if not thread.last_options:
+                # Only when no numbered list is open: a customer halfway through a new
+                # booking keeps their typed numbers, and can still tap a star chip.
+                thread.last_options = [row["id"] for row in rows]
+            logger.info("messaging_gateway.rating_request.sent",
+                        job_id=str(job_id), thread_id=str(thread.id))
+            # Make typed rating replies visible to the webhook while the PDF uploads.
+            await db.commit()
+            rating_sent = True
+        else:
+            logger.warning("messaging_gateway.rating_request.send_failed",
+                           job_id=str(job_id), reason=result.get("reason"))
     # The warranty follows the question; it does not depend on the customer
     # submitting a rating. A fast in-app rating must not suppress the PDF.
     warranty_sent = await warranty_delivery.send_warranty_certificate(
         db, job, thread, config=config,
     )
+    completion_data = getattr(job, "completion_data", None) or {}
+    if (completion_data.get(RATING_DELIVERY_KEY)
+            and (completion_data.get(warranty_delivery.DELIVERY_KEY) or {}).get("sent_at")
+            and FOLLOWUP_PENDING_KEY in completion_data):
+        job.completion_data = {
+            key: value for key, value in completion_data.items()
+            if key != FOLLOWUP_PENDING_KEY
+        }
     return rating_sent or warranty_sent
 
 

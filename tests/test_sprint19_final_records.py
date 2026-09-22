@@ -302,7 +302,7 @@ def _make_hs_draft():
     d.customer_phone         = "0500000001"
     d.city                   = "Dubai"
     d.zipcode                = "00000"
-    d.address_snapshot       = {}
+    d.address_snapshot       = {"address_line_1": "123 Main St", "city": "Dubai", "zipcode": "00000"}
     d.preferred_date         = date(2026, 7, 10)
     d.preferred_time_window  = "morning"
     d.price_snapshot         = {"price": 100}

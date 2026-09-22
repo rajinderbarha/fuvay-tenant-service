@@ -99,9 +99,16 @@ class ComplaintEligibilityService:
             if status in {"in_progress", "service_started", "work_done"}:
                 window_anchor = None
             else:
-                updated_at = getattr(record, "updated_at", None)
-                if isinstance(updated_at, datetime):
-                    window_anchor = updated_at
+                completed_at = await self._home_service_completed_at(db, record_type, record)
+                if completed_at is not None:
+                    window_anchor = completed_at
+                else:
+                    # Older and non-completed records may not have a terminal
+                    # timestamp. Preserve their existing behaviour until a
+                    # historical completion time can be recovered.
+                    updated_at = getattr(record, "updated_at", None)
+                    if isinstance(updated_at, datetime):
+                        window_anchor = updated_at
         if isinstance(window_anchor, datetime):
             if window_anchor.tzinfo is None:
                 window_anchor = window_anchor.replace(tzinfo=timezone.utc)
@@ -126,6 +133,38 @@ class ComplaintEligibilityService:
             "policy":   policy.to_dict() if policy else None,
         }
 
+    async def _home_service_completed_at(self, db, record_type: str, record) -> datetime | None:
+        """Use the job's immutable completion event, never its later updates."""
+        from app.engines.final_records.models import ServiceBooking, ServiceJob
+        from app.engines.invoice_payment.models import ServiceInvoice
+
+        job = record if record_type == RECORD_SERVICE_JOB else None
+        if record_type == RECORD_SERVICE_BOOKING and isinstance(record, ServiceBooking):
+            job = await db.scalar(select(ServiceJob).where(
+                ServiceJob.booking_id == record.id,
+            ).order_by(ServiceJob.created_at.desc()).limit(1))
+        elif record_type == RECORD_SERVICE_INVOICE and isinstance(record, ServiceInvoice):
+            job = await db.get(ServiceJob, record.job_id)
+        completed_at = (getattr(job, "completion_data", None) or {}).get("completed_at")
+        if isinstance(completed_at, datetime):
+            return completed_at
+        if isinstance(completed_at, str):
+            try:
+                return datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        warranty_expiry = getattr(job, "warranty_expires_at", None)
+        warranty_days = getattr(job, "warranty_days_snapshot", None)
+        if isinstance(warranty_expiry, datetime) and isinstance(warranty_days, int) and warranty_days > 0:
+            return warranty_expiry - timedelta(days=warranty_days)
+        if isinstance(job, ServiceJob):
+            from app.engines.execution.models import ServiceJobExecutionEvent
+            return await db.scalar(select(ServiceJobExecutionEvent.created_at).where(
+                ServiceJobExecutionEvent.job_id == job.id,
+                ServiceJobExecutionEvent.new_status == "completed",
+            ).order_by(ServiceJobExecutionEvent.created_at).limit(1))
+        return None
+
     async def _home_service_work_started(
         self,
         db: AsyncSession,
@@ -143,6 +182,9 @@ class ComplaintEligibilityService:
         status = str(getattr(record, "status", "") or "").lower()
         if status not in HOME_SERVICE_WORK_STARTED_STATUSES and status not in {
             "quote_required", "cancelled", "failed", "issued", "overdue",
+            # Declining the estimate ends the job, but the visit still
+            # happened; the event history below proves it.
+            "closed_estimate_declined",
         }:
             return False
         # An executing job's current state is sufficient, but a booking may

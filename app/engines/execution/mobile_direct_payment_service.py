@@ -75,7 +75,10 @@ class MobileDirectPaymentService:
         proof = await self._completion_proof(db, job.id)
         proof_submitted = bool(proof and proof.status == "submitted")
         handover_status = proof.handover_status if proof else "not_requested"
-        handover_ok = handover_status in ("acknowledged",)
+        # `customer_unavailable` is the technician's own attestation, recorded
+        # on the proof and visible in the timeline. Refusing it left every job
+        # whose customer had already left the site unclosable for ever.
+        handover_ok = handover_status in ("acknowledged", "customer_unavailable")
         unresolved_parts = await self._unresolved_parts(db, job.id)
 
         blockers = []
@@ -159,6 +162,11 @@ class MobileDirectPaymentService:
         from app.engines.execution.constants import PAYMENT_MODE_HOME_SERVICES
 
         job, staff_id = await self._get_assigned_job(db, user_id, tenant_id, job_id)
+        if job.status == "completed":
+            # A retry of a request that already succeeded (the technician's
+            # phone lost the response) must read as success, not as a 409 on
+            # a job they just finished.
+            return {**job.to_dict(), "idempotent": True}
         detail = await self.get_detail(db, user_id, tenant_id, job_id)
         if not detail["closure_readiness"]["can_finalize"]:
             raise ServiceOSException("JOB_NOT_READY_TO_FINALIZE", "Every closure requirement must pass before completing the job.", status_code=409, context={"blockers": detail["closure_readiness"]["blockers"]})

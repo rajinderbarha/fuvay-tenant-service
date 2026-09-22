@@ -253,7 +253,9 @@ async def test_incomplete_summary_does_not_offer_confirmation():
 async def test_failed_summary_delivery_withholds_confirmation_buttons(monkeypatch):
     from app.engines.messaging_gateway.service import MessagingGatewayService
     from app.engines.messaging_gateway.meta_client import InboundMessage
-    db = MagicMock(flush=AsyncMock(), commit=AsyncMock())
+    db = MagicMock(flush=AsyncMock(), commit=AsyncMock(),
+                   # handle_inbound takes a per-sender advisory lock.
+                   execute=AsyncMock(), get=AsyncMock(return_value=None))
     thread = MagicMock()
     thread.id = uuid.uuid4()
     thread.opted_out = False

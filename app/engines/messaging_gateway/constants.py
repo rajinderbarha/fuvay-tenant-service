@@ -45,13 +45,14 @@ CMD_HELP = "help"
 CMD_HUMAN = "human"
 CMD_TRACK = "track"
 CMD_COMPLAINT = "complaint"
+CMD_WARRANTY = "warranty"
 CMD_LINK = "link"
 CMD_VERIFY = "verify"
 
 #: Commands understood regardless of casing or surrounding whitespace.
 KNOWN_COMMANDS = {
     CMD_START, CMD_RESET, CMD_STOP, CMD_HELP, CMD_HUMAN, CMD_TRACK, CMD_COMPLAINT,
-    CMD_LINK, CMD_VERIFY,
+    CMD_WARRANTY, CMD_LINK, CMD_VERIFY,
 }
 
 #: How long a chat may go quiet before the next message opens a NEW
@@ -74,7 +75,8 @@ HELP_TEXT = (
     "I can book a home service, track an existing booking, or help you report "
     "a service issue after work has started.\n\n"
     "Everything is a tap — just choose from the options I show you. "
-    "Send /fuvay at any time to start over, or /complaint for help with a service."
+    "Send /fuvay to start over, /track to follow a booking, /complaint to report "
+    "a problem, or /warranty for help with completed work."
 )
 
 STOP_TEXT = (

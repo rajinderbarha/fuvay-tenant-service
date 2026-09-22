@@ -3,9 +3,8 @@ capture/evidence/completion, tenant-admin read access, and a super-admin
 authorised waiver endpoint. Templates/mappings authoring lives in
 admin_router.py (platform catalog admin only).
 
-Every route filters by the job's own tenant_id from the authenticated
-user's context -- runtime checklist data is tenant-isolated the same way
-the rest of the execution engine is.
+Staff routes require both tenant and technician assignment. A tenant match
+alone is not enough: checklist answers and evidence belong to one job.
 """
 from __future__ import annotations
 
@@ -38,11 +37,21 @@ def _rid(r: Request) -> str:
     return getattr(r.state, "request_id", "—")
 
 
-async def _get_job(db: AsyncSession, job_id: uuid.UUID, tenant_id: uuid.UUID):
+async def _get_job(db: AsyncSession, job_id: uuid.UUID, tenant_id: uuid.UUID, user_id: uuid.UUID):
     from app.engines.final_records.models import ServiceJob
+    from app.engines.home_service_assignment.staff_model import ProviderTeamMember
     res = await db.execute(select(ServiceJob).where(ServiceJob.id == job_id, ServiceJob.tenant_id == tenant_id))
     job = res.scalars().first()
     if not job:
+        raise ServiceOSException("ERR_RECORD_NOT_FOUND", "Job not found.", status_code=404)
+    # New assignments store the auth user ID; older jobs can still store the
+    # provider team-member ID. Accept only one of this caller's two IDs.
+    member_result = await db.execute(select(ProviderTeamMember.id).where(
+        ProviderTeamMember.tenant_id == tenant_id,
+        ProviderTeamMember.user_id == user_id,
+    ))
+    member_id = member_result.scalars().first()
+    if job.assigned_staff_id is None or job.assigned_staff_id not in (user_id, member_id):
         raise ServiceOSException("ERR_RECORD_NOT_FOUND", "Job not found.", status_code=404)
     return job
 
@@ -71,7 +80,7 @@ async def _instance_detail(db: AsyncSession, instance: JobChecklistInstance, cus
 
 @staff_router.get("/{job_id}/checklists")
 async def staff_list_job_checklists(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db)):
-    job = await _get_job(db, job_id, uuid.UUID(str(user.tenant_id)))
+    job = await _get_job(db, job_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)))
     mappings = await svc.get_applicable_mappings(db, job)
     instances = []
     for m in mappings:
@@ -84,10 +93,11 @@ async def staff_list_job_checklists(job_id: uuid.UUID, r: Request, user=Depends(
     return ok(instances, _rid(r), "staff_list_job_checklists")
 
 
-async def _get_owned_instance(db: AsyncSession, instance_id: uuid.UUID, tenant_id: uuid.UUID) -> JobChecklistInstance:
+async def _get_owned_instance(db: AsyncSession, instance_id: uuid.UUID, tenant_id: uuid.UUID, user_id: uuid.UUID) -> JobChecklistInstance:
     instance = await db.get(JobChecklistInstance, instance_id)
     if instance is None or instance.tenant_id != tenant_id:
         raise ServiceOSException("ERR_RECORD_NOT_FOUND", "Checklist instance not found.", status_code=404)
+    await _get_job(db, instance.job_id, tenant_id, user_id)
     return instance
 
 
@@ -96,7 +106,7 @@ async def staff_save_response(
     instance_id: uuid.UUID, item_id: uuid.UUID, body: dict, r: Request,
     user=Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db),
 ):
-    instance = await _get_owned_instance(db, instance_id, uuid.UUID(str(user.tenant_id)))
+    instance = await _get_owned_instance(db, instance_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)))
     response = await svc.save_response(
         db, instance, item_id, actor_user_id=uuid.UUID(str(user.user_id)), actor_role="TECHNICIAN",
         response_value=body.get("response_value"), evidence=body.get("evidence"),
@@ -107,7 +117,7 @@ async def staff_save_response(
 
 @staff_router.post("/checklist-instances/{instance_id}/complete")
 async def staff_complete_instance(instance_id: uuid.UUID, r: Request, user=Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db)):
-    instance = await _get_owned_instance(db, instance_id, uuid.UUID(str(user.tenant_id)))
+    instance = await _get_owned_instance(db, instance_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)))
     completed = await svc.complete_instance(db, instance, completed_by=uuid.UUID(str(user.user_id)))
     await db.commit()
     return ok(completed.to_dict(), _rid(r), "staff_complete_instance")
@@ -115,7 +125,7 @@ async def staff_complete_instance(instance_id: uuid.UUID, r: Request, user=Depen
 
 @staff_router.get("/checklist-instances/{instance_id}")
 async def staff_get_instance(instance_id: uuid.UUID, r: Request, user=Depends(require_staff_or_technician_only), db: AsyncSession = Depends(get_db)):
-    instance = await _get_owned_instance(db, instance_id, uuid.UUID(str(user.tenant_id)))
+    instance = await _get_owned_instance(db, instance_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)))
     return ok(await _instance_detail(db, instance), _rid(r), "staff_get_instance")
 
 

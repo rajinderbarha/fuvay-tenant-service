@@ -142,6 +142,9 @@ class Settings(BaseSettings):
     FILE_STORAGE_ACCESS_KEY: str = ""
     FILE_STORAGE_SECRET_KEY: str = ""
     FILE_STORAGE_PUBLIC_BASE_URL: str = ""
+    # Public HTTPS origin for the bundled Instagram card artwork. Meta fetches
+    # these files from outside our network, so localhost/private HTTP cannot work.
+    INSTAGRAM_CARD_PUBLIC_BASE_URL: str = "https://api.fuvay.in/assets/social-problem-cards"
     FILE_STORAGE_SIGNED_URL_EXPIRES_SECONDS: int = 900
     MAX_UPLOAD_SIZE_MB: int = 50
 

@@ -17,7 +17,9 @@ from app.engines.quote_checklist.models import ServiceJobQuote, ServiceJobQuoteI
 from app.engines.quote_checklist.constants import (
     QS_SENT_TO_CUSTOMER, QS_CUSTOMER_APPROVED, QS_CUSTOMER_REJECTED,
 )
-from app.engines.execution.constants import JS_QUOTE_REQUIRED
+from app.engines.execution.constants import (
+    JS_CLOSED_ESTIMATE_DECLINED, JS_QUOTE_REQUIRED, JS_SERVICE_STARTED,
+)
 
 NOTIFY_PATCH = "app.engines.quote_checklist.notifications.notify_provider_quote_decision"
 
@@ -250,14 +252,74 @@ async def test_decline_requires_a_reason():
         await svc.customer_reject(db, str(q.id), str(q.customer_id), reason="", user_id=str(q.customer_id), request_id="r1")
 
 
+GATES_PATCH = ("app.engines.execution.home_service_service"
+               ".HomeServiceJobExecutionService.quote_gates_work")
+GET_JOB_PATCH = ("app.engines.quote_checklist.quote_service"
+                 ".ServiceJobQuoteService._get_job")
+SYNC_PATCH = ("app.engines.quote_checklist.quote_service"
+              ".ServiceJobQuoteService._sync_job_status")
+
+
+def _reject_db(quote, items=None, extra=()):
+    """`customer_reject` with the job lookup and status sync patched out:
+    fetch quote, UPDATE quote, [extra], fetch items."""
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[
+        _scalar_one(quote), MagicMock(), *extra, _scalars(items or []),
+    ])
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    db.add = MagicMock()
+    return db
+
+
+async def _decline(db, q, *, gates, job_status=JS_QUOTE_REQUIRED):
+    svc = ServiceJobQuoteService()
+    job = MagicMock(id=q.job_id, status=job_status)
+    sync = AsyncMock()
+    with patch(NOTIFY_PATCH, new=AsyncMock()),          patch(GET_JOB_PATCH, new=AsyncMock(return_value=job)),          patch(GATES_PATCH, new=AsyncMock(return_value=gates)),          patch(SYNC_PATCH, new=sync):
+        data = await svc.customer_reject(
+            db, str(q.id), str(q.customer_id), reason="Too expensive",
+            user_id=str(q.customer_id), request_id="r1",
+        )
+    return data, sync
+
+
 @pytest.mark.asyncio
 async def test_pending_quote_can_be_declined_once_with_a_reason():
+    """The estimate IS the job's price, so declining it ends the job."""
     q = _quote(status=QS_SENT_TO_CUSTOMER)
-    db = _decision_db(q)
-    svc = ServiceJobQuoteService()
-    with patch(NOTIFY_PATCH, new=AsyncMock()):
-        data = await svc.customer_reject(db, str(q.id), str(q.customer_id), reason="Too expensive", user_id=str(q.customer_id), request_id="r1")
+    data, sync = await _decline(_reject_db(q), q, gates=True)
     assert data["status"] == QS_CUSTOMER_REJECTED
+    assert sync.await_args.args[2] == JS_CLOSED_ESTIMATE_DECLINED
+
+
+@pytest.mark.asyncio
+async def test_declining_an_extra_estimate_keeps_a_fixed_price_job_alive():
+    """Seen live: a "no thanks" tap on optional extra work closed the job.
+
+    On a fixed-price job the estimate is extra work on top of the booked
+    price, so the booked service -- with its payment, warranty and complaint
+    window -- has to carry on. Nothing here has started yet, so the job keeps
+    the status it already had.
+    """
+    q = _quote(status=QS_SENT_TO_CUSTOMER)
+    no_start = MagicMock()
+    no_start.first.return_value = None
+    data, sync = await _decline(_reject_db(q, extra=[no_start]), q, gates=False)
+    assert data["status"] == QS_CUSTOMER_REJECTED
+    sync.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_declining_an_extra_estimate_mid_service_resumes_the_work():
+    """The technician was already working when the extra was offered."""
+    q = _quote(status=QS_SENT_TO_CUSTOMER)
+    started = MagicMock()
+    started.first.return_value = (uuid.uuid4(),)
+    data, sync = await _decline(_reject_db(q, extra=[started]), q, gates=False)
+    assert data["status"] == QS_CUSTOMER_REJECTED
+    assert sync.await_args.args[2] == JS_SERVICE_STARTED
 
 
 @pytest.mark.asyncio

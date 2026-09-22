@@ -25,7 +25,6 @@ from app.schemas.base import ApiResponse, ok
 from app.engines.final_records.models import (
     ServiceBooking, ServiceJob, CoachingAppointment, RealEstateLead,
 )
-from app.engines.final_records.constants import ERR_BOOKING_NOT_FOUND, ERR_ACCESS_DENIED
 from app.engines.execution.constants import TERMINAL_JOB_STATUSES
 from app.engines.final_records.bookings_jobs_stage_mapping import map_job_status
 from app.engines.home_service_assignment.staff_model import ProviderTeamMember
@@ -121,7 +120,7 @@ async def _customer_safe_job(db: AsyncSession, job: ServiceJob) -> dict:
             "issued_at": (job.warranty_certificate_issued_at.isoformat()
                           if job.warranty_certificate_issued_at else None),
             "download_path": f"/v1/customer/my-activity/jobs/{job.id}/warranty-certificate",
-        } if warranty_active and job.warranty_certificate_number else None),
+        } if job.warranty_certificate_number else None),
     }
 
 
@@ -199,20 +198,9 @@ async def list_my_bookings(
     derived from a paginated fetch of one bucket would be wrong.
     """
     customer_id = uuid.UUID(user.user_id)
-    # The customer workspace is an actionable view, not an indefinite archive.
-    # Once a completed job's explicit warranty window has ended, hide its
-    # booking from the normal list and every tab count. The records themselves
-    # remain intact for invoices, disputes, audit and an authorized direct
-    # lookup; this is presentation retention, never data deletion.
-    expired_warranty_bookings = select(ServiceJob.booking_id).where(
-        ServiceJob.status == "completed",
-        ServiceJob.warranty_expires_at.is_not(None),
-        ServiceJob.warranty_expires_at < datetime.now(timezone.utc),
-    )
-    mine = (
-        (ServiceBooking.customer_id == customer_id)
-        & ServiceBooking.id.notin_(expired_warranty_bookings)
-    )
+    # Completed jobs remain part of the customer's history after warranty
+    # expiry. Expiry controls remedy eligibility, not access to service records.
+    mine = ServiceBooking.customer_id == customer_id
 
     def _bucket_filter(q, which: str | None):
         if which == "active":
@@ -391,7 +379,10 @@ async def get_my_booking(
 ):
     customer_id = uuid.UUID(user.user_id)
     result = await db.execute(
-        select(ServiceBooking).where(ServiceBooking.id == booking_id)
+        select(ServiceBooking).where(
+            ServiceBooking.id == booking_id,
+            ServiceBooking.customer_id == customer_id,
+        )
     )
     booking = result.scalars().first()
     # Booking Details Pending Assignment audit: a missing booking and one
@@ -401,7 +392,7 @@ async def get_my_booking(
     # real 404 per contracts/customerBookings.ts) and a cross-customer
     # enumeration leak (the two error strings differed). Both cases now
     # raise the identical enumeration-safe NOT_FOUND.
-    if not booking or (booking.customer_id and booking.customer_id != customer_id):
+    if not booking or booking.customer_id != customer_id:
         raise ServiceOSException("BOOKING_NOT_FOUND", "Booking not found", status_code=404)
 
     # Attach job if exists
@@ -531,17 +522,12 @@ async def download_warranty_certificate(
     job = await db.scalar(select(ServiceJob).where(
         ServiceJob.id == job_id, ServiceJob.customer_id == customer_id,
     ))
-    if not job:
+    if not job or job.customer_id != customer_id:
         raise ServiceOSException("FINAL_JOB_NOT_FOUND", "Service job not found.", status_code=404)
     if job.status != "completed" or not job.warranty_expires_at:
         raise ServiceOSException(
             "WARRANTY_CERTIFICATE_UNAVAILABLE",
             "The warranty certificate is available after job completion.", status_code=409,
-        )
-    if job.warranty_expires_at < datetime.now(timezone.utc):
-        raise ServiceOSException(
-            "WARRANTY_PERIOD_EXPIRED",
-            "The warranty certificate download period has ended.", status_code=410,
         )
     from app.engines.final_records.warranty_certificate import (
         issue_warranty_certificate, render_certificate_pdf,
@@ -563,12 +549,13 @@ async def get_my_job(
     db:     AsyncSession = Depends(get_db),
 ):
     customer_id = uuid.UUID(user.user_id)
-    result = await db.execute(select(ServiceJob).where(ServiceJob.id == job_id))
+    result = await db.execute(select(ServiceJob).where(
+        ServiceJob.id == job_id,
+        ServiceJob.customer_id == customer_id,
+    ))
     job = result.scalars().first()
-    if not job:
-        return ok({"error": "FINAL_JOB_NOT_FOUND"}, _RID(r), "final_records")
-    if job.customer_id and job.customer_id != customer_id:
-        return ok({"error": ERR_ACCESS_DENIED}, _RID(r), "final_records")
+    if not job or job.customer_id != customer_id:
+        raise ServiceOSException("FINAL_JOB_NOT_FOUND", "Service job not found.", status_code=404)
     return ok(await _customer_safe_job(db, job), _RID(r), "final_records")
 
 
@@ -616,13 +603,14 @@ async def get_my_appointment(
 ):
     customer_id = uuid.UUID(user.user_id)
     result = await db.execute(
-        select(CoachingAppointment).where(CoachingAppointment.id == appointment_id)
+        select(CoachingAppointment).where(
+            CoachingAppointment.id == appointment_id,
+            CoachingAppointment.customer_id == customer_id,
+        )
     )
     appt = result.scalars().first()
-    if not appt:
-        return ok({"error": "FINAL_APPOINTMENT_NOT_FOUND"}, _RID(r), "final_records")
-    if appt.customer_id and appt.customer_id != customer_id:
-        return ok({"error": ERR_ACCESS_DENIED}, _RID(r), "final_records")
+    if not appt or appt.customer_id != customer_id:
+        raise ServiceOSException("FINAL_APPOINTMENT_NOT_FOUND", "Appointment not found.", status_code=404)
     return ok(appt.to_dict(), _RID(r), "final_records")
 
 
@@ -668,10 +656,11 @@ async def get_my_lead(
     db:      AsyncSession = Depends(get_db),
 ):
     customer_id = uuid.UUID(user.user_id)
-    result = await db.execute(select(RealEstateLead).where(RealEstateLead.id == lead_id))
+    result = await db.execute(select(RealEstateLead).where(
+        RealEstateLead.id == lead_id,
+        RealEstateLead.customer_id == customer_id,
+    ))
     lead = result.scalars().first()
-    if not lead:
-        return ok({"error": "FINAL_LEAD_NOT_FOUND"}, _RID(r), "final_records")
-    if lead.customer_id and lead.customer_id != customer_id:
-        return ok({"error": ERR_ACCESS_DENIED}, _RID(r), "final_records")
+    if not lead or lead.customer_id != customer_id:
+        raise ServiceOSException("FINAL_LEAD_NOT_FOUND", "Lead not found.", status_code=404)
     return ok(lead.to_dict(), _RID(r), "final_records")

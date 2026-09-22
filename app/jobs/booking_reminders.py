@@ -113,6 +113,7 @@ async def send_due_reminders() -> dict:
         EVT_JOB_VISIT_REMINDER_30M,
     )
     from app.engines.platform_notifications.notification_service import NotificationService
+    from app.engines.messaging_gateway.booking_updates import send_visit_reminder
 
     now_local = datetime.now(timezone.utc).astimezone(LOCAL_TZ)
     today = now_local.date()
@@ -155,6 +156,9 @@ async def send_due_reminders() -> dict:
                     source_record_type="service_booking", source_record_id=booking.id,
                     recipients=recipient,
                 )
+                # The in-app notification never reaches a customer who booked
+                # on Instagram and has no app; send it to that chat too.
+                await send_visit_reminder(db, job, "tomorrow")
                 if event is not None:
                     job.reminder_24h_sent_at = datetime.now(timezone.utc)
                     sent_24h += 1
@@ -169,6 +173,9 @@ async def send_due_reminders() -> dict:
                         tenant_id=job.tenant_id, customer_id=job.customer_id,
                         source_record_type="service_booking", source_record_id=booking.id,
                         recipients=recipient,
+                    )
+                    await send_visit_reminder(
+                        db, job, f"today at {job.scheduled_time_window or 'your booked time'}",
                     )
                     if event is not None:
                         job.reminder_1h_sent_at = datetime.now(timezone.utc)

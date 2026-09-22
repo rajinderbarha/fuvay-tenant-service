@@ -296,8 +296,15 @@ class TestCustomerDecisionResponseFiltering:
         r3 = MagicMock(); r3.scalar_one_or_none.return_value = None
         db = _db_returning(q, None, None)
         db.execute = AsyncMock(side_effect=[r1, r2, r3, items_result])
+        # The job lookup and status sync are exercised in
+        # test_customer_quote_approval.py; this test is about what the
+        # DECISION RESPONSE is allowed to contain.
+        job = MagicMock(id=q.job_id, status=QS_SENT_TO_CUSTOMER)
         with patch("app.engines.quote_checklist.notifications.notify_provider_quote_decision",
-                   new=AsyncMock()):
+                   new=AsyncMock()),              patch("app.engines.quote_checklist.quote_service"
+                   ".ServiceJobQuoteService._get_job", new=AsyncMock(return_value=job)),              patch("app.engines.execution.home_service_service"
+                   ".HomeServiceJobExecutionService.quote_gates_work",
+                   new=AsyncMock(return_value=False)):
             result = await svc.customer_reject(
                 db, str(q.id), str(customer_id), reason="too expensive",
                 user_id=str(customer_id), request_id=None,

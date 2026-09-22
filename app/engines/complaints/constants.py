@@ -161,8 +161,13 @@ HOME_SERVICE_WORK_STARTED_STATUSES = {
 # Once the job is complete, service-performance recurrence belongs to the
 # warranty workflow. Conduct and property-damage incidents remain reportable
 # because they are not warranty defects and may only be noticed after handover.
+# `work_done` is deliberately NOT here. Warranty only opens once the job is
+# COMPLETED, so treating work_done as "completed" left the customer standing
+# at handover with a service-quality problem and nowhere to report it: the
+# complaint was refused ("use the warranty workflow") and the warranty claim
+# refused it too ("available only after job completion").
 HOME_SERVICE_COMPLETED_STATUSES = {
-    "work_done", "completed", "invoice_issued", "payment_collected", "paid",
+    "completed", "invoice_issued", "payment_collected", "paid",
     "issued", "overdue",
 }
 HOME_SERVICE_POST_COMPLETION_COMPLAINT_TYPES = {
@@ -229,7 +234,9 @@ ELIGIBLE_STATUSES: dict[str, set[str]] = {
         "on_the_way", "reached_site", "in_progress", "inspection_started",
         "inspection_done", "quote_required", "service_started", "work_done",
         "customer_not_available", "completed", "payment_collected", "paid",
-        "cancelled", "failed", "quote_rejected",
+        # A customer who paid a visit fee, had the technician in their home
+        # and then declined the estimate could not report anything at all.
+        "cancelled", "failed", "quote_rejected", "closed_estimate_declined",
     },
     # MODULE-L5-02 bug #23 (same class as the review-eligibility fix): a
     # completed job transitions to invoice_issued the moment it is billed, and to
@@ -241,6 +248,7 @@ ELIGIBLE_STATUSES: dict[str, set[str]] = {
         "on_the_way", "reached_site", "in_progress", "inspection_started",
         "inspection_done", "quote_required", "service_started", "work_done",
         "customer_not_available", "completed", "cancelled", "invoice_issued", "paid",
+        "closed_estimate_declined",
     },
     RECORD_SERVICE_INVOICE:      {"issued","paid","overdue","cancelled"},
     RECORD_COACHING_APPOINTMENT: {"completed","no_show","cancelled"},

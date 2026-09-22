@@ -1211,6 +1211,13 @@ class ComplaintService:
             complaint.resolved_at = now
         if new_status in FINAL_STATUSES and complaint.closed_at is None:
             complaint.closed_at = now
+        if getattr(complaint, "complaint_type", None) == "payment_issue":
+            # A payment dispute locks the direct-payment record. When the case
+            # ends, the lock must end with it or the job can never complete.
+            from app.engines.invoice_payment.direct_payments_service import (
+                release_payment_dispute,
+            )
+            await release_payment_dispute(db, complaint, new_status)
 
     async def _settle(self, db: AsyncSession, complaint, actor_type: str, actor_user_id,
                       request_id: str) -> None:
