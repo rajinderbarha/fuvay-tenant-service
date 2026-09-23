@@ -24,6 +24,7 @@ logger = structlog.get_logger(__name__)
 EVENT_TYPE = "customer_assignment_cancelled_notified"
 # One "your technician" message per technician, wherever it is raised from.
 ASSIGNED_EVENT_TYPE = "customer_technician_assigned_notified"
+TECHNICIAN_UNAVAILABLE_EVENT_TYPE = "customer_technician_unavailable_notified"
 LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 
 
@@ -295,6 +296,62 @@ async def send_provider_cancelled(db, job, reason: str | None) -> bool:
         rows=[{"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Book again"}],
         section_title="Booking cancelled",
     )
+
+
+async def send_technician_unavailable_cancelled(job_id: str | uuid.UUID) -> bool:
+    """Tell the booking's chat that the technician never arrived, once.
+
+    Called by the travel-timeout sweep after its cancellation commits, in a
+    session of its own, so a failed send cannot roll the cancellation back.
+    The delivered message is recorded, so a retry after a worker restart does
+    not repeat it.
+    """
+    from app.database import get_session_factory
+    from app.engines.messaging_gateway.constants import PICK_RESTART, PICKER_SEP
+    from app.jobs.travel_timeout import FAILURE_REASON_PREFIX
+
+    try:
+        async with get_session_factory()() as db:
+            locked = await db.scalar(text(
+                "SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"
+            ), {"key": f"ig:technician_unavailable:{job_id}"})
+            if not locked:
+                return False
+            job = await db.get(ServiceJob, uuid.UUID(str(job_id)))
+            if (not job or job.status != "cancelled"
+                    or not (job.failure_reason or "").startswith(FAILURE_REASON_PREFIX)):
+                return False
+            booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
+            if booking is None:
+                return False
+            already = await db.scalar(select(ServiceJobExecutionEvent.id).where(
+                ServiceJobExecutionEvent.job_id == job.id,
+                ServiceJobExecutionEvent.event_type == TECHNICIAN_UNAVAILABLE_EVENT_TYPE,
+            ).limit(1))
+            if already:
+                return True
+            sent = await notify_booking_customer(
+                db, booking,
+                f"Booking {booking.booking_number} has been cancelled because the "
+                "technician is not available. We are sorry for the inconvenience. "
+                "You can book another slot below.",
+                rows=[{"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Book again"}],
+                section_title="Booking cancelled",
+            )
+            if not sent:
+                return False
+            db.add(ServiceJobExecutionEvent(
+                booking_id=booking.id, job_id=job.id, tenant_id=job.tenant_id,
+                actor_role="platform", event_type=TECHNICIAN_UNAVAILABLE_EVENT_TYPE,
+                notes=f"Cancellation sent to the booking's {booking.source_channel} chat.",
+                request_id="job:travel_timeout",
+            ))
+            await db.commit()
+            return True
+    except Exception as exc:  # noqa: BLE001 - notification must not stop the sweeper
+        logger.warning("booking_updates.technician_unavailable_failed",
+                       job_id=str(job_id), error=str(exc))
+        return False
 
 
 async def send_visit_reminder(db, job, when_label: str) -> bool:

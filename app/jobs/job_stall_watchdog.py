@@ -21,6 +21,9 @@ elapsed time is not evidence of what happened on site.  The separate
 missed-arrival SLA still owns penalties and safe closure before verified field
 work begins.  Post-arrival stalls remain visible to a human who can continue or
 cancel the job with the correct reason.
+
+`on_the_way` is not watched here: `travel_timeout` cancels the job at that same
+deadline, and an alert racing the cancellation would only add noise.
 """
 from __future__ import annotations
 
@@ -31,7 +34,7 @@ import structlog
 from sqlalchemy import text
 
 from app.engines.execution.models import ServiceJobExecutionEvent
-from app.engines.execution.stage_timer_service import DEFAULT_STAGE_LIMIT_MINUTES, WAITING_ON
+from app.engines.execution.stage_timer_service import WAITING_ON
 
 logger = structlog.get_logger("jobs.job_stall_watchdog")
 
@@ -44,8 +47,6 @@ CRITICAL_EVENT_TYPE = "job_stage_critical"
 #: SLA. A real deep-clean can run for hours, so a limit tight enough to be
 #: "helpful" would only teach providers to ignore the alert.
 STALL_LIMIT_MINUTES: dict[str, int] = {
-    # This value is replaced with the provider's snapshotted travel buffer.
-    "on_the_way": DEFAULT_STAGE_LIMIT_MINUTES["on_the_way"],
     # On site but nothing started. The shortest limit here: arriving and then
     # going quiet is the strongest signal that something went wrong.
     "reached_site": 45,
@@ -69,12 +70,11 @@ _WAITING_ON = WAITING_ON
 _CANDIDATE_SQL = text(
     """
     SELECT j.id, j.tenant_id, j.booking_id, j.job_number, j.status,
-           j.assigned_staff_id, j.sla_due_at, j.sla_enforcement_started_at,
+           j.assigned_staff_id,
            j.customer_id, j.job_type_id, j.scheduled_date, j.scheduled_time_window,
            COALESCE((SELECT i.total_amount FROM service_invoices i
                      WHERE i.job_id=j.id AND i.status<>'cancelled'
                      ORDER BY i.created_at DESC LIMIT 1), 0) AS job_value,
-           COALESCE(w.buffer_minutes_between_jobs, 30) AS travel_minutes,
            entered.metadata AS stage_metadata,
            COALESCE(entered.at, j.updated_at, j.created_at) AS entered_at,
            warned.at AS warned_at, critical.at AS critical_at
@@ -98,7 +98,6 @@ _CANDIDATE_SQL = text(
          WHERE e.job_id = j.id AND e.new_status = j.status
            AND e.event_type = :critical_event_type
       ) AS critical ON true
-      LEFT JOIN tenant_booking_window_settings w ON w.tenant_id = j.tenant_id
      WHERE j.status = ANY(:statuses)
        AND j.tenant_id IS NOT NULL
      ORDER BY COALESCE(entered.at, j.updated_at, j.created_at) ASC
@@ -116,11 +115,6 @@ def _limit_minutes(status: str, policy, job=None) -> int:
             return max(1, int(snapshot["limit_minutes"]))
         except (KeyError, TypeError, ValueError):
             pass
-    if status == "on_the_way" and job is not None:
-        try:
-            return max(1, int(getattr(job, "travel_minutes", None) or default))
-        except (TypeError, ValueError):
-            return default
     overrides = getattr(policy, "job_stall_limit_minutes", None) or {}
     try:
         return max(1, int(overrides.get(status, default)))
@@ -228,19 +222,6 @@ async def sweep(db, *, limit: int = 100) -> dict:
         if critical_at is not None and critical_at.tzinfo is None:
             critical_at = critical_at.replace(tzinfo=timezone.utc)
         already_critical = critical_at is not None and critical_at >= entered_at
-
-        # Travel is also subject to the financial missed-arrival lifecycle.
-        # Enrol old jobs that entered travel before assignment-time stamping
-        # existed; the SLA worker owns the eventual penalty/closure decision.
-        if (job.status == "on_the_way"
-                and getattr(job, "sla_due_at", None) is None
-                and getattr(job, "sla_enforcement_started_at", None) is None):
-            try:
-                from app.engines.execution.sla_breach_service import stamp_due_at
-                await stamp_due_at(db, job.id)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("job_stall_watchdog.sla_enrol_failed",
-                               job_id=str(job.id), error=str(exc))
 
         # A verified arrival ends the missed-arrival clock, but it must not be
         # a loophole that lets the provider park the job forever. Provider-

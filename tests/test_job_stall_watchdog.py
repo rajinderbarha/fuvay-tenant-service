@@ -92,18 +92,10 @@ def test_watches_every_status_no_other_timer_covers():
         assert status in watchdog.STALL_LIMIT_MINUTES
 
 
-def test_travel_is_watched_by_provider_buffer_as_well_as_slot_sla():
-    """Slot SLA and journey duration answer different questions: a future
-    slot can still have a technician who started travelling far too early and
-    then disappeared, while an overdue slot needs the financial close rule."""
-    from app.engines.execution.sla_breach_service import BREACHABLE_STATUSES
-
-    assert "on_the_way" in BREACHABLE_STATUSES
-    assert "on_the_way" in watchdog.STALL_LIMIT_MINUTES
-    provider_timer = SimpleNamespace(
-        status="on_the_way", travel_minutes=55, stage_metadata=None,
-    )
-    assert watchdog._limit_minutes("on_the_way", policy=SimpleNamespace(), job=provider_timer) == 55
+def test_travel_is_left_to_the_travel_timeout_sweep():
+    """`travel_timeout` cancels an overdue journey at the buffer deadline. A
+    stall alert here would race it at that same deadline."""
+    assert "on_the_way" not in watchdog.STALL_LIMIT_MINUTES
 
 
 def test_never_watches_a_terminal_status():

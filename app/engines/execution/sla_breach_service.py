@@ -697,6 +697,76 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
             "suspended": suspended, "reinstated": reinstated}
 
 
+async def settle_no_arrival_close(db: AsyncSession, *, job_id) -> Decimal:
+    """Charge a cancelled no-show exactly what this engine's own close would.
+
+    `travel_timeout` cancels a job whose technician set off and never arrived,
+    without waiting for this engine's close window. A cancelled job is outside
+    BREACHABLE_STATUSES, so without this the no-show would cost the provider
+    nothing -- less than a provider who never tapped "On the way" at all.
+
+    Here the missed-slot charge and the final close collapse into one: the
+    provider pays the larger of the two policy amounts, less anything already
+    taken, under the same final-close idempotency key, and the clock stops so
+    no later sweep can charge the job again. Returns the amount taken now.
+    """
+    policy = await _policy(db)
+    if policy is None:
+        return Decimal("0")
+    job = (await db.execute(text(
+        "SELECT j.id, j.tenant_id, j.booking_id, j.customer_id, j.job_type_id, "
+        "       COALESCE(j.sla_penalty_charged, 0) AS charged_so_far, "
+        "       COALESCE((SELECT i.total_amount FROM service_invoices i "
+        "                 WHERE i.job_id=j.id AND i.status<>'cancelled' "
+        "                 ORDER BY i.created_at DESC LIMIT 1), 0) AS job_value "
+        "FROM service_jobs j WHERE j.id = :id"
+    ), {"id": str(job_id)})).first()
+    if job is None:
+        return Decimal("0")
+
+    charged = Decimal(str(job.charged_so_far or 0))
+    taken = Decimal("0")
+    enabled, override = await _job_type_override(
+        db, policy_id=policy.id, job_type_id=job.job_type_id)
+    if enabled:
+        initial = resolve_penalty(
+            policy, job_value=Decimal(str(job.job_value or 0)) or None,
+            job_type_override=override,
+        )
+        target = max(initial, Decimal(str(policy.sla_total_penalty_amount or 0)))
+        penalty = max(Decimal("0"), target - charged)
+        if penalty > 0:
+            cap = (Decimal(str(policy.sla_penalty_debt_cap))
+                   if policy.sla_penalty_debt_cap is not None else None)
+            if policy.sla_penalty_to_customer and job.customer_id is not None:
+                try:
+                    taken = await _penalise_and_compensate(
+                        db, tenant_id=job.tenant_id, customer_id=job.customer_id,
+                        booking_id=job.booking_id, job_id=job.id, amount=penalty,
+                        day_number=2, source="sla_final_close")
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("sla_breach.compensation_failed",
+                                   job_id=str(job.id), error=str(exc))
+                    taken = await _charge_penalty(
+                        db, tenant_id=job.tenant_id, job_id=job.id, amount=penalty,
+                        cap=cap, day_number=2, source="sla_final_close")
+            else:
+                taken = await _charge_penalty(
+                    db, tenant_id=job.tenant_id, job_id=job.id, amount=penalty,
+                    cap=cap, day_number=2, source="sla_final_close")
+
+    await db.execute(text(
+        "UPDATE service_jobs SET sla_breached_at=COALESCE(sla_breached_at, now()), "
+        "sla_penalty_day_count=2, sla_penalty_charged=:charged, "
+        "sla_next_penalty_at=NULL, sla_stopped_at=now(), updated_at=now() WHERE id=:id"
+    ), {"charged": charged + taken, "id": str(job.id)})
+    if taken > 0 and policy.sla_notify_provider:
+        await _notify_provider(db, job=job, amount=taken, cancelled=True)
+    logger.info("sla_breach.no_arrival_settled", job_id=str(job.id),
+                tenant_id=str(job.tenant_id), penalty_taken=float(taken))
+    return taken
+
+
 async def _close_breached_job(db: AsyncSession, *, job_id, booking_id,
                               reason: str = "Technician did not arrive within the SLA window") -> None:
     """Close job, booking and current assignment as one transaction."""
