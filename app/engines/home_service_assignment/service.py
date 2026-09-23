@@ -718,6 +718,13 @@ class HomeServiceJobAssignmentService:
             scheduled_date=effective_date, scheduled_time_window=effective_window,
             reassigned=bool(old_status))
 
+        # The customer is owed the same news, and owed it here: waiting for
+        # the technician's own acceptance left a customer whose technician
+        # never opened the app with no idea anyone was coming. Announced once
+        # per technician, so acceptance seconds later does not repeat it.
+        from app.engines.messaging_gateway.booking_updates import send_technician_assigned
+        await send_technician_assigned(self.db, job)
+
         # Assignment is the first point a job has a date to be judged against.
         from app.engines.execution.sla_breach_service import stamp_due_at
         await stamp_due_at(self.db, job.id)

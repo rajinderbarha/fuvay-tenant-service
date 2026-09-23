@@ -5,8 +5,10 @@ chat may be a different Instagram account, so never guess a recipient.
 """
 from __future__ import annotations
 
+import functools
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import structlog
 from sqlalchemy import select, text
@@ -20,6 +22,9 @@ from app.engines.messaging_gateway.models import MessagingThread
 
 logger = structlog.get_logger(__name__)
 EVENT_TYPE = "customer_assignment_cancelled_notified"
+# One "your technician" message per technician, wherever it is raised from.
+ASSIGNED_EVENT_TYPE = "customer_technician_assigned_notified"
+LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 
 
 async def booking_thread(db, booking) -> MessagingThread | None:
@@ -117,6 +122,51 @@ def _track_row() -> dict:
     return {"id": f"{PICK_TRACK}{PICKER_SEP}", "title": "Track booking"}
 
 
+def _best_effort(send):
+    """A job update must never fail the field operation that raised it.
+
+    `notify_booking_customer` already swallows delivery errors, but these
+    senders also look up the technician and past announcements first, and
+    they run inside assignment, travel start and arrival.
+    """
+    @functools.wraps(send)
+    async def wrapper(db, job, *args, **kwargs):
+        try:
+            return await send(db, job, *args, **kwargs)
+        except Exception as exc:  # noqa: BLE001 - never break field work over a message
+            logger.warning("booking_updates.state_message_failed", sender=send.__name__,
+                           job_id=str(getattr(job, "id", "-")), error=str(exc))
+            return False
+    return wrapper
+
+
+def visit_label(job) -> str:
+    """The visit in the customer's words: "today at 10:00-12:00".
+
+    Every update about a visit uses this one phrasing, so the reminder and
+    the assigned/on-the-way/arrived messages can never describe the same
+    visit two different ways. Dates are read in IST, the only timezone these
+    bookings are taken in. Empty when the booking has no date yet: "scheduled
+    to visit you" would then be a promise nothing backs.
+    """
+    scheduled = getattr(job, "scheduled_date", None)
+    if isinstance(scheduled, datetime):
+        scheduled = scheduled.date()
+    if not isinstance(scheduled, date):
+        return ""
+    today = datetime.now(timezone.utc).astimezone(LOCAL_TZ).date()
+    if scheduled == today:
+        day = "today"
+    elif scheduled == today + timedelta(days=1):
+        day = "tomorrow"
+    elif scheduled == today - timedelta(days=1):
+        day = "yesterday"
+    else:
+        day = f"on {scheduled.strftime('%d %b')}"
+    window = str(getattr(job, "scheduled_time_window", "") or "").strip()
+    return f"{day} at {window}" if window else day
+
+
 async def _technician_name(db, job) -> str:
     from app.engines.home_service_assignment.staff_model import ProviderTeamMember
     staff_id = getattr(job, "assigned_staff_id", None)
@@ -131,35 +181,65 @@ async def _technician_name(db, job) -> str:
     return str(name or "Your technician")
 
 
+@_best_effort
 async def send_technician_assigned(db, job) -> bool:
+    """Name the technician who is coming, and when, once per technician.
+
+    Assignment and the technician's own acceptance both reach this, seconds
+    apart, and a reassignment reaches it again with a different name. Sending
+    every time would stack near-identical messages in the chat, so a delivered
+    announcement is recorded against the technician it named: a genuinely new
+    technician is announced, the same one is not announced twice. A send that
+    never reached the customer records nothing, so the next state still can.
+    """
     booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
     if booking is None:
         return False
+    staff_id = getattr(job, "assigned_staff_id", None)
+    if staff_id is not None:
+        already = await db.scalar(select(ServiceJobExecutionEvent.id).where(
+            ServiceJobExecutionEvent.job_id == job.id,
+            ServiceJobExecutionEvent.event_type == ASSIGNED_EVENT_TYPE,
+            ServiceJobExecutionEvent.staff_member_id == staff_id,
+        ).limit(1))
+        if already:
+            return False
     name = await _technician_name(db, job)
-    when = ""
-    if getattr(job, "scheduled_date", None):
-        when = f" on {job.scheduled_date.isoformat()}"
-        if job.scheduled_time_window:
-            when += f", {job.scheduled_time_window}"
-    return await notify_booking_customer(
+    visit = visit_label(job)
+    when = f" They are scheduled to visit you {visit}." if visit else ""
+    sent = await notify_booking_customer(
         db, booking,
-        f"{name} is assigned to booking {booking.booking_number}{when}.",
+        f"{name} is assigned to booking {booking.booking_number}.{when}",
         rows=[_track_row()], section_title="Your technician",
     )
+    if sent and staff_id is not None:
+        db.add(ServiceJobExecutionEvent(
+            booking_id=booking.id, job_id=job.id, tenant_id=job.tenant_id,
+            staff_member_id=staff_id, actor_role="platform",
+            event_type=ASSIGNED_EVENT_TYPE,
+            notes=f"Technician announced to the booking's {booking.source_channel} chat.",
+        ))
+    return sent
 
 
+@_best_effort
 async def send_on_the_way(db, job) -> bool:
     name = await _technician_name(db, job)
+    visit = visit_label(job)
+    when = f" Your visit is scheduled {visit}." if visit else ""
     return await notify_job_customer(
-        db, job, f"{name} is on the way to you now.",
+        db, job, f"{name} is on the way to you now.{when}",
         rows=[_track_row()], section_title="Your technician",
     )
 
 
+@_best_effort
 async def send_arrived(db, job) -> bool:
     name = await _technician_name(db, job)
+    visit = visit_label(job)
+    what = f"your visit {visit}" if visit else "your service"
     return await notify_job_customer(
-        db, job, f"{name} has arrived for your service.",
+        db, job, f"{name} has arrived for {what}.",
         rows=[_track_row()], section_title="Your technician",
     )
 
