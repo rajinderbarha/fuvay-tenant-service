@@ -355,6 +355,16 @@ async def send_technician_unavailable_cancelled(job_id: str | uuid.UUID) -> bool
 
 
 async def send_visit_reminder(db, job, when_label: str) -> bool:
+    """Remind the chat of the visit, once a technician is actually coming.
+
+    Before assignment there is nobody to name, and the reminder read "Your
+    technician is scheduled to visit you tomorrow" for a booking nobody had
+    taken. The chat now stays quiet until then; assignment itself announces
+    the technician and the visit time. The in-app reminder is unaffected.
+    """
+    if (getattr(job, "assigned_staff_id", None) is None
+            or getattr(job, "status", None) == "pending_assignment"):
+        return False
     name = await _technician_name(db, job)
     return await notify_job_customer(
         db, job, f"Reminder: {name} is scheduled to visit you {when_label}.",

@@ -176,3 +176,35 @@ async def test_a_broken_lookup_never_fails_the_field_operation(sender):
     db.get = AsyncMock(side_effect=RuntimeError("database hiccup"))
     db.scalar = AsyncMock(side_effect=RuntimeError("database hiccup"))
     assert await getattr(booking_updates, sender)(db, _job()) is False
+
+
+# ── The visit reminder waits for a technician ────────────────────────────────
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("staff, status", [
+    (None, "pending_assignment"),     # never assigned
+    (None, "scheduled"),              # a technician was taken off the job
+    ("keep", "pending_assignment"),   # declined, back in the queue
+])
+async def test_no_instagram_reminder_before_a_technician_is_assigned(monkeypatch, staff, status):
+    """There is nobody to name yet, so the chat stays quiet."""
+    job = _job(status=status)
+    if staff is None:
+        job.assigned_staff_id = None
+    db, send = _wire(monkeypatch, _booking(job))
+
+    assert await booking_updates.send_visit_reminder(db, job, "tomorrow") is False
+    send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["assigned", "accepted", "scheduled"])
+async def test_once_assigned_the_reminder_is_unchanged(monkeypatch, status):
+    job = _job(status=status)
+    db, send = _wire(monkeypatch, _booking(job))
+
+    assert await booking_updates.send_visit_reminder(
+        db, job, "today at 10:00-12:00") is True
+    assert _message(send) == (
+        "Reminder: Ramesh Kumar is scheduled to visit you today at 10:00-12:00."
+    )
