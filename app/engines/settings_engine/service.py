@@ -213,6 +213,7 @@ class SettingsService:
     async def set_platform_setting(self, key: str, value: Any, setting_type: str | None = None,
                                     description: str | None = None,
                                     label: str | None = None, category: str | None = None,
+                                    is_public: bool | None = None,
                                     is_secret: bool | None = None, risk_level: str | None = None,
                                     requires_approval: bool | None = None,
                                     requires_restart: bool | None = None,
@@ -239,6 +240,7 @@ class SettingsService:
             if description is not None: existing.description = description
             if label is not None: existing.label = label
             if category is not None: existing.category = category
+            if is_public is not None: existing.is_public = is_public
             if is_secret is not None: existing.is_secret = is_secret
             if risk_level is not None: existing.risk_level = risk_level
             if requires_approval is not None: existing.requires_approval = requires_approval
@@ -251,6 +253,7 @@ class SettingsService:
                 key=key, value={"v": value}, setting_type=effective_type,
                 description=description, set_by=self.actor_id,
                 label=label, category=category or "general_platform",
+                is_public=is_public or False,
                 is_secret=is_secret or False, risk_level=risk_level or "low",
                 requires_approval=requires_approval or False,
                 requires_restart=requires_restart or False,

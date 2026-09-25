@@ -79,6 +79,43 @@ class ServiceJobArrivalChallenge(ServiceOSBase):
     notification_sent_at:      Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ServiceJobCancellationRequest(ServiceOSBase):
+    """Provider claim that requires the booking customer to confirm cancellation.
+
+    The selected policy rule is snapshotted so publishing a new admin policy
+    cannot rewrite the responsibility or wording of a request already sent.
+    """
+
+    __tablename__ = "service_job_cancellation_requests"
+    __table_args__ = (
+        Index("ix_sjcr_job_status", "job_id", "status"),
+        Index("ix_sjcr_customer_status", "customer_id", "status"),
+        Index("ix_sjcr_expires", "expires_at"),
+        Index(
+            "uq_sjcr_one_pending_per_job", "job_id", unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    job_id:               Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    booking_id:           Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    tenant_id:            Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    customer_id:          Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    reason_code:          Mapped[str]              = mapped_column(String(50), nullable=False)
+    reason_label:         Mapped[str]              = mapped_column(String(100), nullable=False)
+    reason_snapshot:      Mapped[dict]             = mapped_column(JSONB, nullable=False, default=dict)
+    provider_notes:       Mapped[str | None]       = mapped_column(Text(), nullable=True)
+    call_attempt_count:   Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
+    status:               Mapped[str]              = mapped_column(String(20), nullable=False, default="pending")
+    requested_at:         Mapped[datetime]         = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at:           Mapped[datetime]         = mapped_column(DateTime(timezone=True), nullable=False)
+    notification_sent_at: Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by:          Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    resolved_at:          Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_reason:     Mapped[str | None]       = mapped_column(Text(), nullable=True)
+
+
 class ServiceJobExecutionNote(ServiceOSBase):
     __tablename__ = "service_job_execution_notes"
     __table_args__ = (

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { serviceJobAssignmentApi, type DashboardAlert } from "../lib/api";
 
-/** How often the dashboard asks. A new job should surface while the provider is still
+/** How often the provider portal asks. A new job should surface while the provider is still
  * looking at the screen, not on their next visit. */
 const POLL_MS = 10_000;
 const OFFER_SNOOZE_MS = 30_000;
@@ -42,22 +42,24 @@ export interface JobAlertsState {
   /** Alerts due to interrupt now. Empty means no popup. */
   pending: DashboardAlert[];
   newTotal: number;
+  departureTotal: number;
   delayedTotal: number;
   /** Snoozes offers briefly and marks delayed alerts seen this session. */
   dismiss: () => void;
 }
 
 /**
- * Feeds the dashboard's interrupting popup.
+ * Feeds the provider-wide interrupting popup.
  *
  * It deliberately does not ask the server to raise notifications on a background poll
  *    (`notify: false`). The GET raises `job.delayed` as a side effect, and a page left
  *    open overnight should not be what decides when a provider is notified. The first
- *    load of the dashboard does raise them, because that is a person actually arriving.
+ *    authenticated portal load does raise them, because that is a person actually arriving.
  */
 export function useJobAlerts(): JobAlertsState {
   const [pending, setPending] = useState<DashboardAlert[]>([]);
   const [newTotal, setNewTotal] = useState(0);
+  const [departureTotal, setDepartureTotal] = useState(0);
   const [delayedTotal, setDelayedTotal] = useState(0);
   const seenRef = useRef<Set<string>>(new Set());
   const snoozedOffersRef = useRef<Map<string, number>>(new Map());
@@ -78,11 +80,17 @@ export function useJobAlerts(): JobAlertsState {
       sinceRef.current = res.as_of ?? null;
 
       setNewTotal(res.new_job_total ?? 0);
+      setDepartureTotal(res.departure_total ?? 0);
       setDelayedTotal(res.delayed_total ?? 0);
 
       const assignmentIds = new Set((res.new_jobs ?? []).map(alert => alert.job_id));
-      const all = [...(res.delayed_jobs ?? []), ...(res.new_jobs ?? [])];
-      setPending(all.filter(alert => assignmentIds.has(alert.job_id)
+      const departureIds = new Set((res.departure_jobs ?? []).map(alert => alert.job_id));
+      const all = [
+        ...(res.departure_jobs ?? []),
+        ...(res.delayed_jobs ?? []),
+        ...(res.new_jobs ?? []),
+      ];
+      setPending(all.filter(alert => assignmentIds.has(alert.job_id) || departureIds.has(alert.job_id)
         ? (snoozedOffersRef.current.get(alert.job_id) ?? 0) <= Date.now()
         : !seenRef.current.has(alertKey(alert))));
     } catch {
@@ -101,7 +109,7 @@ export function useJobAlerts(): JobAlertsState {
     setPending(current => {
       const seen = new Set(seenRef.current);
       for (const alert of current) {
-        if (alert.assignment_required) {
+        if (alert.assignment_required || alert.departure_required) {
           snoozedOffersRef.current.set(alert.job_id, Date.now() + OFFER_SNOOZE_MS);
         } else {
           seen.add(alertKey(alert));
@@ -113,5 +121,5 @@ export function useJobAlerts(): JobAlertsState {
     });
   }, []);
 
-  return { pending, newTotal, delayedTotal, dismiss };
+  return { pending, newTotal, departureTotal, delayedTotal, dismiss };
 }

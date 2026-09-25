@@ -3327,7 +3327,7 @@ export interface WeatherRescheduleVerdict {
   } | null;
 }
 
-/** One thing the dashboard should interrupt about.
+/** One thing that should interrupt the provider across the authenticated portal.
  *
  * `tone` is the SERVER's judgement of how serious this is, taken from the notification
  * registry's own severity vocabulary. The popup reads it rather than inferring urgency
@@ -3349,12 +3349,18 @@ export interface DashboardAlert {
   assignment_overdue?: boolean;
   assignment_window_minutes?: number;
   urgent_assignment?: boolean;
+  alert_kind?: "assignment" | "departure" | "delayed";
+  departure_required?: boolean;
+  starts_in_minutes?: number;
+  penalty_notice?: string | null;
 }
 
 export interface DashboardAlerts {
   new_jobs: DashboardAlert[];
   /** The REAL total, which can exceed the list -- the list is capped for a popup. */
   new_job_total: number;
+  departure_jobs: DashboardAlert[];
+  departure_total: number;
   delayed_jobs: DashboardAlert[];
   delayed_total: number;
   /** Send this back as `since` next time. */
@@ -3579,8 +3585,10 @@ export const homeServiceExecutionApi = {
     apiFetch<ExecutionNoteRecord>(`/v1/staff/service-jobs/${jobId}/notes`, { method: "POST", body: JSON.stringify({ note_text, is_customer_visible }) }),
   getTimeline:        (jobId: string) =>
     apiFetch<ExecutionEventRecord[]>(`/v1/staff/service-jobs/${jobId}/timeline`),
-  cancel:             (jobId: string, reason: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/provider/service-jobs/${jobId}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  cancellationPolicy: () =>
+    apiFetch<import("./api-tenant-workspaces").ProviderCancellationPolicy>(`/v1/provider/service-jobs/cancellation-policy`),
+  cancel:             (jobId: string, payload: { reason_code: string; notes?: string }) =>
+    apiFetch<Record<string, unknown>>(`/v1/provider/service-jobs/${jobId}/cancel`, { method: "POST", body: JSON.stringify(payload) }),
   getProviderTimeline:(jobId: string) =>
     apiFetch<ExecutionEventRecord[]>(`/v1/provider/service-jobs/${jobId}/execution-timeline`),
   getNotes:           (jobId: string) =>

@@ -43,6 +43,7 @@ ICON_LIBRARY_CONTEXTS = {
     "issue_type_image", "instagram_card_image",
     "checklist_icon", "global_service_icon", "home_campaign_artwork",
     "banner_artwork",
+    "platform_brand_asset",
 }
 ICON_LIBRARY_CACHE_TTL = 300
 
@@ -787,6 +788,6 @@ class MediaAssetService:
             return "customer"
         if media_context in ("admin_profile_photo", "brand_logo", "category_icon", "service_icon", "issue_type_image",
                              "checklist_icon", "global_service_icon", "home_campaign_artwork",
-                             "banner_artwork"):
+                             "banner_artwork", "platform_brand_asset"):
             return "public"
         return "tenant"

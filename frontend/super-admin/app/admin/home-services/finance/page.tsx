@@ -59,6 +59,18 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 const TAB_KEYS = new Set<TabKey>(TABS.map(item => item.key));
 
+const DEFAULT_CANCELLATION_REASONS: NonNullable<MonetizationPolicy["provider_cancellation_reasons"]> = [
+  { code: "no_technician", label: "No technician available", outcome: "provider_cancel", responsibility: "provider", active: true, requires_note: false, minimum_call_attempts: 0, health_impact: true },
+  { code: "cannot_meet_slot", label: "Cannot meet the selected slot", outcome: "provider_cancel", responsibility: "provider", active: true, requires_note: false, minimum_call_attempts: 0, health_impact: true },
+  { code: "service_skill_unavailable", label: "Service, brand or skill unavailable", outcome: "provider_cancel", responsibility: "provider", active: true, requires_note: true, minimum_call_attempts: 0, health_impact: true },
+  { code: "capacity_issue", label: "Provider capacity or operational issue", outcome: "provider_cancel", responsibility: "provider", active: true, requires_note: true, minimum_call_attempts: 0, health_impact: true },
+  { code: "customer_requested", label: "Customer requested cancellation", outcome: "customer_confirmation", responsibility: "customer", active: true, requires_note: false, minimum_call_attempts: 1, health_impact: false },
+  { code: "customer_unreachable", label: "Customer unavailable or unreachable", outcome: "customer_confirmation", responsibility: "customer", active: true, requires_note: true, minimum_call_attempts: 2, health_impact: false },
+  { code: "address_access_issue", label: "Incorrect or inaccessible address", outcome: "customer_confirmation", responsibility: "customer", active: true, requires_note: true, minimum_call_attempts: 1, health_impact: false },
+  { code: "safety_concern", label: "Safety concern at the location", outcome: "provider_cancel", responsibility: "neutral", active: true, requires_note: true, minimum_call_attempts: 0, health_impact: false },
+  { code: "other", label: "Other provider reason", outcome: "provider_cancel", responsibility: "provider", active: true, requires_note: true, minimum_call_attempts: 0, health_impact: true },
+];
+
 function money(v?: string | number | null) {
   const n = Number(v ?? 0);
   return `₹${n.toLocaleString("en-IN")}`;
@@ -498,6 +510,10 @@ function MonetizationTab() {
       assignment_auto_assign_enabled: true,
       customer_reschedule_limit: 3,
       provider_reschedule_approval_hours: 24,
+      provider_departure_warning_minutes: 15,
+      provider_cancellation_confirmation_minutes: 15,
+      provider_cancellation_min_note_length: 10,
+      provider_cancellation_reasons: DEFAULT_CANCELLATION_REASONS,
       arrival_verification_enabled: false,
       arrival_radius_meters: 250,
       arrival_location_max_age_seconds: 120,
@@ -1268,6 +1284,57 @@ function MonetizationTab() {
               <div><label style={{ fontSize: 11 }}>Also urgent when visit starts within (minutes)</label><Input value={String(form.urgent_assignment_threshold_minutes ?? 120)} onChange={v => setForm({ ...form, urgent_assignment_threshold_minutes: v === "" ? 120 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Maximum customer reschedules</label><Input value={String(form.customer_reschedule_limit ?? 3)} onChange={v => setForm({ ...form, customer_reschedule_limit: v === "" ? 3 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Provider slot-change approval expiry (hours)</label><Input type="number" value={String(form.provider_reschedule_approval_hours ?? 24)} onChange={v => setForm({ ...form, provider_reschedule_approval_hours: v === "" ? 24 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Technician departure warning (minutes before slot)</label><Input type="number" value={String(form.provider_departure_warning_minutes ?? 15)} onChange={v => setForm({ ...form, provider_departure_warning_minutes: v === "" ? 15 : Number(v) })} /></div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
+                  Provider cancellation governance
+                </label>
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+                  Provider-owned reasons close immediately. Customer-owned reasons keep the job and SLA active until the exact booking customer confirms through Instagram or the customer app.
+                </p>
+              </div>
+              <Btn size="xs" variant="secondary" icon={<Plus size={13} />} onClick={() => {
+                const reasons = form.provider_cancellation_reasons ?? DEFAULT_CANCELLATION_REASONS;
+                setForm({ ...form, provider_cancellation_reasons: [...reasons, {
+                  code: `custom_reason_${reasons.length + 1}`, label: "New cancellation reason",
+                  outcome: "provider_cancel", responsibility: "provider", active: true,
+                  requires_note: true, minimum_call_attempts: 0, health_impact: true,
+                }] });
+              }}>Add reason</Btn>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginBottom: 12 }}>
+              <div><label style={{ fontSize: 11 }}>Customer confirmation expiry (minutes)</label><Input type="number" value={String(form.provider_cancellation_confirmation_minutes ?? 15)} onChange={v => setForm({ ...form, provider_cancellation_confirmation_minutes: v === "" ? 15 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Required note minimum length</label><Input type="number" value={String(form.provider_cancellation_min_note_length ?? 10)} onChange={v => setForm({ ...form, provider_cancellation_min_note_length: v === "" ? 10 : Number(v) })} /></div>
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {(form.provider_cancellation_reasons ?? DEFAULT_CANCELLATION_REASONS).map((reason, index, reasons) => {
+                const updateReason = (patch: Partial<typeof reason>) => setForm({
+                  ...form,
+                  provider_cancellation_reasons: reasons.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item),
+                });
+                return <div key={`${reason.code}-${index}`} style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface-sunken)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(130px,.8fr) minmax(180px,1.4fr) auto", gap: 8, alignItems: "end" }}>
+                    <div><label style={{ fontSize: 10 }}>Stable code</label><Input value={reason.code} onChange={v => updateReason({ code: v.toLowerCase().replace(/[^a-z0-9_]/g, "_") })} /></div>
+                    <div><label style={{ fontSize: 10 }}>Provider dropdown label</label><Input value={reason.label} onChange={v => updateReason({ label: v })} /></div>
+                    <Btn size="xs" variant="ghost" icon={<Trash2 size={13} />} disabled={reasons.length <= 1} onClick={() => setForm({ ...form, provider_cancellation_reasons: reasons.filter((_, itemIndex) => itemIndex !== index) })}>Remove</Btn>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8, marginTop: 8 }}>
+                    <Select label="Outcome" value={reason.outcome} onChange={value => updateReason({ outcome: value as typeof reason.outcome })} options={[{ value: "provider_cancel", label: "Cancel immediately" }, { value: "customer_confirmation", label: "Customer confirmation" }]} />
+                    <Select label="Responsibility" value={reason.responsibility} onChange={value => updateReason({ responsibility: value as typeof reason.responsibility })} options={[{ value: "provider", label: "Provider" }, { value: "customer", label: "Customer" }, { value: "neutral", label: "Neutral / safety" }]} />
+                    <div><label style={{ fontSize: 10 }}>Minimum tracked calls</label><Input type="number" value={String(reason.minimum_call_attempts ?? 0)} onChange={v => updateReason({ minimum_call_attempts: v === "" ? 0 : Number(v) })} /></div>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 9, fontSize: 11 }}>
+                    <label><input type="checkbox" checked={reason.active !== false} onChange={e => updateReason({ active: e.target.checked })} /> Active</label>
+                    <label><input type="checkbox" checked={!!reason.requires_note} onChange={e => updateReason({ requires_note: e.target.checked })} /> Require notes</label>
+                    <label><input type="checkbox" checked={!!reason.health_impact} onChange={e => updateReason({ health_impact: e.target.checked })} /> Affect provider health</label>
+                  </div>
+                </div>;
+              })}
             </div>
           </div>
 

@@ -3266,6 +3266,7 @@ export const profilePhotoApi = {
 // picker doesn't re-hit Postgres.
 export type IconLibraryContext =
   | "category_icon" | "service_icon" | "brand_logo"
+  | "platform_brand_asset"
   | "issue_type_image"
   | "instagram_card_image"
   | "checklist_icon" | "global_service_icon" | "home_campaign_artwork"
@@ -8669,6 +8670,14 @@ export interface SettingsSummary {
   secret_settings: number; pending_approval: number; tenant_overrides: number;
   plan_overrides: number; changed_this_week: number; rollback_available: number;
 }
+export interface PlatformBranding {
+  brand_name: string; short_name: string; tagline: string;
+  logo_light_url: string | null; logo_dark_url: string | null;
+  brand_mark_url: string | null; favicon_url: string | null;
+  apple_touch_icon_url: string | null; email_logo_url: string | null;
+  document_logo_url: string | null; social_share_image_url: string | null;
+  primary_color: string; accent_color: string; updated_at: string | null;
+}
 export interface SettingsCategoryCount { category: string; setting_count: number }
 export interface FeatureFlag {
   id: string; flag_key: string; label: string; description: string | null; status: string;
@@ -8709,6 +8718,11 @@ export interface EffectiveValueResult {
 export const settingsAdminApi = {
   getSummary: () => apiFetch<SettingsSummary>("/v1/admin/settings/summary"),
   getGroups: () => apiFetch<{ categories: SettingsCategoryCount[] }>("/v1/admin/settings/groups"),
+  getBranding: () => apiFetch<PlatformBranding>("/v1/admin/settings/branding"),
+  updateBranding: (data: Omit<PlatformBranding, "updated_at"> & { change_reason: string; expected_updated_at?: string | null }) =>
+    apiFetch<PlatformBranding>("/v1/admin/settings/branding", {
+      method: "PUT", body: JSON.stringify(data),
+    }),
 
   previewSeedDefaults: () =>
     apiFetch<{ would_create: string[]; would_skip: string[]; total_defaults: number }>(
@@ -8729,7 +8743,7 @@ export const settingsAdminApi = {
   get: (key: string) => apiFetch<EnterpriseSetting>(`/v1/admin/settings/${key}`),
   create: (data: {
     key: string; label: string; value: unknown; setting_type: string; description?: string;
-    category?: string; is_secret?: boolean; risk_level?: string; requires_approval?: boolean;
+    category?: string; is_public?: boolean; is_secret?: boolean; risk_level?: string; requires_approval?: boolean;
     requires_restart?: boolean; is_runtime_editable?: boolean; owner_module?: string;
     allowed_values?: unknown[];
   }) => apiFetch<{ key: string; value: unknown; tier: string }>("/v1/admin/settings", {

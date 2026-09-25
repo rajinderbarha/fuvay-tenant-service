@@ -264,7 +264,7 @@ async def cancel_assignment(
 
 
 @router.get("/dashboard-alerts", response_model=ApiResponse,
-            summary="New and delayed jobs for the provider dashboard")
+            summary="Live job alerts across the authenticated provider portal")
 async def get_dashboard_alerts(
     since: dt.datetime | None = None,
     notify: bool = True,
@@ -272,7 +272,7 @@ async def get_dashboard_alerts(
     user: UserContext  = Depends(get_current_user),
     db:   AsyncSession = Depends(get_db),
 ):
-    """What the dashboard should interrupt the provider about.
+    """What should interrupt the provider on any authenticated portal page.
 
     Declared BEFORE `/{job_id}/...` on purpose: FastAPI matches in order, so a literal
     path registered after a parameterised one is swallowed by it -- "dashboard-alerts"
@@ -302,6 +302,7 @@ async def get_dashboard_alerts(
 
     cap = dashboard_alerts.MAX_ALERTS
     alerts["new_jobs"] = alerts["new_jobs"][:cap]
+    alerts["departure_jobs"] = alerts["departure_jobs"][:cap]
     alerts["delayed_jobs"] = alerts["delayed_jobs"][:cap]
     return ok(alerts, _RID(r), "assignment")
 

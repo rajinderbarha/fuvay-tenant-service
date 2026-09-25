@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { TenantLayout } from "../../components/layout/TenantLayout";
 import { RequireSession } from "../../components/shared/RequireSession";
 import { LegalReacceptanceGate } from "../../components/shared/LegalReacceptanceGate";
+import { GlobalJobAlerts } from "../../components/dashboard/GlobalJobAlerts";
 import { resolveTenantNavId } from "../../lib/nav-config";
 
 // Sprint 34K: use centralized nav-config resolver
@@ -23,7 +24,7 @@ export default function TenantShellLayout({ children }: { children: React.ReactN
     // confirmed the session. Guarding here covers every /(tenant)/* route at
     // once, current and future, the way the admin portal guards its own.
     <TenantLayout activeNav={pathToActiveNav(pathname)}>
-      <RequireSession><LegalReacceptanceGate>{children}</LegalReacceptanceGate></RequireSession>
+      <RequireSession><LegalReacceptanceGate><GlobalJobAlerts />{children}</LegalReacceptanceGate></RequireSession>
     </TenantLayout>
   );
 }

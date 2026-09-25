@@ -212,7 +212,8 @@ async def refresh_provider_operational_health(db, tenant_id: uuid.UUID) -> dict:
                    WHERE tenant_id=:tid AND status='completed') AS completed,
                   (SELECT count(DISTINCT job_id) FROM service_job_execution_events
                    WHERE tenant_id=:tid AND event_type='job_cancelled'
-                     AND actor_role='provider') AS provider_cancelled,
+                     AND actor_role='provider'
+                     AND COALESCE((metadata->>'health_impact')::boolean, true)) AS provider_cancelled,
                   (SELECT count(DISTINCT job_id) FROM service_job_execution_events
                    WHERE tenant_id=:tid AND event_type IN (
                        'provider_assignment_timeout', 'technician_assignment_overdue'

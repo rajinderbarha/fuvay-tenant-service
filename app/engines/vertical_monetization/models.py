@@ -114,6 +114,30 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     provider_reschedule_approval_hours: Mapped[int] = mapped_column(
         Integer, default=24, nullable=False,
     )
+    provider_departure_warning_minutes: Mapped[int] = mapped_column(
+        Integer, default=15, nullable=False,
+    )
+    provider_cancellation_confirmation_minutes: Mapped[int] = mapped_column(
+        Integer, default=15, nullable=False,
+    )
+    provider_cancellation_min_note_length: Mapped[int] = mapped_column(
+        Integer, default=10, nullable=False,
+    )
+    provider_cancellation_reasons: Mapped[list] = mapped_column(
+        JSONB,
+        default=lambda: [
+            {"code": "no_technician", "label": "No technician available", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": False, "minimum_call_attempts": 0, "health_impact": True},
+            {"code": "cannot_meet_slot", "label": "Cannot meet the selected slot", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": False, "minimum_call_attempts": 0, "health_impact": True},
+            {"code": "service_skill_unavailable", "label": "Service, brand or skill unavailable", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": True, "minimum_call_attempts": 0, "health_impact": True},
+            {"code": "capacity_issue", "label": "Provider capacity or operational issue", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": True, "minimum_call_attempts": 0, "health_impact": True},
+            {"code": "customer_requested", "label": "Customer requested cancellation", "outcome": "customer_confirmation", "responsibility": "customer", "active": True, "requires_note": False, "minimum_call_attempts": 1, "health_impact": False},
+            {"code": "customer_unreachable", "label": "Customer unavailable or unreachable", "outcome": "customer_confirmation", "responsibility": "customer", "active": True, "requires_note": True, "minimum_call_attempts": 2, "health_impact": False},
+            {"code": "address_access_issue", "label": "Incorrect or inaccessible address", "outcome": "customer_confirmation", "responsibility": "customer", "active": True, "requires_note": True, "minimum_call_attempts": 1, "health_impact": False},
+            {"code": "safety_concern", "label": "Safety concern at the location", "outcome": "provider_cancel", "responsibility": "neutral", "active": True, "requires_note": True, "minimum_call_attempts": 0, "health_impact": False},
+            {"code": "other", "label": "Other provider reason", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": True, "minimum_call_attempts": 0, "health_impact": True},
+        ],
+        nullable=False,
+    )
     arrival_verification_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     arrival_radius_meters: Mapped[int] = mapped_column(Integer, default=250, nullable=False)
     arrival_location_max_age_seconds: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
@@ -237,6 +261,10 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "assignment_auto_assign_enabled": self.assignment_auto_assign_enabled,
             "customer_reschedule_limit": self.customer_reschedule_limit,
             "provider_reschedule_approval_hours": self.provider_reschedule_approval_hours,
+            "provider_departure_warning_minutes": self.provider_departure_warning_minutes,
+            "provider_cancellation_confirmation_minutes": self.provider_cancellation_confirmation_minutes,
+            "provider_cancellation_min_note_length": self.provider_cancellation_min_note_length,
+            "provider_cancellation_reasons": self.provider_cancellation_reasons,
             "arrival_verification_enabled": self.arrival_verification_enabled,
             "arrival_radius_meters": self.arrival_radius_meters,
             "arrival_location_max_age_seconds": self.arrival_location_max_age_seconds,

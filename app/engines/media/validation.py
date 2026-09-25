@@ -55,6 +55,7 @@ CONTEXT_RULES: dict[str, dict] = {
     "complaint_evidence":           {"allowed_types": ALLOWED_DOCUMENT_TYPES, "max_mb": 10},
     "chat_attachment":              {"allowed_types": ALLOWED_CHAT_TYPES,     "max_mb": 10},
     "brand_logo":                   {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 5},
+    "platform_brand_asset":         {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 5},
     "category_icon":                {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
     "service_icon":                 {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},
     "issue_type_image":             {"allowed_types": ALLOWED_IMAGE_TYPES,    "max_mb": 2},

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import P, require_permission
 from app.dependencies.auth import UserContext, require_super_admin
 from app.dependencies.db import get_db
+from app.engines.settings_engine.branding import PlatformBrandingUpdate
 from app.engines.settings_engine.service import SettingsService
 from app.exceptions import NotFoundException
 from app.schemas.base import ApiResponse, ok
@@ -98,6 +99,7 @@ class CreateSettingBody(BaseModel):
     setting_type: str
     description: Optional[str] = None
     category: str = "general_platform"
+    is_public: bool = False
     is_secret: bool = False
     risk_level: str = "low"
     requires_approval: bool = False
@@ -119,11 +121,47 @@ async def create_setting(r: Request, body: CreateSettingBody,
     result = await s.set_platform_setting(
         body.key, body.value, body.setting_type, body.description,
         label=body.label, category=body.category, is_secret=body.is_secret,
+        is_public=body.is_public,
         risk_level=body.risk_level, requires_approval=body.requires_approval,
         requires_restart=body.requires_restart, is_runtime_editable=body.is_runtime_editable,
         owner_module=body.owner_module, allowed_values=body.allowed_values,
     )
     return ok(result, _rid(r), ENGINE_ID)
+
+
+@router.put("/branding", summary="Publish platform brand identity")
+async def update_platform_branding(
+    r: Request,
+    body: PlatformBrandingUpdate,
+    u: UserContext = Depends(require_permission(P.SETTINGS_UPDATE)),
+    s: SettingsService = Depends(_svc),
+):
+    from app.engines.settings_engine.branding import (
+        PLATFORM_BRANDING_KEY, PlatformBranding, public_branding_payload, read_platform_branding,
+    )
+    _current, row = await read_platform_branding(s.db, active_only=False)
+    current_version = row.updated_at.isoformat() if row and row.updated_at else None
+    if body.expected_updated_at and body.expected_updated_at != current_version:
+        from app.exceptions import ServiceOSException
+        raise ServiceOSException(
+            "CONFIGURATION_CONFLICT",
+            "Branding changed after this page was opened. Reload the latest version before publishing.",
+            status_code=409,
+        )
+    brand = PlatformBranding.model_validate(body.model_dump(exclude={"change_reason", "expected_updated_at"}))
+    await s.set_platform_setting(
+        PLATFORM_BRANDING_KEY, brand.model_dump(), setting_type="json",
+        label="Platform Brand Identity",
+        description="Public logos, icons, names and brand colours used across ServiceOS surfaces.",
+        category="general_platform", is_public=True, risk_level="high",
+        owner_module="platform_branding", reason=body.change_reason,
+    )
+    await s.db.flush()
+    branding, saved_row = await read_platform_branding(s.db, active_only=False)
+    if saved_row and saved_row.status != "active":
+        saved_row.status = "active"
+        await s.db.flush()
+    return ok(public_branding_payload(branding, saved_row), _rid(r), ENGINE_ID)
 
 
 class UpdateSettingBody(BaseModel):
@@ -427,6 +465,19 @@ async def audit_logs(r: Request,
                       u: UserContext = Depends(require_permission(P.SETTINGS_AUDIT_READ)),
                       s: SettingsService = Depends(_svc)):
     return ok(await s.get_audit_log(tenant_id, key, limit, cursor), _rid(r), ENGINE_ID)
+
+
+# Platform branding is a first-class settings surface rather than a loose set
+# of URL strings. Keep these literal routes above the {setting_key} catch-all.
+@router.get("/branding", summary="Get platform brand identity")
+async def get_platform_branding(
+    r: Request,
+    u: UserContext = Depends(require_permission(P.SETTINGS_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.engines.settings_engine.branding import public_branding_payload, read_platform_branding
+    branding, row = await read_platform_branding(db, active_only=False)
+    return ok(public_branding_payload(branding, row), _rid(r), ENGINE_ID)
 
 
 # NOTE: this single-segment catch-all MUST be registered last — every literal-path

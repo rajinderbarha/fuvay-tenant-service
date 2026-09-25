@@ -84,7 +84,7 @@ export function StorageConfigPanel() {
       </div>}
     </Card>
 
-    <div className="nc-callout"><Info size={17}/><div><strong>What moves to Cloudinary once enabled</strong><p>Every new upload -- provider/business logos, service &amp; category icons, brand logos, business verification documents, profile photos -- is stored on Cloudinary and served over HTTPS from its CDN the moment this passes its connection test, no restart needed. Files already sitting on local disk stay there until migrated; ask an engineer to run the one-off Cloudinary backfill script to move them. The browser-tab favicon is a separate, build-time asset and is never affected by this setting.</p></div></div>
+    <div className="nc-callout"><Info size={17}/><div><strong>What moves to Cloudinary once enabled</strong><p>Every new upload -- platform branding and favicon artwork, provider/business logos, service &amp; category icons, brand logos, business verification documents, and profile photos -- is stored on Cloudinary and served over HTTPS from its CDN the moment this passes its connection test, no restart needed. Files already sitting on local disk stay there until migrated; ask an engineer to run the one-off Cloudinary backfill script to move them.</p></div></div>
   </div>;
 }
 

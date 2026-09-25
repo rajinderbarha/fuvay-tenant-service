@@ -62,6 +62,7 @@ def test_all_new_operational_rules_are_versioned_admin_policy_fields():
         "assignment_timeout_minutes",
         "customer_reschedule_limit",
         "provider_reschedule_approval_hours",
+        "provider_departure_warning_minutes",
         "arrival_verification_enabled",
         "arrival_radius_meters",
         "arrival_location_max_age_seconds",
@@ -94,6 +95,7 @@ def test_admin_policy_editor_exposes_operational_controls():
         "Assignment timeout (minutes)",
         "Maximum customer reschedules",
         "Provider slot-change approval expiry (hours)",
+        "Technician departure warning (minutes before slot)",
         "Verified technician arrival",
         "Allowed radius (metres)",
         "Confirmation/code expiry (minutes)",
@@ -146,6 +148,7 @@ def test_operational_policy_validation_rejects_unsafe_values():
         "assignment_timeout_minutes": 0,
         "customer_reschedule_limit": 21,
         "provider_reschedule_approval_hours": 0,
+        "provider_departure_warning_minutes": 4,
         "arrival_radius_meters": 24,
         "arrival_location_max_age_seconds": 12.5,
         "arrival_max_accuracy_meters": 1001,
@@ -161,6 +164,7 @@ def test_operational_policy_validation_rejects_unsafe_values():
     assert "assignment_timeout_minutes must be between 1 and 1440" in errors
     assert "customer_reschedule_limit must be between 0 and 20" in errors
     assert "provider_reschedule_approval_hours must be between 1 and 168" in errors
+    assert "provider_departure_warning_minutes must be between 5 and 120" in errors
     assert "arrival_radius_meters must be between 25 and 5000" in errors
     assert "arrival_location_max_age_seconds must be a whole number" in errors
     assert "arrival_max_accuracy_meters must be between 5 and 1000" in errors
@@ -190,6 +194,7 @@ async def test_runtime_reader_uses_published_values_including_disabled_and_zero(
                 "assignment_timeout_minutes": 45,
                 "customer_reschedule_limit": 0,
                 "provider_reschedule_approval_hours": 36,
+                "provider_departure_warning_minutes": 20,
                 "arrival_verification_enabled": False,
                 "arrival_radius_meters": 350,
                 "arrival_location_max_age_seconds": 180,
@@ -215,6 +220,7 @@ async def test_runtime_reader_uses_published_values_including_disabled_and_zero(
     assert policy.assignment_timeout_minutes == 45
     assert policy.customer_reschedule_limit == 0
     assert policy.provider_reschedule_approval_hours == 36
+    assert policy.provider_departure_warning_minutes == 20
     assert policy.arrival_verification_enabled is False
     assert policy.arrival_radius_meters == 350
     assert policy.arrival_customer_confirmation_enabled is True

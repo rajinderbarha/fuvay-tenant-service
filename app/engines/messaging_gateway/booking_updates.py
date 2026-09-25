@@ -313,6 +313,32 @@ async def send_reschedule_approval_request(db, job, request) -> bool:
     )
 
 
+async def send_provider_cancellation_confirmation_request(db, job, request) -> bool:
+    """Ask the exact booking identity to confirm a provider cancellation claim."""
+    from app.engines.messaging_gateway.constants import (
+        PICKER_SEP, PICK_PROVIDER_CANCEL,
+    )
+
+    booking = await db.get(ServiceBooking, job.booking_id)
+    if booking is None:
+        return False
+    expiry = request.expires_at.astimezone(LOCAL_TZ).strftime("%d %b, %I:%M %p")
+    return await notify_booking_customer(
+        db, booking,
+        f"Your provider says you requested cancellation of {booking.booking_number}.\n\n"
+        f"Reason: {request.reason_label}\n\n"
+        "Confirm only if you asked to cancel. Your booking and SLA remain active "
+        f"until you confirm. This request expires {expiry}.",
+        rows=[
+            {"id": PICKER_SEP.join((PICK_PROVIDER_CANCEL, str(request.id), "approve")),
+             "title": "Yes, cancel booking"},
+            {"id": PICKER_SEP.join((PICK_PROVIDER_CANCEL, str(request.id), "reject")),
+             "title": "No, keep booking"},
+        ],
+        section_title="Confirm cancellation",
+    )
+
+
 _STAGE_MESSAGES = {
     "scheduled": ("Your visit schedule has been updated.", "Visit scheduled"),
     "inspection_started": (

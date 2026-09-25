@@ -669,6 +669,19 @@ export interface BJAddress {
   city?: string | null; zipcode?: string | null;
 }
 
+export interface ProviderCancellationReason {
+  code: string; label: string;
+  outcome: "provider_cancel" | "customer_confirmation";
+  responsibility: "provider" | "customer" | "neutral";
+  active: boolean; requires_note: boolean;
+  minimum_call_attempts: number; health_impact: boolean;
+}
+export interface ProviderCancellationPolicy {
+  confirmation_minutes: number;
+  minimum_note_length: number;
+  reasons: ProviderCancellationReason[];
+}
+
 export const bookingsJobsApi = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   list: <T = BJListResponse>(params?: Record<string, any>) =>
@@ -679,8 +692,10 @@ export const bookingsJobsApi = {
    * the only money-in action a provider can take against a job. */
   confirmPayment: <T = WsPayload>(jobId: string, payload: Record<string, unknown>) =>
     apiFetch<T>(`/v1/tenant/home-services/bookings-jobs/${jobId}/confirm-payment`, post(payload)),
-  cancelJob: <T = WsPayload>(jobId: string, reason: string) =>
-    apiFetch<T>(`/v1/provider/service-jobs/${jobId}/cancel`, post({ reason })),
+  cancellationPolicy: () =>
+    apiFetch<ProviderCancellationPolicy>(`/v1/provider/service-jobs/cancellation-policy`),
+  cancelJob: <T = WsPayload>(jobId: string, payload: { reason_code: string; notes?: string }) =>
+    apiFetch<T>(`/v1/provider/service-jobs/${jobId}/cancel`, post(payload)),
 };
 
 // ── Dispatch ───────────────────────────────────────────────────────────────

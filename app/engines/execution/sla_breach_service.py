@@ -760,12 +760,16 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
 
 
 async def settle_no_arrival_close(db: AsyncSession, *, job_id) -> Decimal:
-    """Charge a cancelled no-show exactly what this engine's own close would.
+    """Settle a no-arrival cancellation exactly as this engine's close would.
 
     `travel_timeout` cancels a job whose technician set off and never arrived,
     without waiting for this engine's close window. A cancelled job is outside
     BREACHABLE_STATUSES, so without this the no-show would cost the provider
     nothing -- less than a provider who never tapped "On the way" at all.
+
+    The provider cancellation path also calls this after a breach has already
+    been recorded.  Otherwise a provider could cancel after the initial charge
+    and avoid the remainder of the configured cumulative close penalty.
 
     Here the missed-slot charge and the final close collapse into one: the
     provider pays the larger of the two policy amounts, less anything already

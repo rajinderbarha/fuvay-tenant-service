@@ -7,8 +7,9 @@ Covers:
 - RealEstateLeadExecutionService (12 methods)
 - Swagger route registration (12 routers × N endpoints)
 """
+import datetime as dt
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -346,6 +347,46 @@ class TestHomeServiceExecution:
         job = _mock_job(status="accepted")
         db = _db_returning(job, None)
         await svc.cancel_job(db, JOB_ID, TENANT_ID, USER_ID, reason="Customer cancelled")
+        assert job.status == "cancelled"
+
+    async def test_provider_cancel_after_sla_breach_settles_final_penalty(self, svc):
+        job = _mock_job(status="accepted")
+        job.sla_breached_at = dt.datetime.now(dt.timezone.utc)
+        job.sla_penalty_day_count = 1
+        db = _db_returning(job, None)
+        settle = AsyncMock()
+
+        with patch(
+            "app.engines.execution.sla_breach_service.settle_no_arrival_close",
+            settle,
+        ):
+            await svc.cancel_job(
+                db, JOB_ID, TENANT_ID, USER_ID,
+                reason="Provider cannot fulfil the visit",
+                actor_role="provider",
+            )
+
+        settle.assert_awaited_once_with(db, job_id=JOB_ID)
+        assert job.status == "cancelled"
+
+    async def test_provider_cancel_before_sla_breach_has_no_sla_settlement(self, svc):
+        job = _mock_job(status="accepted")
+        job.sla_breached_at = None
+        job.sla_penalty_day_count = 0
+        db = _db_returning(job, None)
+        settle = AsyncMock()
+
+        with patch(
+            "app.engines.execution.sla_breach_service.settle_no_arrival_close",
+            settle,
+        ):
+            await svc.cancel_job(
+                db, JOB_ID, TENANT_ID, USER_ID,
+                reason="Provider cannot fulfil the visit",
+                actor_role="provider",
+            )
+
+        settle.assert_not_awaited()
         assert job.status == "cancelled"
 
     async def test_add_work_note(self, svc):

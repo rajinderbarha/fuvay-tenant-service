@@ -948,7 +948,11 @@ class HomeServiceJobExecutionService:
                 status_code=409,
             )
 
-    async def cancel_job(self, db, job_id, tenant_id, user_id, reason: str, actor_role: str = "provider", request_id=None):
+    async def cancel_job(
+        self, db, job_id, tenant_id, user_id, reason: str,
+        actor_role: str = "provider", request_id=None,
+        metadata: dict | None = None, notify_customer: bool = True,
+    ):
         if not reason or not reason.strip():
             raise ServiceOSException(ERR_REASON_REQUIRED, "Reason is required.", status_code=422)
         job = await self._get_job(db, job_id, tenant_id)
@@ -972,7 +976,30 @@ class HomeServiceJobExecutionService:
                 status_code=422,
             )
 
-        await self._set_status(db, job, JS_CANCELLED, EV_JOB_CANCELLED, user_id, actor_role, notes=reason, request_id=request_id)
+        # A provider must not be able to escape the final SLA consequence by
+        # cancelling immediately after the first missed-slot charge.  Once a
+        # breach has been recorded, settle the job to the policy's cumulative
+        # close amount before changing it to a non-breachable status.  The
+        # settlement uses the same idempotency key as the automatic close, so
+        # retries and a concurrent SLA sweep cannot deduct it twice.
+        #
+        # Keep customer/admin cancellations out of this rule: this endpoint
+        # currently supplies ``provider``, while the explicit role check makes
+        # the ownership of the financial consequence unambiguous for future
+        # callers too.
+        breach_day = getattr(job, "sla_penalty_day_count", 0)
+        breach_recorded = (
+            isinstance(getattr(job, "sla_breached_at", None), datetime)
+            or (isinstance(breach_day, int) and breach_day > 0)
+        )
+        if actor_role == "provider" and breach_recorded:
+            from app.engines.execution.sla_breach_service import settle_no_arrival_close
+            await settle_no_arrival_close(db, job_id=job.id)
+
+        await self._set_status(
+            db, job, JS_CANCELLED, EV_JOB_CANCELLED, user_id, actor_role,
+            notes=reason, request_id=request_id, metadata=metadata,
+        )
         job.failure_reason = reason
         job.assignment_status = "cancelled"
 
@@ -1008,8 +1035,9 @@ class HomeServiceJobExecutionService:
             await refresh_provider_operational_health(db, tenant_id)
         # A customer whose booking the provider cancelled heard nothing at
         # all: they waited for a technician who was never coming.
-        from app.engines.messaging_gateway.booking_updates import send_provider_cancelled
-        await send_provider_cancelled(db, job, reason)
+        if notify_customer and actor_role == "provider":
+            from app.engines.messaging_gateway.booking_updates import send_provider_cancelled
+            await send_provider_cancelled(db, job, reason)
         return job.to_dict()
 
     # ── notes / media ─────────────────────────────────────────────────────────

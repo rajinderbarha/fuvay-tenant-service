@@ -125,6 +125,18 @@ async def issue_warranty_certificate(db: AsyncSession, job, booking=None) -> dic
     return snapshot
 
 
+async def with_platform_branding(db: AsyncSession, snapshot: dict) -> dict:
+    """Add current presentation-only platform identity without mutating evidence."""
+    from app.engines.settings_engine.branding import read_platform_branding
+
+    try:
+        branding, _row = await read_platform_branding(db)
+        return {**snapshot, "_platform_branding": branding.model_dump()}
+    except Exception:
+        # Brand lookup must never make an already-issued warranty unavailable.
+        return snapshot
+
+
 def render_certificate_pdf(snapshot: dict) -> bytes:
     """Render a polished, provider-branded A4 warranty card.
 
@@ -186,13 +198,19 @@ def render_certificate_pdf(snapshot: dict) -> bytes:
             return None
 
     provider = snapshot.get("provider") or {}
+    platform = snapshot.get("_platform_branding") or {}
     address = _service_address(snapshot.get("service_address"))
     days = snapshot.get("warranty_days")
     certificate = safe_text(snapshot.get("certificate_number")) or "Not recorded"
     provider_name = safe_text(provider.get("name")) or "Service Provider"
     logo = load_logo(provider.get("logo_url"))
-    navy = colors.HexColor("#102F2A")
-    teal = colors.HexColor("#0E8174")
+    platform_name = safe_text(platform.get("brand_name")) or "Fuvay"
+    platform_logo = load_logo(platform.get("document_logo_url") or platform.get("logo_light_url"))
+    try:
+        navy = colors.HexColor(platform.get("primary_color") or "#102F2A")
+    except ValueError:
+        navy = colors.HexColor("#102F2A")
+    teal = navy
     mint = colors.HexColor("#E6F5F1")
     ink = colors.HexColor("#172321")
     muted = colors.HexColor("#60706D")
@@ -243,8 +261,18 @@ def render_certificate_pdf(snapshot: dict) -> bytes:
         canvas.setFillColor(colors.HexColor("#B8D6CF"))
         canvas.setFont("Helvetica", 8)
         canvas.drawString(41 * mm, height - 22 * mm, "Provider Warranty Certificate")
+        right_edge = width - 17 * mm
+        if platform_logo:
+            try:
+                img_w, img_h = platform_logo.getSize()
+                draw_w = 18 * mm
+                draw_h = min(8 * mm, draw_w * img_h / img_w)
+                canvas.drawImage(platform_logo, right_edge - draw_w, height - 12 * mm,
+                                 draw_w, draw_h, preserveAspectRatio=True, mask="auto")
+            except Exception:
+                pass
         canvas.setFont("Helvetica-Bold", 8)
-        canvas.drawRightString(width - 17 * mm, height - 17 * mm, "WARRANTY CARD")
+        canvas.drawRightString(right_edge, height - 17 * mm, "WARRANTY CARD")
         canvas.setFont("Helvetica", 7)
         canvas.drawRightString(width - 17 * mm, height - 22 * mm, f"Certificate {certificate}")
 
@@ -385,13 +413,13 @@ def render_certificate_pdf(snapshot: dict) -> bytes:
         overlay.setFillColor(muted)
         overlay.setFont("Helvetica", 7.2)
         overlay.drawRightString(A4[0] - 17 * mm, 11 * mm,
-                                f"Page {number} of {total_pages} | Provider warranty powered by Fuvay")
+                                f"Page {number} of {total_pages} | Provider warranty powered by {platform_name}")
         overlay.save()
         page.merge_page(PdfReader(BytesIO(overlay_bytes.getvalue())).pages[0])
         writer.add_page(page)
     writer.add_metadata({
         "/Title": f"Warranty Certificate {certificate}",
-        "/Author": "Fuvay",
+        "/Author": platform_name,
     })
     final_output = BytesIO()
     writer.write(final_output)

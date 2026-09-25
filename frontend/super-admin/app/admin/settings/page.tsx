@@ -5,21 +5,23 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, AlertTriangle, ArchiveRestore, Building2, CheckCircle2, ChevronRight,
   CircleGauge, Clock3, Download, Flag, History, KeyRound, Layers3,
-  Plus, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal,
+  Palette, Plus, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal,
 } from "lucide-react";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Badge, Btn, EmptyState, Input, Modal, Select, Skeleton, Textarea } from "../../../components/shared/ui";
 import { PageHeader } from "@serviceos/design-system";
 import {
   CategorySettingRow, EnterpriseSetting, FeatureFlag, PlanSetting,
-  SettingAuditLogRow, SettingsSummary, TenantOverrideRow, platformSettingsApi, settingsAdminApi,
+  PlatformBranding, SettingAuditLogRow, SettingsSummary, TenantOverrideRow, platformSettingsApi, settingsAdminApi,
 } from "../../../lib/api";
+import { IconPicker } from "../../../components/shared/IconPicker";
 import { useAction, useApi } from "../../../hooks/useApi";
 import styles from "./settings.module.css";
 
-type Tab = "global" | "category" | "plan_overrides" | "tenant_overrides" | "feature_flags" | "audit_log" | "version_history";
+type Tab = "branding" | "global" | "category" | "plan_overrides" | "tenant_overrides" | "feature_flags" | "audit_log" | "version_history";
 
 const TABS: Array<{ key: Tab; label: string; description: string; icon: React.ReactNode }> = [
+  { key: "branding", label: "Brand Identity", description: "Logos, browser icons, colours and names", icon: <Palette /> },
   { key: "global", label: "Global Settings", description: "Platform-wide defaults and runtime behavior", icon: <Settings2 /> },
   { key: "category", label: "Category Policies", description: "Commercial and operating rules by service", icon: <Layers3 /> },
   { key: "plan_overrides", label: "Plan Overrides", description: "Values inherited by tenants on each plan", icon: <SlidersHorizontal /> },
@@ -122,7 +124,7 @@ export default function SettingsPage() {
       <HealthMetric icon={<Clock3 />} label="Change activity" value={summary.data?.changed_this_week ?? "—"} detail="changes in the last 7 days" />
     </section>
     <div className={styles.workspace}><nav className={styles.scopeNav} aria-label="Settings workspaces"><div className={styles.scopeNavHeader}>Configuration scope</div>{TABS.map(item => { const count = tabCount(item.key); return <button key={item.key} type="button" onClick={() => setTab(item.key)} className={`${styles.scopeNavItem} ${tab === item.key ? styles.scopeNavItemActive : ""}`} aria-current={tab === item.key ? "page" : undefined}><span className={styles.scopeNavIcon}>{item.icon}</span><span><strong>{item.label}</strong><small>{item.description}</small></span>{count !== null ? <b>{count}</b> : <ChevronRight className={styles.scopeChevron} />}</button>; })}<div className={styles.governanceNote}><KeyRound size={16} /><div><strong>Protected configuration</strong><p>Secret values stay masked and critical changes require a reason.</p></div></div></nav>
-      <section className={styles.content} aria-label={activeTab.label}>{tab === "global" && <GlobalSettingsTab summary={summary.data} refreshSummary={summary.refetch} />}{tab === "category" && <CategorySettingsTab />}{tab === "plan_overrides" && <PlanOverridesTab refreshSummary={summary.refetch} />}{tab === "tenant_overrides" && <TenantOverridesTab refreshSummary={summary.refetch} />}{tab === "feature_flags" && <FeatureFlagsTab />}{tab === "audit_log" && <AuditLogTab />}{tab === "version_history" && <VersionHistoryTab />}</section>
+      <section className={styles.content} aria-label={activeTab.label}>{tab === "branding" && <BrandingTab />}{tab === "global" && <GlobalSettingsTab summary={summary.data} refreshSummary={summary.refetch} />}{tab === "category" && <CategorySettingsTab />}{tab === "plan_overrides" && <PlanOverridesTab refreshSummary={summary.refetch} />}{tab === "tenant_overrides" && <TenantOverridesTab refreshSummary={summary.refetch} />}{tab === "feature_flags" && <FeatureFlagsTab />}{tab === "audit_log" && <AuditLogTab />}{tab === "version_history" && <VersionHistoryTab />}</section>
     </div>
   </main></AdminLayout>;
 }
@@ -201,6 +203,77 @@ function PlanOverridesTab({ refreshSummary }: { refreshSummary: () => void }) {
   async function save() { if (!key.trim() || !reason.trim()) return; const result = await saveAction.execute(key.trim(), value, valueType, reason.trim()); if (result) { setEditing(null); settings.refetch(); refreshSummary(); } }
   async function remove() { if (!removing || !reason.trim()) return; const result = await deleteAction.execute(removing.key, reason.trim()); if (result) { setRemoving(null); setReason(""); settings.refetch(); refreshSummary(); } }
   return <><SectionIntro eyebrow="Plan inheritance" title="Plan overrides" description="Set audited defaults inherited by every tenant on a subscription plan." action={<Btn variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => setEditing("new")} disabled={!planValid}>Add override</Btn>} /><div className={styles.toolbar}><div className={styles.searchBox}><Layers3 size={15} /><input aria-label="Plan code" value={plan} onChange={e => setPlan(e.target.value.toLowerCase().trim())} placeholder="starter" /></div><button className={styles.iconButton} type="button" aria-label="Refresh plan overrides" onClick={settings.refetch}><RefreshCw size={15} /></button></div>{!planValid && <ErrorBanner message="Plan code may contain lowercase letters, numbers, and underscores only." />}<ErrorBanner message={settings.error} /><div className={styles.tableCard}>{settings.loading ? <SettingsLoading /> : rows.length === 0 ? <EmptyState title="No plan overrides" description={`Tenants on ${plan} currently inherit platform defaults.`} action={<Btn variant="secondary" size="sm" onClick={() => setEditing("new")}>Add first override</Btn>} /> : <div className={styles.tableScroll}><TableSurface className={styles.table}><thead><tr><th>Plan</th><th>Setting</th><th>Value</th><th>Type</th><th aria-label="Actions" /></tr></thead><tbody>{rows.map(row => <tr key={row.key}><td><Badge variant="info" size="sm">{plan}</Badge></td><td><code>{row.key}</code></td><td><span className={styles.valueCell}>{fmtValue(row.value)}</span></td><td>{row.type || typeof row.value}</td><td><div className={styles.rowActions}><Btn variant="secondary" size="xs" onClick={() => setEditing(row)}>Edit</Btn><Btn variant="ghost" size="xs" onClick={() => { setRemoving(row); setReason(""); }}>Remove</Btn></div></td></tr>)}</tbody></TableSurface></div>}</div><Modal open={!!editing} onClose={() => setEditing(null)} title={editing === "new" ? `Add ${plan} override` : `Edit ${key}`} size="lg"><div className={styles.modalStack}><ErrorBanner message={saveAction.error} /><div className={styles.formGrid}><Input label="Setting key" value={key} onChange={setKey} required disabled={editing !== "new"} /><Select label="Value type" value={valueType} onChange={setValueType} options={["string", "secret", "number", "currency", "percentage", "duration", "boolean", "json", "list", "enum"].map(item => ({ value: item, label: item }))} /></div><Input label="Override value" value={value} onChange={setValue} required /><Textarea label="Change reason" value={reason} onChange={setReason} required rows={3} placeholder="Explain why this plan differs from the platform defaultâ€¦" /><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={() => setEditing(null)}>Cancel</Btn><Btn variant="primary" size="sm" loading={saveAction.loading} disabled={!key.trim() || value === "" || !reason.trim()} onClick={save}>Save override</Btn></div></div></Modal><Modal open={!!removing} onClose={() => setRemoving(null)} title="Remove plan override" size="sm"><div className={styles.modalStack}><div className={styles.changeSummary}><AlertTriangle size={17} /><div><strong>{removing?.key}</strong><p>Tenants on this plan will fall back to the platform value.</p></div></div><ErrorBanner message={deleteAction.error} /><Textarea label="Removal reason" value={reason} onChange={setReason} required rows={3} /><div className={styles.modalActions}><Btn variant="ghost" size="sm" onClick={() => setRemoving(null)}>Cancel</Btn><Btn variant="danger" size="sm" loading={deleteAction.loading} disabled={!reason.trim()} onClick={remove}>Remove override</Btn></div></div></Modal></>;
+}
+
+const BRAND_DEFAULTS: Omit<PlatformBranding, "updated_at"> = {
+  brand_name: "Fuvay", short_name: "Fuvay", tagline: "Far Away Is Fare Way",
+  logo_light_url: null, logo_dark_url: null, brand_mark_url: null,
+  favicon_url: null, apple_touch_icon_url: null, email_logo_url: null,
+  document_logo_url: null, social_share_image_url: null,
+  primary_color: "#0F6B60", accent_color: "#2F9E8F",
+};
+
+function BrandingTab() {
+  const branding = useApi(useCallback(() => settingsAdminApi.getBranding(), []));
+  const [form, setForm] = useState<Omit<PlatformBranding, "updated_at">>(BRAND_DEFAULTS);
+  const [reason, setReason] = useState("");
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    if (!branding.data) return;
+    const { updated_at: _updated, ...editable } = branding.data;
+    setForm(editable);
+  }, [branding.data]);
+  const save = useAction(useCallback((payload: Omit<PlatformBranding, "updated_at"> & { change_reason: string; expected_updated_at?: string | null }) => settingsAdminApi.updateBranding(payload), []));
+  const patch = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => { setSaved(false); setForm(current => ({ ...current, [key]: value })); };
+  const dirty = branding.data ? JSON.stringify(form) !== JSON.stringify((({ updated_at: _, ...rest }) => rest)(branding.data)) : false;
+  async function publish() {
+    const result = await save.execute({ ...form, change_reason: reason.trim(), expected_updated_at: branding.data?.updated_at });
+    if (!result) return;
+    const { updated_at: _updated, ...editable } = result;
+    setForm(editable); setReason(""); setSaved(true); branding.refetch();
+    window.dispatchEvent(new Event("platform-branding-updated"));
+  }
+  return <>
+    <SectionIntro eyebrow="Public identity" title="Platform branding" description="Publish one governed brand profile to the admin portal, provider portal, public website, browser tabs, emails and generated documents. Uploaded artwork is stored in Cloudinary." action={<Badge variant="info" size="sm">Runtime configuration</Badge>} />
+    <ErrorBanner message={branding.error || save.error} />
+    {saved && <div className={styles.brandSuccess}><CheckCircle2 size={16} />Brand identity published. Open pages update without a rebuild.</div>}
+    {branding.loading ? <div className={styles.tableCard}><SettingsLoading /></div> : <div className={styles.brandingLayout}>
+      <section className={styles.brandEditor}>
+        <div className={styles.brandSection}><header><span>01</span><div><h3>Naming</h3><p>Names used in page titles, navigation and accessible labels.</p></div></header><div className={styles.formGrid}>
+          <Input label="Brand name" value={form.brand_name} onChange={v => patch("brand_name", v)} required />
+          <Input label="Short name" value={form.short_name} onChange={v => patch("short_name", v)} required hint="Used where space is limited." />
+        </div><Input label="Tagline" value={form.tagline} onChange={v => patch("tagline", v)} /></div>
+        <div className={styles.brandSection}><header><span>02</span><div><h3>Core artwork</h3><p>Use transparent PNG or WebP files. Light and dark lockups should have the same proportions.</p></div></header><div className={styles.assetGrid}>
+          <BrandAsset label="Logo for light surfaces" note="Recommended 1200 × 320" value={form.logo_light_url} onChange={v => patch("logo_light_url", v)} />
+          <BrandAsset label="Logo for dark surfaces" note="Recommended 1200 × 320" value={form.logo_dark_url} onChange={v => patch("logo_dark_url", v)} dark />
+          <BrandAsset label="Compact brand mark" note="Square, recommended 512 × 512" value={form.brand_mark_url} onChange={v => patch("brand_mark_url", v)} square />
+        </div></div>
+        <div className={styles.brandSection}><header><span>03</span><div><h3>Browser and mobile icons</h3><p>Separate assets prevent a full wordmark being squeezed into a tiny browser tab.</p></div></header><div className={styles.assetGrid}>
+          <BrandAsset label="Favicon" note="Square PNG, 32–512 px" value={form.favicon_url} onChange={v => patch("favicon_url", v)} square />
+          <BrandAsset label="Apple touch icon" note="PNG, recommended 180 × 180" value={form.apple_touch_icon_url} onChange={v => patch("apple_touch_icon_url", v)} square />
+          <BrandAsset label="Social share image" note="Recommended 1200 × 630" value={form.social_share_image_url} onChange={v => patch("social_share_image_url", v)} />
+        </div></div>
+        <div className={styles.brandSection}><header><span>04</span><div><h3>Documents and communication</h3><p>Dedicated artwork keeps invoices, warranty cards and email headers print-safe.</p></div></header><div className={styles.assetGrid}>
+          <BrandAsset label="Email header logo" note="Transparent, recommended 600 × 160" value={form.email_logo_url} onChange={v => patch("email_logo_url", v)} />
+          <BrandAsset label="Document logo" note="High-resolution, light background" value={form.document_logo_url} onChange={v => patch("document_logo_url", v)} />
+        </div></div>
+        <div className={styles.brandSection}><header><span>05</span><div><h3>Brand colours</h3><p>Six-digit colours are validated by the API and applied to portal navigation and actions.</p></div></header><div className={styles.colourGrid}>
+          <ColourField label="Primary colour" value={form.primary_color} onChange={v => patch("primary_color", v)} />
+          <ColourField label="Accent colour" value={form.accent_color} onChange={v => patch("accent_color", v)} />
+        </div></div>
+        <div className={styles.publishBar}><div><Textarea label="Change reason" value={reason} onChange={setReason} required rows={2} placeholder="Why is the public brand identity changing?" /><small>Every publish is recorded in Settings Audit Log and can be restored from Version History.</small></div><div><Btn variant="ghost" size="sm" disabled={!dirty} onClick={() => setForm(BRAND_DEFAULTS)}>Restore defaults</Btn><Btn variant="primary" size="sm" loading={save.loading} disabled={!dirty || reason.trim().length < 5 || !form.brand_name.trim() || !form.short_name.trim()} onClick={publish}>Publish branding</Btn></div></div>
+      </section>
+      <aside className={styles.brandPreview}><span>Live preview</span><h3>Portal shell</h3><div className={styles.previewLight}>{form.logo_light_url ? <img src={form.logo_light_url} alt="Light logo preview" /> : <strong>{form.brand_name}</strong>}</div><div className={styles.previewDark}>{form.logo_dark_url ? <img src={form.logo_dark_url} alt="Dark logo preview" /> : <strong>{form.brand_name}</strong>}</div><div className={styles.previewBrowser}><i>{form.favicon_url ? <img src={form.favicon_url} alt="" /> : form.short_name.slice(0, 1)}</i><div><strong>{form.brand_name} — Super Admin</strong><small>{form.tagline || "No tagline"}</small></div></div><dl><div><dt>Last published</dt><dd>{fmtDate(branding.data?.updated_at ?? null)}</dd></div><div><dt>Delivery</dt><dd>Runtime · CDN backed</dd></div><div><dt>Governance</dt><dd>Audited · rollback ready</dd></div></dl></aside>
+    </div>}
+  </>;
+}
+
+function BrandAsset({ label, note, value, onChange, dark = false, square = false }: { label: string; note: string; value: string | null; onChange: (value: string | null) => void; dark?: boolean; square?: boolean }) {
+  return <div className={`${styles.assetCard} ${dark ? styles.assetCardDark : ""}`}><IconPicker context="platform_brand_asset" label={label} noun={label.toLowerCase()} value={value} onChange={onChange} maxMb={5} size={square ? 76 : 112} /><small>{note}</small></div>;
+}
+
+function ColourField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className={styles.colourField}><span>{label}</span><div><input type="color" value={value} onChange={e => onChange(e.target.value.toUpperCase())} /><input value={value} maxLength={7} onChange={e => onChange(e.target.value.toUpperCase())} aria-label={`${label} hex value`} /></div></label>;
 }
 
 function TenantOverridesTab({ refreshSummary }: { refreshSummary: () => void }) {

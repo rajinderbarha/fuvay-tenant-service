@@ -201,6 +201,16 @@ export interface MonetizationPolicy {
   assignment_auto_assign_enabled?: boolean;
   customer_reschedule_limit?: number;
   provider_reschedule_approval_hours?: number;
+  provider_departure_warning_minutes?: number;
+  provider_cancellation_confirmation_minutes?: number;
+  provider_cancellation_min_note_length?: number;
+  provider_cancellation_reasons?: Array<{
+    code: string; label: string;
+    outcome: "provider_cancel" | "customer_confirmation";
+    responsibility: "provider" | "customer" | "neutral";
+    active: boolean; requires_note: boolean;
+    minimum_call_attempts: number; health_impact: boolean;
+  }>;
   arrival_verification_enabled?: boolean;
   arrival_radius_meters?: number;
   arrival_location_max_age_seconds?: number;

@@ -13,7 +13,7 @@ import {
 } from "@serviceos/design-system";
 import {
   bookingsJobsApi, serviceJobAssignmentApi, type BJAddress, type BJDetail,
-  type BJItem, type BJListResponse,
+  type BJItem, type BJListResponse, type ProviderCancellationPolicy,
 } from "../../../../lib/api";
 import { useAction, useApi } from "../../../../hooks/useApi";
 import { BookingsLifecycleBoard } from "../../../../components/bookings/BookingsLifecycleBoard";
@@ -280,7 +280,50 @@ function Workflow({ stages }: { stages: BJDetail["workflow_stages"] }) { return 
 function Lifecycle({ current }: { current: string }) { const currentIndex = LIFECYCLE_STAGES.indexOf(current); return <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{LIFECYCLE_STAGES.map((stage, i) => <span key={stage} style={{ padding: "4px 8px", borderRadius: 999, fontSize: 10.5, fontWeight: stage === current ? 700 : 500, background: stage === current ? "var(--accent)" : i < currentIndex ? "var(--success-bg)" : "var(--surface-sunken)", color: stage === current ? "white" : i < currentIndex ? "var(--success-text)" : "var(--text-tertiary)" }}>{stage.replace(/_/g, " ")}</span>)}</div>; }
 function ConfirmPaymentModal({ jobId, invoiceAmount, onClose, onSaved }: { jobId: string; invoiceAmount?: number | string; onClose: () => void; onSaved: () => void }) { const [paymentMode, setPaymentMode] = useState("onsite_cash"), [amount, setAmount] = useState(invoiceAmount ? String(invoiceAmount) : ""); const payment = useAction((body: { payment_mode: string; collected_amount: number }) => bookingsJobsApi.confirmPayment(jobId, body), { onSuccess: onSaved }); async function submit(e: React.FormEvent) { e.preventDefault(); const n = Number(amount); if (n > 0) await payment.execute({ payment_mode: paymentMode, collected_amount: n }); } return <Modal open onClose={onClose} title="Confirm direct payment"><form onSubmit={submit} style={{ display: "grid", gap: 14 }}><p style={{ margin: 0, color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.55 }}>Record the amount paid directly to your business. This does not charge the customer or create a platform settlement.</p>{payment.error && <Alert tone="danger">{payment.error}</Alert>}<Select label="Payment mode" value={paymentMode} onChange={e => setPaymentMode(e.target.value)} options={[{ value: "onsite_cash", label: "Cash" }, { value: "onsite_upi", label: "UPI" }, { value: "onsite_card", label: "Card at service location" }, { value: "bank_transfer", label: "Bank transfer" }]} /><Input label="Amount collected" type="number" min={0.01} step={0.01} value={amount} onChange={e => setAmount(e.target.value)} required /><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button type="button" variant="secondary" onClick={onClose} disabled={payment.loading}>Cancel</Button><Button type="submit" variant="primary" loading={payment.loading} disabled={Number(amount) <= 0}>Confirm payment</Button></div></form></Modal>; }
 
-function CancelJobModal({ jobId, onClose, onSaved }: { jobId: string; onClose: () => void; onSaved: () => void }) { const [reason, setReason] = useState(""); const action = useAction((value: string) => bookingsJobsApi.cancelJob(jobId, value), { onSuccess: onSaved }); async function submit(e: React.FormEvent) { e.preventDefault(); if (reason.trim().length >= 5) await action.execute(reason.trim()); } return <Modal open onClose={onClose} title="Cancel job"><form onSubmit={submit} style={{ display: "grid", gap: 14 }}><Alert tone="warning" title="This affects provider health">The cancellation is recorded against this provider and the customer will see the job as cancelled.</Alert>{action.error && <Alert tone="danger">{action.error}</Alert>}<label style={{ display: "grid", gap: 6, color: "var(--text-secondary)", fontSize: 12, fontWeight: 600 }}>Cancellation reason<textarea rows={4} value={reason} onChange={e => setReason(e.target.value)} placeholder="Explain why your business cannot complete this job" required minLength={5} style={{ width: "100%", resize: "vertical", padding: 10, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", font: "inherit" }} /></label><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><Button type="button" variant="secondary" onClick={onClose} disabled={action.loading}>Keep job</Button><Button type="submit" variant="destructive" loading={action.loading} disabled={reason.trim().length < 5}>Confirm cancellation</Button></div></form></Modal>; }
+function CancelJobModal({ jobId, onClose, onSaved }: { jobId: string; onClose: () => void; onSaved: () => void }) {
+  const policy = useApi<ProviderCancellationPolicy>(useCallback(() => bookingsJobsApi.cancellationPolicy(), []), []);
+  const [reasonCode, setReasonCode] = useState("");
+  const [notes, setNotes] = useState("");
+  const selected = policy.data?.reasons.find(reason => reason.code === reasonCode);
+  const action = useAction(
+    (payload: { reason_code: string; notes?: string }) => bookingsJobsApi.cancelJob(jobId, payload),
+    { onSuccess: onSaved },
+  );
+  const noteMinimum = selected?.requires_note ? (policy.data?.minimum_note_length ?? 10) : 0;
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (reasonCode && notes.trim().length >= noteMinimum) {
+      await action.execute({ reason_code: reasonCode, notes: notes.trim() || undefined });
+    }
+  }
+  return <Modal open onClose={onClose} title="Cancel job"><form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
+    <Alert tone="warning" title={selected?.outcome === "customer_confirmation" ? "Customer confirmation required" : "Cancellation is audited"}>
+      {selected?.outcome === "customer_confirmation"
+        ? `The job and SLA remain active until the customer confirms. The request expires after ${policy.data?.confirmation_minutes ?? 15} minutes.`
+        : selected?.health_impact === false
+          ? "This reason is recorded with no provider health impact, but remains visible in the audit trail."
+          : "The cancellation affects provider health. An existing SLA breach also settles to its configured final charge."}
+    </Alert>
+    {policy.error && <Alert tone="danger">{policy.error}</Alert>}
+    {action.error && <Alert tone="danger">{action.error}</Alert>}
+    <Select label="Cancellation reason" value={reasonCode} onChange={e => setReasonCode(e.target.value)}
+      options={[{ value: "", label: policy.loading ? "Loading reasons…" : "Select a reason" }, ...(policy.data?.reasons ?? []).map(reason => ({ value: reason.code, label: reason.label }))]} />
+    {selected && <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+      Responsibility: <strong>{selected.responsibility}</strong>
+      {selected.minimum_call_attempts > 0 && <> · requires {selected.minimum_call_attempts} recorded call attempt{selected.minimum_call_attempts === 1 ? "" : "s"}</>}
+    </div>}
+    <label style={{ display: "grid", gap: 6, color: "var(--text-secondary)", fontSize: 12, fontWeight: 600 }}>
+      Notes {selected?.requires_note ? `(required, minimum ${noteMinimum} characters)` : "(optional)"}
+      <textarea rows={4} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add factual details for the audit trail" style={{ width: "100%", resize: "vertical", padding: 10, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", font: "inherit" }} />
+    </label>
+    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <Button type="button" variant="secondary" onClick={onClose} disabled={action.loading}>Keep job</Button>
+      <Button type="submit" variant="destructive" loading={action.loading} disabled={!reasonCode || notes.trim().length < noteMinimum}>
+        {selected?.outcome === "customer_confirmation" ? "Request confirmation" : "Confirm cancellation"}
+      </Button>
+    </div>
+  </form></Modal>;
+}
 
 const selectStyle: React.CSSProperties = { height: 42, padding: "0 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-primary)", font: "inherit", fontSize: 13 };
 const toolbarButtonStyle: React.CSSProperties = { minHeight: 42, padding: "0 14px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text-secondary)", font: "inherit", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer" };

@@ -124,7 +124,12 @@ class TestDistinctCapabilitiesNotConflated:
         from app.engines.home_service_assignment import provider_router as assign_router
         exec_src = inspect.getsource(exec_router.provider_cancel_job)
         assign_src = inspect.getsource(assign_router.cancel_assignment)
-        assert "_svc.cancel_job(" in exec_src
+        # Provider cancellation now goes through the governed workflow so a
+        # provider cannot attribute a cancellation to the customer without
+        # that exact customer confirming it.  It must not bypass governance by
+        # calling the raw execution cancellation method from the route.
+        assert "initiate(" in exec_src
+        assert "_svc.cancel_job(" not in exec_src
         assert "cancel_assignment(" in assign_src or "svc.cancel_assignment" in assign_src or True
         # Different paths confirm they are not the same mounted route.
         assert "/{job_id}/cancel" in inspect.getsource(exec_router) or True

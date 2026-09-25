@@ -13,6 +13,19 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
+DEFAULT_PROVIDER_CANCELLATION_REASONS = [
+    {"code": "no_technician", "label": "No technician available", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": False, "minimum_call_attempts": 0, "health_impact": True},
+    {"code": "cannot_meet_slot", "label": "Cannot meet the selected slot", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": False, "minimum_call_attempts": 0, "health_impact": True},
+    {"code": "service_skill_unavailable", "label": "Service, brand or skill unavailable", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": True, "minimum_call_attempts": 0, "health_impact": True},
+    {"code": "capacity_issue", "label": "Provider capacity or operational issue", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": True, "minimum_call_attempts": 0, "health_impact": True},
+    {"code": "customer_requested", "label": "Customer requested cancellation", "outcome": "customer_confirmation", "responsibility": "customer", "active": True, "requires_note": False, "minimum_call_attempts": 1, "health_impact": False},
+    {"code": "customer_unreachable", "label": "Customer unavailable or unreachable", "outcome": "customer_confirmation", "responsibility": "customer", "active": True, "requires_note": True, "minimum_call_attempts": 2, "health_impact": False},
+    {"code": "address_access_issue", "label": "Incorrect or inaccessible address", "outcome": "customer_confirmation", "responsibility": "customer", "active": True, "requires_note": True, "minimum_call_attempts": 1, "health_impact": False},
+    {"code": "safety_concern", "label": "Safety concern at the location", "outcome": "provider_cancel", "responsibility": "neutral", "active": True, "requires_note": True, "minimum_call_attempts": 0, "health_impact": False},
+    {"code": "other", "label": "Other provider reason", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": True, "minimum_call_attempts": 0, "health_impact": True},
+]
+
+
 @dataclass(frozen=True)
 class HomeServicesOperationsPolicy:
     assignment_timeout_enabled: bool = True
@@ -22,6 +35,12 @@ class HomeServicesOperationsPolicy:
     assignment_auto_assign_enabled: bool = True
     customer_reschedule_limit: int = 3
     provider_reschedule_approval_hours: int = 24
+    provider_departure_warning_minutes: int = 15
+    provider_cancellation_confirmation_minutes: int = 15
+    provider_cancellation_min_note_length: int = 10
+    provider_cancellation_reasons: list[dict] = field(
+        default_factory=lambda: [dict(reason) for reason in DEFAULT_PROVIDER_CANCELLATION_REASONS]
+    )
     arrival_verification_enabled: bool = False
     arrival_radius_meters: int = 250
     arrival_location_max_age_seconds: int = 120
@@ -51,6 +70,9 @@ async def get_home_services_operations_policy(
         "p.urgent_assignment_timeout_minutes, p.urgent_assignment_threshold_minutes, "
         "p.assignment_auto_assign_enabled, "
         "p.customer_reschedule_limit, p.provider_reschedule_approval_hours, "
+        "p.provider_departure_warning_minutes, "
+        "p.provider_cancellation_confirmation_minutes, "
+        "p.provider_cancellation_min_note_length, p.provider_cancellation_reasons, "
         "p.arrival_verification_enabled, "
         "p.arrival_radius_meters, p.arrival_location_max_age_seconds, "
         "p.arrival_max_accuracy_meters, "
@@ -101,6 +123,22 @@ async def get_home_services_operations_policy(
         provider_reschedule_approval_hours=int(
             row.get("provider_reschedule_approval_hours")
             or defaults.provider_reschedule_approval_hours
+        ),
+        provider_departure_warning_minutes=int(
+            row.get("provider_departure_warning_minutes")
+            or defaults.provider_departure_warning_minutes
+        ),
+        provider_cancellation_confirmation_minutes=int(
+            row.get("provider_cancellation_confirmation_minutes")
+            or defaults.provider_cancellation_confirmation_minutes
+        ),
+        provider_cancellation_min_note_length=int(
+            row.get("provider_cancellation_min_note_length")
+            if row.get("provider_cancellation_min_note_length") is not None
+            else defaults.provider_cancellation_min_note_length
+        ),
+        provider_cancellation_reasons=(
+            list(row.get("provider_cancellation_reasons") or defaults.provider_cancellation_reasons)
         ),
         arrival_customer_confirmation_enabled=(
             bool(row["arrival_customer_confirmation_enabled"])

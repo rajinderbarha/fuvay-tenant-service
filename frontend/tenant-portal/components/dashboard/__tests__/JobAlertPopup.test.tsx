@@ -21,6 +21,14 @@ const delayedJob: DashboardAlert = {
   lateness_label: "20 minutes late", scheduled_date: "2026-09-02",
   scheduled_time_window: "10:00-12:00",
 };
+const departureJob: DashboardAlert = {
+  job_id: "job-depart", label: "FUV-1003", city: "Ludhiana", tone: "warning",
+  title: "Technician has not started travelling",
+  message: "The visit starts in 10 minutes. Arrange departure now.",
+  scheduled_date: "2026-09-02", scheduled_time_window: "14:00-16:00",
+  departure_required: true, starts_in_minutes: 10, alert_kind: "departure",
+  penalty_notice: "SLA penalty: ₹50 may be deducted after the slot ends.",
+};
 
 describe("JobAlertPopup", () => {
   beforeEach(() => playAlertTone.mockClear());
@@ -48,6 +56,15 @@ describe("JobAlertPopup", () => {
     expect(onDismiss).toHaveBeenCalledOnce();
     expect(onOpenBoard).toHaveBeenCalledOnce();
     expect(onOpenJob).toHaveBeenCalledWith("job-late");
+  });
+
+  it("prioritises a pre-slot departure warning and explains the penalty", () => {
+    render(<JobAlertPopup alerts={[newJob, departureJob]} newTotal={1}
+      departureTotal={1} delayedTotal={0} onDismiss={vi.fn()}
+      onOpenJob={vi.fn()} onSeeAllDelayed={vi.fn()} />);
+    expect(screen.getByText("Visit starts soon")).toBeInTheDocument();
+    expect(screen.getByText(/SLA penalty: ₹50/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check technician" })).toBeInTheDocument();
   });
 
   it("renders nothing when there are no alerts", () => {

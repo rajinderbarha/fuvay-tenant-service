@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "../styles/globals.css";
 import "@serviceos/design-system/src/theme.css";
 import { ToastViewport } from "@serviceos/design-system";
+import { PlatformBrandProvider } from "../components/brand/PlatformBrandProvider";
 
 export const metadata: Metadata = {
   title: "Fuvay — Super Admin",
@@ -35,8 +36,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
-        {children}
-        <ToastViewport />
+        <PlatformBrandProvider surfaceLabel="Super Admin">
+          {children}
+          <ToastViewport />
+        </PlatformBrandProvider>
       </body>
     </html>
   );

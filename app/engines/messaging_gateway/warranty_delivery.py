@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 import structlog
 
 from app.engines.final_records.warranty_certificate import (
-    issue_warranty_certificate, render_certificate_pdf,
+    issue_warranty_certificate, render_certificate_pdf, with_platform_branding,
 )
 from app.engines.media.storage import MediaStorageService
 from app.engines.messaging_gateway import meta_client
@@ -55,7 +55,7 @@ async def send_warranty_certificate(db, job, thread, *, config: dict) -> bool:
             or not job.customer_id or job.customer_id != thread.customer_id):
         return False
     try:
-        snapshot = await issue_warranty_certificate(db, job)
+        snapshot = await with_platform_branding(db, await issue_warranty_certificate(db, job))
         # A storage configuration query can fail at the database level. A
         # savepoint keeps that failure from rolling back the rating question.
         async with db.begin_nested():

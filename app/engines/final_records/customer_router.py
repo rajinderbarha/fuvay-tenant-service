@@ -530,10 +530,10 @@ async def download_warranty_certificate(
             "The warranty certificate is available after job completion.", status_code=409,
         )
     from app.engines.final_records.warranty_certificate import (
-        issue_warranty_certificate, render_certificate_pdf,
+        issue_warranty_certificate, render_certificate_pdf, with_platform_branding,
     )
     snapshot = await issue_warranty_certificate(db, job)
-    document = render_certificate_pdf(snapshot)
+    document = render_certificate_pdf(await with_platform_branding(db, snapshot))
     filename = f"warranty-{job.warranty_certificate_number}.pdf"
     return Response(
         content=document, media_type="application/pdf",

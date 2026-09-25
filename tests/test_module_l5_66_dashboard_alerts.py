@@ -37,6 +37,7 @@ def job(**overrides):
     row.created_at = overrides.get("created_at", NOW - dt.timedelta(days=3))
     row.provider_offer_started_at = overrides.get("provider_offer_started_at", row.created_at)
     row.assigned_staff_id = overrides.get("assigned_staff_id")
+    row.job_type_id = overrides.get("job_type_id")
     row.is_emergency = overrides.get("is_emergency", False)
     row.city = overrides.get("city", "Ludhiana")
     return row
@@ -157,6 +158,43 @@ class TestDelayedJobs:
                 scheduled_time_window="10:00-11:00"),
         ])
         assert result["new_jobs"][0]["tone"] != result["delayed_jobs"][0]["tone"]
+
+
+class TestDepartureWarnings:
+    @pytest.mark.asyncio
+    async def test_assigned_technician_not_on_the_way_warns_fifteen_minutes_before_slot(self):
+        today_ist = NOW.astimezone(IST).date()
+        result = await alerts_for([job(
+            status="scheduled", assigned_staff_id=uuid.uuid4(),
+            scheduled_date=today_ist, scheduled_time_window="20:10-21:00",
+        )])
+
+        assert result["departure_total"] == 1
+        alert = result["departure_jobs"][0]
+        assert alert["departure_required"] is True
+        assert alert["starts_in_minutes"] == 10
+        assert alert["title"] == "Technician has not started travelling"
+
+    @pytest.mark.asyncio
+    async def test_on_the_way_technician_clears_pre_slot_warning(self):
+        today_ist = NOW.astimezone(IST).date()
+        result = await alerts_for([job(
+            status="on_the_way", assigned_staff_id=uuid.uuid4(),
+            scheduled_date=today_ist, scheduled_time_window="20:10-21:00",
+        )])
+        assert result["departure_total"] == 0
+
+    def test_penalty_notice_uses_published_amounts_and_close_window(self):
+        policy = MagicMock(
+            sla_breach_hours=0, sla_penalty_type="fixed",
+            sla_penalty_amount=50, sla_close_after_hours=24,
+            sla_total_penalty_amount=150, sla_auto_cancel=True,
+        )
+        notice = dashboard_alerts._penalty_notice(policy, {}, job())
+        assert "₹50" in notice
+        assert "after the slot ends" in notice
+        assert "24h" in notice
+        assert "₹150 total" in notice
 
 
 class TestTotalsAndCapping:

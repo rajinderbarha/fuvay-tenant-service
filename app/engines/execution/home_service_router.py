@@ -153,7 +153,9 @@ class MediaBody(BaseModel):
 
 
 class CancelBody(BaseModel):
-    reason: str
+    reason_code: Optional[str] = Field(default=None, max_length=50)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    reason: Optional[str] = Field(default=None, max_length=1000)
 
 
 class ArrivalRequestBody(BaseModel):
@@ -504,11 +506,31 @@ async def staff_complete_job(job_id: uuid.UUID, body: CompleteJobBody, r: Reques
 provider_router = APIRouter(prefix="/v1/provider/service-jobs", tags=["Sprint21-Provider-HomeService"])
 
 
+@provider_router.get("/cancellation-policy")
+async def provider_cancellation_policy(r: Request, user=Depends(require_staff_or_above), db=Depends(get_db)):
+    from app.engines.execution.provider_cancellation_service import cancellation_policy
+    return ok(
+        await cancellation_policy(db), getattr(r.state, "request_id", "-"),
+        "provider-cancellation-policy",
+    )
+
+
 @provider_router.post("/{job_id}/cancel")
 async def provider_cancel_job(job_id: uuid.UUID, body: CancelBody, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.cancel_job(db, job_id, uuid.UUID(str(user.tenant_id)), uuid.UUID(str(user.user_id)), reason=body.reason, actor_role="provider", request_id=rid)
+    from app.engines.execution.provider_cancellation_service import deliver_request, initiate
+    result = await initiate(
+        db, job_id=job_id, tenant_id=uuid.UUID(str(user.tenant_id)),
+        actor_user_id=uuid.UUID(str(user.user_id)),
+        reason_code=(body.reason_code or "other").strip().lower(),
+        notes=body.notes if body.reason_code else body.reason,
+        request_id=rid,
+    )
     await db.commit()
+    if result.get("status") == "pending_customer_confirmation":
+        sent = await deliver_request(db, uuid.UUID(result["request_id"]))
+        await db.commit()
+        result["notification_sent"] = sent
     return ok(result, rid, "provider-exec-cancel")
 
 
@@ -577,6 +599,25 @@ async def provider_install_parts_request(job_id: uuid.UUID, parts_request_id: uu
 
 # ── Customer tracking router ──────────────────────────────────────────────────
 customer_router = APIRouter(prefix="/v1/customer/service-jobs", tags=["Sprint21-Customer-HomeService"])
+
+
+class CancellationDecisionBody(BaseModel):
+    decision: str = Field(pattern=r"^(approve|reject)$")
+
+
+@customer_router.post("/cancellation-requests/{request_id}/decision")
+async def customer_decide_provider_cancellation(
+    request_id: uuid.UUID, body: CancellationDecisionBody, r: Request,
+    user=Depends(require_customer), db=Depends(get_db),
+):
+    from app.engines.execution.provider_cancellation_service import decide_request
+    rid = getattr(r.state, "request_id", "-")
+    result = await decide_request(
+        db, request_id=request_id, customer_id=uuid.UUID(str(user.user_id)),
+        decision=body.decision, actor_user_id=uuid.UUID(str(user.user_id)),
+    )
+    await db.commit()
+    return ok(result, rid, "customer-provider-cancellation-decision")
 
 
 @customer_router.get("/{job_id}/tracking")

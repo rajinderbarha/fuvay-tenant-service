@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { homeServiceExecutionApi, ExecutionEventRecord, ExecutionNoteRecord, PartsRequestRecord, serviceJobAssignmentApi, inventoryApi, type InventoryItem, type StockLocation } from "../../../../../lib/api";
+import { homeServiceExecutionApi, ExecutionEventRecord, ExecutionNoteRecord, PartsRequestRecord, serviceJobAssignmentApi, inventoryApi, type InventoryItem, type StockLocation, type ProviderCancellationPolicy } from "../../../../../lib/api";
 import { PageShell, PageHeader, Card, Button, Modal, Alert, StatusBadge } from "@serviceos/design-system";
 
 const STATUS_ACTIONS: Record<string, { label: string; action: string }[]> = {
@@ -44,6 +44,8 @@ export default function JobExecutionPage() {
   const [quoteNote, setQuoteNote] = useState("");
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [cancelReasonCode, setCancelReasonCode] = useState("");
+  const [cancellationPolicy, setCancellationPolicy] = useState<ProviderCancellationPolicy | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
 
   async function loadJob() {
@@ -54,7 +56,7 @@ export default function JobExecutionPage() {
       // rendered for any job. Fixed by loading real job data (which also
       // now carries HS8B's `completion_data` for the Completion Proof
       // section below).
-      const [ctxRes, tlRes, notesRes, partsRes, inventoryRes, locationsRes] = await Promise.all([
+      const [ctxRes, tlRes, notesRes, partsRes, inventoryRes, locationsRes, cancelPolicy] = await Promise.all([
         serviceJobAssignmentApi.getContext(jobId),
         homeServiceExecutionApi.getProviderTimeline(jobId),
         homeServiceExecutionApi.getNotes(jobId),
@@ -62,6 +64,7 @@ export default function JobExecutionPage() {
         inventoryApi.listItems({ limit: 200, stockStatus: "all", sort: "name_asc" })
           .catch(() => ({ items: [], total: 0, offset: 0, limit: 200, has_next: false })),
         inventoryApi.listLocations().catch(() => ({ locations: [], total: 0 })),
+        homeServiceExecutionApi.cancellationPolicy().catch(() => null),
       ]);
       setJob(ctxRes.job as unknown as Record<string, unknown>);
       setTimeline(Array.isArray(tlRes) ? tlRes : []);
@@ -69,6 +72,7 @@ export default function JobExecutionPage() {
       setPartsRequests(partsRes.parts_requests ?? []);
       setInventoryItems(inventoryRes.items ?? []);
       setStockLocations(locationsRes.locations ?? []);
+      setCancellationPolicy(cancelPolicy);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -155,12 +159,18 @@ export default function JobExecutionPage() {
   }
 
   async function submitCancel() {
-    if (!cancelReason.trim()) return;
+    const selected = cancellationPolicy?.reasons.find(reason => reason.code === cancelReasonCode);
+    const noteMinimum = selected?.requires_note ? (cancellationPolicy?.minimum_note_length ?? 10) : 0;
+    if (!cancelReasonCode || cancelReason.trim().length < noteMinimum) return;
     setActionLoading(true);
     try {
-      await homeServiceExecutionApi.cancel(jobId, cancelReason);
+      await homeServiceExecutionApi.cancel(jobId, {
+        reason_code: cancelReasonCode,
+        notes: cancelReason.trim() || undefined,
+      });
       setShowCancelModal(false);
       setCancelReason("");
+      setCancelReasonCode("");
       await loadJob();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed");
@@ -408,16 +418,23 @@ export default function JobExecutionPage() {
       <Modal open={showCancelModal} onClose={() => setShowCancelModal(false)} title="Cancel Job"
         footer={<>
           <Button variant="ghost" size="sm" onClick={() => setShowCancelModal(false)}>Back</Button>
-          <Button variant="destructive" size="sm" disabled={!cancelReason.trim() || actionLoading}
+          <Button variant="destructive" size="sm" disabled={!cancelReasonCode || actionLoading || (cancellationPolicy?.reasons.find(reason => reason.code === cancelReasonCode)?.requires_note === true && cancelReason.trim().length < (cancellationPolicy?.minimum_note_length ?? 10))}
             loading={actionLoading} onClick={submitCancel}>
-            Cancel Job
+            {cancellationPolicy?.reasons.find(reason => reason.code === cancelReasonCode)?.outcome === "customer_confirmation" ? "Request confirmation" : "Cancel Job"}
           </Button>
         </>}>
+        <select value={cancelReasonCode} onChange={(e) => setCancelReasonCode(e.target.value)}
+          style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 6, padding: 9, marginBottom: 10, background: "var(--surface)", color: "var(--text-primary)" }}>
+          <option value="">Select cancellation reason</option>
+          {(cancellationPolicy?.reasons ?? []).map(reason => <option key={reason.code} value={reason.code}>{reason.label}</option>)}
+        </select>
+        {cancellationPolicy?.reasons.find(reason => reason.code === cancelReasonCode)?.outcome === "customer_confirmation" &&
+          <Alert tone="warning">The job and SLA remain active until the customer confirms through Instagram.</Alert>}
         <textarea
           value={cancelReason}
           onChange={(e) => setCancelReason(e.target.value)}
           rows={3}
-          placeholder="Reason for cancellation..."
+          placeholder="Add factual notes for the audit trail..."
           style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 6, padding: 8,
             boxSizing: "border-box", background: "var(--surface)", color: "var(--text-primary)", fontFamily: "inherit" }}
         />

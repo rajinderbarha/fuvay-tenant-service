@@ -45,6 +45,9 @@ _DRAFT_FIELDS = {
     "urgent_assignment_timeout_minutes", "urgent_assignment_threshold_minutes",
     "assignment_auto_assign_enabled",
     "customer_reschedule_limit", "provider_reschedule_approval_hours",
+    "provider_departure_warning_minutes",
+    "provider_cancellation_confirmation_minutes",
+    "provider_cancellation_min_note_length", "provider_cancellation_reasons",
     "arrival_verification_enabled",
     "arrival_radius_meters", "arrival_location_max_age_seconds",
     "arrival_max_accuracy_meters", "arrival_customer_confirmation_enabled",
@@ -323,12 +326,83 @@ class VerticalMonetizationPolicyService:
                     errors.append("sla_penalty_max_days must be between 1 and 30")
             except (TypeError, ValueError, ArithmeticError):
                 errors.append("sla_penalty_max_days must be an integer")
+
+        for field, low, high in (
+            ("provider_cancellation_confirmation_minutes", 1, 1440),
+            ("provider_cancellation_min_note_length", 0, 500),
+        ):
+            if payload.get(field) not in (None, ""):
+                try:
+                    numeric = Decimal(str(payload[field]))
+                    if numeric != numeric.to_integral_value():
+                        raise ValueError
+                    value = int(numeric)
+                    if value < low or value > high:
+                        errors.append(f"{field} must be between {low} and {high}")
+                except (TypeError, ValueError, ArithmeticError):
+                    errors.append(f"{field} must be a whole number")
+
+        if "provider_cancellation_reasons" in payload:
+            rules = payload.get("provider_cancellation_reasons")
+            if not isinstance(rules, list) or not rules:
+                errors.append("provider_cancellation_reasons must contain at least one reason")
+            else:
+                seen: set[str] = set()
+                active = 0
+                for index, rule in enumerate(rules):
+                    prefix = f"provider_cancellation_reasons[{index}]"
+                    if not isinstance(rule, dict):
+                        errors.append(f"{prefix} must be an object")
+                        continue
+                    code = str(rule.get("code") or "").strip().lower()
+                    label = str(rule.get("label") or "").strip()
+                    if not code or len(code) > 50 or any(
+                        char not in "abcdefghijklmnopqrstuvwxyz0123456789_" for char in code
+                    ):
+                        errors.append(f"{prefix}.code must use lowercase letters, numbers and underscores")
+                    elif code in seen:
+                        errors.append(f"Duplicate cancellation reason code: {code}")
+                    seen.add(code)
+                    if len(label) < 3 or len(label) > 100:
+                        errors.append(f"{prefix}.label must be 3 to 100 characters")
+                    if rule.get("outcome") not in {"provider_cancel", "customer_confirmation"}:
+                        errors.append(f"{prefix}.outcome is invalid")
+                    if rule.get("responsibility") not in {"provider", "customer", "neutral"}:
+                        errors.append(f"{prefix}.responsibility is invalid")
+                    if (rule.get("responsibility") == "customer"
+                            and rule.get("outcome") != "customer_confirmation"):
+                        errors.append(f"{prefix} customer responsibility requires customer confirmation")
+                    if (rule.get("outcome") == "customer_confirmation"
+                            and rule.get("responsibility") != "customer"):
+                        errors.append(f"{prefix} customer confirmation must use customer responsibility")
+                    for boolean_field in ("active", "requires_note", "health_impact"):
+                        if boolean_field in rule and not isinstance(rule[boolean_field], bool):
+                            errors.append(f"{prefix}.{boolean_field} must be true or false")
+                    if (rule.get("responsibility") == "customer"
+                            and rule.get("health_impact", False) is not False):
+                        errors.append(
+                            f"{prefix} customer-confirmed cancellations cannot affect provider health"
+                        )
+                    try:
+                        numeric_attempts = Decimal(str(rule.get("minimum_call_attempts", 0)))
+                        if numeric_attempts != numeric_attempts.to_integral_value():
+                            raise ValueError
+                        attempts = int(numeric_attempts)
+                        if attempts < 0 or attempts > 10:
+                            errors.append(f"{prefix}.minimum_call_attempts must be between 0 and 10")
+                    except (TypeError, ValueError, ArithmeticError):
+                        errors.append(f"{prefix}.minimum_call_attempts must be a whole number")
+                    if rule.get("active", True):
+                        active += 1
+                if active == 0:
+                    errors.append("At least one cancellation reason must be active")
         bounded_whole_numbers = {
             "assignment_timeout_minutes": (1, 1440),
             "urgent_assignment_timeout_minutes": (1, 1440),
             "urgent_assignment_threshold_minutes": (1, 1440),
             "customer_reschedule_limit": (0, 20),
             "provider_reschedule_approval_hours": (1, 168),
+            "provider_departure_warning_minutes": (5, 120),
             "arrival_radius_meters": (25, 5000),
             "arrival_location_max_age_seconds": (15, 3600),
             "arrival_max_accuracy_meters": (5, 1000),
