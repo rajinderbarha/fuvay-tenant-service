@@ -369,11 +369,13 @@ export function Dialog({ open, onClose, title, children, size = "md" }: {
   const dialogRef = React.useRef<HTMLDivElement>(null);
   const previouslyFocused = React.useRef<HTMLElement | null>(null);
   const titleId = React.useRef(`pk-dialog-title-${++pkDialogTitleSeq}`).current;
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
 
   React.useEffect(() => {
     if (!open) return;
     const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "Escape") { onCloseRef.current(); return; }
       if (e.key !== "Tab" || !dialogRef.current) return;
       const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
         'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -386,7 +388,7 @@ export function Dialog({ open, onClose, title, children, size = "md" }: {
     };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
-  }, [open, onClose]);
+  }, [open]);
 
   React.useEffect(() => {
     if (open) {

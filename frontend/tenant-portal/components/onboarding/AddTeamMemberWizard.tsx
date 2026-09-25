@@ -98,6 +98,10 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
   const [skillSearch, setSkillSearch] = useState("");
   const [skillsLoadFailed, setSkillsLoadFailed] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  const savingRef = useRef(saving);
+  onCloseRef.current = onClose;
+  savingRef.current = saving;
 
   // ── Reporting ──
   const [reportsToName, setReportsToName] = useState("");
@@ -181,14 +185,14 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
     document.body.style.overflow = "hidden";
     closeButtonRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !saving) onClose();
+      if (event.key === "Escape" && !savingRef.current) onCloseRef.current();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [onClose, saving]);
+  }, []);
 
   function validate(): string | null {
     if (isTechnician && existing?.member_type !== "technician" && !technicianSeatAvailable) return "Buy an available technician seat before adding a technician. Non-technician staff are free.";

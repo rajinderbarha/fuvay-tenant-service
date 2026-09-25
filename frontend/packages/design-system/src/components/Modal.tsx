@@ -12,22 +12,34 @@ export interface ModalProps {
   labelledBy?: string;
 }
 
-const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function Modal({ open, onClose, title, children, footer }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  // Consumers commonly pass an inline closure. Its identity changes whenever
+  // a controlled field updates, but that is not a new modal session and must
+  // never restart focus management. Keep the latest callback without making
+  // it an effect dependency.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     previouslyFocused.current = document.activeElement as HTMLElement;
     const node = dialogRef.current;
     const focusables = node?.querySelectorAll<HTMLElement>(FOCUSABLE);
-    focusables?.[0]?.focus();
+    // Form intent wins over document order (where the header Close button is
+    // usually first). A data-autofocus marker can override the natural first
+    // enabled form control for multi-step forms.
+    const preferred = node?.querySelector<HTMLElement>(
+      '[data-autofocus], textarea:not([disabled]), input:not([disabled]), select:not([disabled])',
+    );
+    (preferred ?? focusables?.[0])?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab" || !node) return;
@@ -48,7 +60,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
       document.removeEventListener("keydown", onKeyDown);
       previouslyFocused.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

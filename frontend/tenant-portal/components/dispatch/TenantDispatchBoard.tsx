@@ -53,9 +53,10 @@ export function DispatchDateNavigator({
 
 function DispatchKpis({ board }: { board: HsDispatchProjection }) {
   const techniciansOnDuty = board.technician_schedule.filter(technician => technician.status !== "inactive" && technician.status !== "offboarded").length;
+  const assignedOnTrack = Math.max(0, board.summary.scheduled_count - board.summary.sla_breached_count);
   const cards = [
     { label: "Unassigned", value: board.summary.unassigned_count, note: "need a technician", icon: <UserRoundX size={15} />, tone: "warning" },
-    { label: "Assigned today", value: board.summary.scheduled_count, note: "technician allocated", icon: <CalendarClock size={15} />, tone: "neutral" },
+    { label: "Assigned · on track", value: assignedOnTrack, note: "technician allocated, within SLA", icon: <CalendarClock size={15} />, tone: "neutral" },
     { label: "SLA breached", value: board.summary.sla_breached_count, note: "promised slot missed", icon: <AlertTriangle size={15} />, tone: board.summary.sla_breached_count ? "danger" : "neutral" },
     { label: "Technicians on duty", value: techniciansOnDuty, note: "available to assign", icon: <UserRoundCheck size={15} />, tone: "neutral" },
   ];
@@ -149,8 +150,9 @@ export function TenantDispatchBoard({
   selectedJobId: string | null;
   onSelectJob: (jobId: string) => void;
 }) {
-  const assignedJobs = board.scheduled_jobs.filter(job => (job.scheduled_date || job.requested_date) === date);
-  const breachedJobs = assignedJobs.filter(job => job.is_overdue);
+  const jobsForSelectedDate = board.scheduled_jobs.filter(job => (job.scheduled_date || job.requested_date) === date);
+  const breachedJobs = jobsForSelectedDate.filter(job => job.is_overdue);
+  const assignedJobs = jobsForSelectedDate.filter(job => !job.is_overdue);
   return <div className="tenant-dispatch-reference">
     <DispatchKpis board={board} />
 
@@ -162,7 +164,7 @@ export function TenantDispatchBoard({
       </div>
     </section>
 
-    <section className="tenant-dispatch-section tenant-dispatch-assigned">
+    <section className="tenant-dispatch-section tenant-dispatch-assigned" aria-label="Assigned jobs queue">
       <header><h2><i />Assigned jobs</h2><span>{assignedJobs.length} assigned</span></header>
       <div className="tenant-dispatch-assigned-grid">
         {assignedJobs.map(job => <AssignedJobCard key={job.job_id} job={job} selected={selectedJobId === job.job_id} onSelect={() => onSelectJob(job.job_id)} />)}
@@ -170,7 +172,7 @@ export function TenantDispatchBoard({
       </div>
     </section>
 
-    <section className="tenant-dispatch-section tenant-dispatch-breached">
+    <section className="tenant-dispatch-section tenant-dispatch-breached" aria-label="SLA breached jobs queue">
       <header><h2><AlertTriangle size={16} />SLA breached jobs</h2><span>{breachedJobs.length} {breachedJobs.length === 1 ? "needs" : "need"} action</span></header>
       <div className="tenant-dispatch-assigned-grid">
         {breachedJobs.map(job => <AssignedJobCard key={job.job_id} job={job} breach selected={selectedJobId === job.job_id} onSelect={() => onSelectJob(job.job_id)} />)}

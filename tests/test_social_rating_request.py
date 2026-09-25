@@ -147,7 +147,8 @@ async def test_completion_asks_on_the_customers_open_instagram_thread(ask):
     assert sent.to == "igsid-1"
     assert sent.channel == CHANNEL_INSTAGRAM and sent.config == IG
     assert sent.body.startswith("Your AC Repair booking BK-1042 is complete.")
-    assert "reply with a number from 1 (poor) to 5 (excellent)" in sent.body
+    assert "reply 1 (poor) to 5 (excellent)" in sent.body
+    assert "ਤੁਸੀਂ service ਨੂੰ ਕਿੰਨੀ rating ਦਿਓਗੇ" in sent.body
     assert sent.rows == rating_request.rating_rows(BOOKING_ID)
     # The typed-number answer only works because the options are remembered.
     assert ask.thread.last_options == [row["id"] for row in sent.rows]
@@ -190,7 +191,7 @@ async def test_warranty_failure_keeps_the_successful_rating_question_open(ask):
 @pytest.mark.asyncio
 async def test_the_prompt_reads_naturally_without_a_service_name(ask):
     await rating_request._ask(_DB(service_name=None), ask.job.id)
-    assert ask.sent[0].body.startswith("Your booking BK-1042 is complete. How would you rate")
+    assert ask.sent[0].body.startswith("Your booking BK-1042 is complete.\nHow would you rate")
 
 
 @pytest.mark.asyncio
@@ -378,7 +379,8 @@ def answer(monkeypatch):
 async def test_a_rating_is_saved_through_the_review_engine_by_booking(answer):
     note = await rating_request.record_rating(None, answer.thread, BOOKING_ID, "4")
 
-    assert note == "Thank you! You rated this service 4/5 ⭐⭐⭐⭐"
+    assert note.startswith("Thank you! You rated this service 4/5 ⭐⭐⭐⭐")
+    assert "ਧੰਨਵਾਦ" in note
     # The same record the customer app's rating screen writes, so one booking
     # can be rated once and the provider sees chat and app ratings alike.
     assert answer.submitted == [{
@@ -405,7 +407,8 @@ async def test_a_good_rating_does_not_offer_a_complaint_route(answer):
 async def test_a_second_rating_is_not_submitted(answer):
     answer.rated = 5
     note = await rating_request.record_rating(None, answer.thread, BOOKING_ID, "2")
-    assert note == "You have already rated this service 5/5. Thank you!"
+    assert note.startswith("You already rated this service 5/5. Thank you!")
+    assert "ਪਹਿਲਾਂ ਹੀ" in note
     assert answer.submitted == []
 
 

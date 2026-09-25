@@ -34,6 +34,7 @@ import {
   DispatchDateNavigator,
   TenantDispatchBoard,
 } from "../../../../components/dispatch/TenantDispatchBoard";
+import { CustomerHealthCard } from "../../../../components/dispatch/CustomerHealthCard";
 import {
   Alert,
   Button,
@@ -1755,11 +1756,10 @@ function AssignmentPanel({
                 label="Issue"
                 value={options.job_context.issue_summary || "Not supplied"}
               />
-              {options.job_context.customer_health && <Detail
-                label="Customer health"
-                value={`${Math.round(options.job_context.customer_health.score)}/100 · ${options.job_context.customer_health.band.replace(/_/g, " ")}`}
-              />}
             </div>
+            {options.job_context.customer_health && (
+              <CustomerHealthCard health={options.job_context.customer_health} />
+            )}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Button size="sm" variant="secondary" onClick={onOpenJob}>
                 Booking details <ChevronRight size={12} />
@@ -1985,6 +1985,7 @@ function Detail({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 function EmptyPanel({
   icon,
   title,

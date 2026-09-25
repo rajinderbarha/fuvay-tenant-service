@@ -29,16 +29,16 @@ from app.engines.messaging_gateway.models import MessagingThread
 logger = structlog.get_logger(__name__)
 
 RATING_PROMPT = (
-    "{heading} How would you rate the service?\n\n"
-    "Tap a rating below, or reply with a number from 1 (poor) to 5 (excellent)."
+    "{heading}\nHow would you rate the service? Tap a rating below, or reply 1 (poor) to 5 (excellent).\n\n"
+    "ਤੁਸੀਂ service ਨੂੰ ਕਿੰਨੀ rating ਦਿਓਗੇ? ਹੇਠਾਂ rating tap ਕਰੋ ਜਾਂ 1 (ਖਰਾਬ) ਤੋਂ 5 (ਬਹੁਤ ਵਧੀਆ) reply ਕਰੋ।"
 )
-RATING_THANKS = "Thank you! You rated this service {stars}/5 {bar}"
+RATING_THANKS = "Thank you! You rated this service {stars}/5 {bar}\n\nਧੰਨਵਾਦ! ਤੁਸੀਂ service ਨੂੰ {stars}/5 rating ਦਿੱਤੀ।"
 RATING_SORRY = (
-    "We're sorry it wasn't better. Send /human if you would like our team "
-    "to follow up."
+    "We're sorry it wasn't better. Send /human if you would like our team to follow up.\n\n"
+    "ਸਾਨੂੰ ਅਫਸੋਸ ਹੈ ਕਿ service ਵਧੀਆ ਨਹੀਂ ਰਹੀ। ਸਾਡੀ team ਨਾਲ ਗੱਲ ਕਰਨ ਲਈ /human ਭੇਜੋ।"
 )
-RATING_ALREADY_GIVEN = "You have already rated this service {stars}/5. Thank you!"
-RATING_UNAVAILABLE = "This service can no longer be rated here."
+RATING_ALREADY_GIVEN = "You already rated this service {stars}/5. Thank you!\n\nਤੁਸੀਂ ਇਸ service ਨੂੰ ਪਹਿਲਾਂ ਹੀ {stars}/5 rating ਦਿੱਤੀ ਹੈ। ਧੰਨਵਾਦ!"
+RATING_UNAVAILABLE = "This service can no longer be rated here.\n\nਇਸ service ਨੂੰ ਹੁਣ ਇੱਥੇ rating ਨਹੀਂ ਦਿੱਤੀ ਜਾ ਸਕਦੀ।"
 RATING_DELIVERY_KEY = "instagram_rating_prompt_sent_at"
 FOLLOWUP_PENDING_KEY = "instagram_followup_pending"
 

@@ -30,6 +30,11 @@ PROVIDER_CANCELLED_EVENT_TYPE = "customer_provider_cancelled_notified"
 LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 
 
+def _bilingual(english: str, punjabi: str) -> str:
+    """Keep every operational notice readable and consistently formatted."""
+    return f"{english.strip()}\n\n{punjabi.strip()}"
+
+
 async def booking_thread(db, booking) -> MessagingThread | None:
     """The chat this booking was made in, when we may still message it.
 
@@ -122,7 +127,7 @@ async def notify_job_customer(db, job, message: str, **kwargs) -> bool:
 
 def _track_row() -> dict:
     from app.engines.messaging_gateway.constants import PICK_TRACK, PICKER_SEP
-    return {"id": f"{PICK_TRACK}{PICKER_SEP}", "title": "Track booking"}
+    return {"id": f"{PICK_TRACK}{PICKER_SEP}", "title": "Track / ਟਰੈਕ"}
 
 
 def _best_effort(send):
@@ -223,9 +228,13 @@ async def send_technician_assigned(db, job) -> bool:
     name = await _technician_name(db, job)
     visit = visit_label(job)
     when = f" They are scheduled to visit you {visit}." if visit else ""
+    when_pa = f" ਤੁਹਾਡੀ visit {visit} ਲਈ scheduled ਹੈ।" if visit else ""
     sent = await notify_booking_customer(
         db, booking,
-        f"{name} is assigned to booking {booking.booking_number}.{when}",
+        _bilingual(
+            f"Technician assigned\nBooking: {booking.booking_number}\n{name} has been assigned.{when}",
+            f"ਟੈਕਨੀਸ਼ੀਅਨ assign ਹੋ ਗਿਆ ਹੈ\nBooking: {booking.booking_number}\n{name} ਤੁਹਾਡੀ service ਲਈ assign ਹੋ ਗਏ ਹਨ।{when_pa}",
+        ),
         rows=[_track_row()], section_title="Your technician",
     )
     if sent and staff_id is not None:
@@ -244,7 +253,10 @@ async def send_on_the_way(db, job) -> bool:
     visit = visit_label(job)
     when = f" Your visit is scheduled {visit}." if visit else ""
     return await notify_job_customer(
-        db, job, f"{name} is on the way to you now.{when}",
+        db, job, _bilingual(
+            f"Technician on the way\n{name} is travelling to your service location now.{when}",
+            f"ਟੈਕਨੀਸ਼ੀਅਨ ਰਸਤੇ ਵਿੱਚ ਹੈ\n{name} ਹੁਣ ਤੁਹਾਡੇ service location ਵੱਲ ਆ ਰਹੇ ਹਨ।",
+        ),
         rows=[_track_row()], section_title="Your technician",
     )
 
@@ -255,7 +267,10 @@ async def send_arrived(db, job) -> bool:
     visit = visit_label(job)
     what = f"your visit {visit}" if visit else "your service"
     return await notify_job_customer(
-        db, job, f"{name} has arrived for {what}.",
+        db, job, _bilingual(
+            f"Arrival update\n{name} has arrived for {what}.",
+            f"ਪਹੁੰਚ ਅਪਡੇਟ\n{name} ਤੁਹਾਡੀ service location 'ਤੇ ਪਹੁੰਚ ਗਏ ਹਨ।",
+        ),
         rows=[_track_row()], section_title="Your technician",
     )
 
@@ -273,10 +288,14 @@ async def send_arrival_confirmation_request(db, job, challenge, code: str) -> bo
     ttl_minutes = max(1, round(ttl_seconds / 60))
     return await notify_job_customer(
         db, job,
-        f"{name} says they are at your service location.\n\n"
-        "ਕੀ technician ਤੁਹਾਡੇ ਸਾਹਮਣੇ ਪਹੁੰਚ ਗਿਆ ਹੈ? Confirm only after you can "
-        f"see them. Your one-time arrival code is {code}. It expires in {ttl_minutes} minutes. "
-        "Do not share this code over a phone call.",
+        _bilingual(
+            f"Confirm technician arrival\n{name} says they are at your service location. "
+            f"Confirm only after you can see them. Arrival code: {code}. It expires in "
+            f"{ttl_minutes} minutes. Never share this code over a phone call.",
+            f"ਟੈਕਨੀਸ਼ੀਅਨ ਦੀ ਪਹੁੰਚ confirm ਕਰੋ\n{name} ਨੇ ਦੱਸਿਆ ਹੈ ਕਿ ਉਹ ਤੁਹਾਡੇ service location 'ਤੇ ਹਨ। "
+            f"ਉਨ੍ਹਾਂ ਨੂੰ ਸਾਹਮਣੇ ਵੇਖਣ ਤੋਂ ਬਾਅਦ ਹੀ confirm ਕਰੋ। Arrival code: {code}। "
+            f"ਇਹ {ttl_minutes} ਮਿੰਟ ਵਿੱਚ expire ਹੋਵੇਗਾ। ਇਹ code phone call 'ਤੇ share ਨਾ ਕਰੋ।",
+        ),
         rows=[
             {"id": PICKER_SEP.join((PICK_ARRIVAL, str(challenge.id), "confirm")),
              "title": "Yes, arrived"},
@@ -291,7 +310,10 @@ async def send_arrival_confirmation_request(db, job, challenge, code: str) -> bo
 async def send_arrival_confirmed(db, job) -> bool:
     return await notify_job_customer(
         db, job,
-        "Arrival is verified. The technician can now begin inspection or the approved service.",
+        _bilingual(
+            "Arrival verified. The technician can now begin inspection or the approved service.",
+            "ਪਹੁੰਚ verify ਹੋ ਗਈ ਹੈ। ਟੈਕਨੀਸ਼ੀਅਨ ਹੁਣ inspection ਜਾਂ approved service ਸ਼ੁਰੂ ਕਰ ਸਕਦਾ ਹੈ।",
+        ),
         rows=[_track_row()], section_title="Arrival verified",
     )
 
@@ -314,9 +336,14 @@ async def send_reschedule_approval_request(db, job, request) -> bool:
     expiry = request.expires_at.astimezone(LOCAL_TZ).strftime("%d %b, %I:%M %p")
     return await notify_booking_customer(
         db, booking,
-        f"Your provider requested a new visit slot for {booking.booking_number}.\n\n"
-        f"Current: {original}\nRequested: {proposed}\nReason: {request.reason}\n\n"
-        f"Your current slot stays confirmed unless you approve. Request expires {expiry}.",
+        _bilingual(
+            f"Reschedule approval needed\nBooking: {booking.booking_number}\nCurrent: {original}\n"
+            f"Requested: {proposed}\nReason: {request.reason}\nYour current slot remains confirmed "
+            f"unless you approve. This request expires {expiry}.",
+            f"ਨਵਾਂ slot approve ਕਰਨਾ ਲਾਜ਼ਮੀ ਹੈ\nBooking: {booking.booking_number}\nਮੌਜੂਦਾ: {original}\n"
+            f"ਨਵਾਂ slot: {proposed}\nਕਾਰਨ: {request.reason}\nਤੁਹਾਡੀ approval ਤੋਂ ਬਿਨਾਂ ਮੌਜੂਦਾ slot ਹੀ confirmed ਰਹੇਗਾ। "
+            f"Request {expiry} ਨੂੰ expire ਹੋਵੇਗੀ।",
+        ),
         rows=[
             {"id": PICKER_SEP.join((PICK_RESCHEDULE, str(request.id), "approve")),
              "title": "Approve new slot"},
@@ -339,10 +366,14 @@ async def send_provider_cancellation_confirmation_request(db, job, request) -> b
     expiry = request.expires_at.astimezone(LOCAL_TZ).strftime("%d %b, %I:%M %p")
     return await notify_booking_customer(
         db, booking,
-        f"Your provider says you requested cancellation of {booking.booking_number}.\n\n"
-        f"Reason: {request.reason_label}\n\n"
-        "Confirm only if you asked to cancel. Your booking and SLA remain active "
-        f"until you confirm. This request expires {expiry}.",
+        _bilingual(
+            f"Confirm cancellation request\nBooking: {booking.booking_number}\nReason: {request.reason_label}\n"
+            f"Confirm only if you asked to cancel. Your booking and SLA remain active until you confirm. "
+            f"This request expires {expiry}.",
+            f"Cancellation request confirm ਕਰੋ\nBooking: {booking.booking_number}\nਕਾਰਨ: {request.reason_label}\n"
+            f"ਸਿਰਫ਼ ਉਦੋਂ confirm ਕਰੋ ਜੇ cancellation ਤੁਸੀਂ ਮੰਗੀ ਸੀ। ਤੁਹਾਡੀ confirmation ਤੱਕ booking ਅਤੇ SLA active ਰਹਿਣਗੇ। "
+            f"Request {expiry} ਨੂੰ expire ਹੋਵੇਗੀ।",
+        ),
         rows=[
             {"id": PICKER_SEP.join((PICK_PROVIDER_CANCEL, str(request.id), "approve")),
              "title": "Yes, cancel booking"},
@@ -354,28 +385,49 @@ async def send_provider_cancellation_confirmation_request(db, job, request) -> b
 
 
 _STAGE_MESSAGES = {
-    "scheduled": ("Your visit schedule has been updated.", "Visit scheduled"),
+    "scheduled": (_bilingual(
+        "Your visit schedule has been updated.",
+        "ਤੁਹਾਡੀ visit ਦਾ schedule update ਹੋ ਗਿਆ ਹੈ।",
+    ), "Visit scheduled"),
     "inspection_started": (
-        "The technician has started the inspection. We will message you before any quoted work begins.",
+        _bilingual(
+            "The technician has started the inspection. We will message you before any quoted work begins.",
+            "ਟੈਕਨੀਸ਼ੀਅਨ ਨੇ inspection ਸ਼ੁਰੂ ਕਰ ਦਿੱਤੀ ਹੈ। Quote ਵਾਲਾ ਕੰਮ ਸ਼ੁਰੂ ਹੋਣ ਤੋਂ ਪਹਿਲਾਂ ਅਸੀਂ ਤੁਹਾਡੀ approval ਲਵਾਂਗੇ।",
+        ),
         "Inspection started",
     ),
     "inspection_done": (
-        "The inspection is complete. If an estimate is required, approve it here before work begins.",
+        _bilingual(
+            "The inspection is complete. If an estimate is required, approve it here before work begins.",
+            "Inspection ਪੂਰੀ ਹੋ ਗਈ ਹੈ। ਜੇ estimate ਲੋੜੀਂਦਾ ਹੋਇਆ ਤਾਂ ਕੰਮ ਸ਼ੁਰੂ ਹੋਣ ਤੋਂ ਪਹਿਲਾਂ ਇੱਥੇ approve ਕਰੋ।",
+        ),
         "Inspection complete",
     ),
     "quote_required": (
-        "The technician is preparing an estimate or parts request. Work cannot continue without the required approval.",
+        _bilingual(
+            "The technician is preparing an estimate or parts request. Work cannot continue without the required approval.",
+            "ਟੈਕਨੀਸ਼ੀਅਨ estimate ਜਾਂ parts request ਤਿਆਰ ਕਰ ਰਿਹਾ ਹੈ। ਤੁਹਾਡੀ approval ਤੋਂ ਬਿਨਾਂ ਕੰਮ ਅੱਗੇ ਨਹੀਂ ਵਧੇਗਾ।",
+        ),
         "Approval required",
     ),
     "service_started": (
-        "The approved service work has started.", "Work started",
+        _bilingual(
+            "The approved service work has started.",
+            "Approved service ਦਾ ਕੰਮ ਸ਼ੁਰੂ ਹੋ ਗਿਆ ਹੈ।",
+        ), "Work started",
     ),
     "work_done": (
-        "The technician marked the work as done. Review the completion proof, handover and payment request before closure.",
+        _bilingual(
+            "The technician marked the work as done. Review the completion proof, handover and payment request before closure.",
+            "ਟੈਕਨੀਸ਼ੀਅਨ ਨੇ ਕੰਮ complete mark ਕੀਤਾ ਹੈ। Job close ਹੋਣ ਤੋਂ ਪਹਿਲਾਂ completion proof, handover ਅਤੇ payment request check ਕਰੋ।",
+        ),
         "Work marked done",
     ),
     "customer_not_available": (
-        "The technician reported that the customer was unavailable. Contact the provider to reschedule or resolve the visit.",
+        _bilingual(
+            "The technician reported that the customer was unavailable. Contact the provider to reschedule or resolve the visit.",
+            "ਟੈਕਨੀਸ਼ੀਅਨ ਨੇ customer unavailable report ਕੀਤਾ ਹੈ। Visit reschedule ਜਾਂ resolve ਕਰਨ ਲਈ provider ਨਾਲ ਸੰਪਰਕ ਕਰੋ।",
+        ),
         "Customer unavailable",
     ),
 }
@@ -416,21 +468,27 @@ async def send_stage_delay(
     """Keep an Instagram customer informed when a live visit stops moving."""
     stage_label = stage.replace("_", " ")
     if waiting_on == "customer":
-        message = (
-            f"Booking {job.job_number} is waiting for your confirmation at "
-            f"the {stage_label} step. ਕਿਰਪਾ ਕਰਕੇ chat ਵਿੱਚ pending approval complete ਕਰੋ."
+        message = _bilingual(
+            f"Action needed\nBooking {job.job_number} is waiting for your confirmation at the {stage_label} step. "
+            "Please complete the pending approval in this chat.",
+            f"ਤੁਹਾਡੀ ਕਾਰਵਾਈ ਲੋੜੀਂਦੀ ਹੈ\nBooking {job.job_number} {stage_label} step 'ਤੇ ਤੁਹਾਡੀ confirmation ਦੀ ਉਡੀਕ ਕਰ ਰਹੀ ਹੈ। "
+            "ਕਿਰਪਾ ਕਰਕੇ ਇਸ chat ਵਿੱਚ pending approval complete ਕਰੋ।",
         )
         title = "Your action is needed"
     elif critical:
-        message = (
-            f"Booking {job.job_number} is delayed at the {stage_label} step. "
-            "ਅਸੀਂ provider ਨੂੰ urgent action ਲਈ alert ਕਰ ਦਿੱਤਾ ਹੈ."
+        message = _bilingual(
+            f"Service delay\nBooking {job.job_number} is delayed at the {stage_label} step. "
+            "We have sent the provider an urgent action alert.",
+            f"Service ਵਿੱਚ ਦੇਰੀ\nBooking {job.job_number} {stage_label} step 'ਤੇ delayed ਹੈ। "
+            "ਅਸੀਂ provider ਨੂੰ urgent action ਲਈ alert ਕਰ ਦਿੱਤਾ ਹੈ।",
         )
         title = "Service delay update"
     else:
-        message = (
-            f"Booking {job.job_number} has not progressed from {stage_label}. "
-            "Provider ਨੂੰ check ਕਰਨ ਲਈ alert ਕੀਤਾ ਗਿਆ ਹੈ; status ਇੱਥੇ track ਕਰੋ."
+        message = _bilingual(
+            f"Service status\nBooking {job.job_number} has not progressed from {stage_label}. "
+            "The provider has been alerted. You can track the latest status below.",
+            f"Service status\nBooking {job.job_number} {stage_label} ਤੋਂ ਅੱਗੇ ਨਹੀਂ ਵਧੀ। "
+            "Provider ਨੂੰ alert ਕਰ ਦਿੱਤਾ ਗਿਆ ਹੈ। Latest status ਹੇਠਾਂ track ਕਰੋ।",
         )
         title = "Service status update"
     return await notify_job_customer(
@@ -443,13 +501,13 @@ async def send_handover_request(db, job, *, reminder: bool = False) -> bool:
         PICK_COMPLAINT, PICK_HANDOVER, PICKER_SEP,
     )
     from app.engines.messaging_gateway.flow import HANDOVER_ACK_ROW, HANDOVER_HEADER
-    lead = "Reminder: " if reminder else ""
+    lead = "Reminder / ਯਾਦ ਦਿਵਾਉਣਾ\n" if reminder else ""
     return await notify_job_customer(
         db, job, f"{lead}{HANDOVER_HEADER}",
         rows=[
             {"id": PICKER_SEP.join((PICK_HANDOVER, str(job.id), "acknowledge")),
              "title": HANDOVER_ACK_ROW},
-            {"id": PICKER_SEP.join((PICK_COMPLAINT, "new")), "title": "Report a problem"},
+            {"id": PICKER_SEP.join((PICK_COMPLAINT, "new")), "title": "Report issue"},
         ],
         section_title="Service handover",
     )
@@ -461,11 +519,13 @@ async def send_payment_request(db, job, pay, *, reminder: bool = False) -> bool:
         PAYMENT_CONFIRM_ROW, PAYMENT_NOT_PAID_ROW, _money,
     )
     amount = _money(getattr(pay, "currency", "INR") or "INR", pay.collected_amount)
-    lead = "Reminder: " if reminder else ""
+    lead = "Reminder / ਯਾਦ ਦਿਵਾਉਣਾ\n" if reminder else ""
     return await notify_job_customer(
         db, job,
-        f"{lead}Your provider recorded a direct payment of {amount} for this service. "
-        "You paid the provider directly; Fuvay did not collect this money.",
+        f"{lead}{_bilingual(
+            f'Direct payment recorded\nAmount: {amount}\nThe provider recorded this payment as received directly. Fuvay did not collect this money.',
+            f'Direct payment ਦਰਜ ਹੋਈ\nਰਕਮ: {amount}\nProvider ਨੇ ਇਹ payment ਸਿੱਧੀ ਮਿਲੀ ਦਰਜ ਕੀਤੀ ਹੈ। ਇਹ ਰਕਮ Fuvay ਨੇ collect ਨਹੀਂ ਕੀਤੀ।',
+        )}",
         rows=[
             {"id": PICKER_SEP.join((PICK_PAYMENT, str(pay.id), "confirm")),
              "title": PAYMENT_CONFIRM_ROW},
@@ -481,11 +541,15 @@ async def send_provider_cancelled(db, job, reason: str | None) -> bool:
     booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
     if booking is None:
         return False
-    why = f" Reason: {reason.strip()}" if (reason or "").strip() else ""
+    reason_text = reason.strip() if (reason or "").strip() else "Not provided"
     return await notify_booking_customer(
         db, booking,
-        f"Booking {booking.booking_number} was cancelled by the provider.{why} "
-        "We are sorry for the inconvenience — you can book another slot below.",
+        _bilingual(
+            f"Booking cancelled\nBooking: {booking.booking_number}\nReason: {reason_text}\n"
+            "The provider cancelled this booking. We are sorry for the inconvenience. You can choose another slot below.",
+            f"Booking cancel ਹੋ ਗਈ\nBooking: {booking.booking_number}\nਕਾਰਨ: {reason_text}\n"
+            "Provider ਨੇ ਇਹ booking cancel ਕੀਤੀ ਹੈ। ਅਸੁਵਿਧਾ ਲਈ ਸਾਨੂੰ ਅਫਸੋਸ ਹੈ। ਹੇਠਾਂ ਨਵਾਂ slot ਚੁਣ ਸਕਦੇ ਹੋ।",
+        ),
         rows=[{"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Book again"}],
         section_title="Booking cancelled",
     )
@@ -580,9 +644,12 @@ async def send_technician_unavailable_cancelled(job_id: str | uuid.UUID) -> bool
                 return True
             sent = await notify_booking_customer(
                 db, booking,
-                f"Booking {booking.booking_number} has been cancelled because the "
-                "technician is not available. We are sorry for the inconvenience. "
-                "You can book another slot below.",
+                _bilingual(
+                    f"Booking cancelled\nBooking: {booking.booking_number}\nThe assigned technician is unavailable. "
+                    "We are sorry for the inconvenience. You can choose another slot below.",
+                    f"Booking cancel ਹੋ ਗਈ\nBooking: {booking.booking_number}\nAssigned technician available ਨਹੀਂ ਹੈ। "
+                    "ਅਸੁਵਿਧਾ ਲਈ ਸਾਨੂੰ ਅਫਸੋਸ ਹੈ। ਹੇਠਾਂ ਨਵਾਂ slot ਚੁਣ ਸਕਦੇ ਹੋ।",
+                ),
                 rows=[{"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Book again"}],
                 section_title="Booking cancelled",
             )
@@ -630,9 +697,12 @@ async def send_sla_cancelled(job_id: str | uuid.UUID) -> bool:
                 return True
             sent = await notify_booking_customer(
                 db, booking,
-                f"Booking {booking.booking_number} was cancelled because the technician "
-                "did not arrive within the service deadline. ਸਾਨੂੰ ਅਫਸੋਸ ਹੈ—ਤੁਸੀਂ ਹੁਣ "
-                "ਨਵੀਂ booking ਕਰ ਸਕਦੇ ਹੋ.",
+                _bilingual(
+                    f"Booking cancelled\nBooking: {booking.booking_number}\nThe technician did not arrive within the service deadline. "
+                    "We are sorry for the inconvenience. You can book a new visit below.",
+                    f"Booking cancel ਹੋ ਗਈ\nBooking: {booking.booking_number}\nਟੈਕਨੀਸ਼ੀਅਨ service deadline ਅੰਦਰ ਨਹੀਂ ਪਹੁੰਚਿਆ। "
+                    "ਅਸੁਵਿਧਾ ਲਈ ਸਾਨੂੰ ਅਫਸੋਸ ਹੈ। ਹੇਠਾਂ ਨਵੀਂ visit book ਕਰ ਸਕਦੇ ਹੋ।",
+                ),
                 rows=[{"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Book again"}],
                 section_title="Booking cancelled",
             )
@@ -665,7 +735,10 @@ async def send_visit_reminder(db, job, when_label: str) -> bool:
         return False
     name = await _technician_name(db, job)
     return await notify_job_customer(
-        db, job, f"Reminder: {name} is scheduled to visit you {when_label}.",
+        db, job, _bilingual(
+            f"Visit reminder\n{name} is scheduled to visit you {when_label}.",
+            f"Visit reminder\n{name} ਦੀ ਤੁਹਾਡੇ ਕੋਲ visit {when_label} ਲਈ scheduled ਹੈ।",
+        ),
         rows=[_track_row()], section_title="Visit reminder",
     )
 
@@ -710,11 +783,12 @@ async def send_assignment_cancelled(job_id: str | uuid.UUID) -> bool:
             config = await messaging_channel_config_service.get(db, CHANNEL_INSTAGRAM, require_enabled=True)
             if not config:
                 return False
-            message = (
-                f"Booking {booking.booking_number} was cancelled because the provider did not "
-                "assign a technician within the required time, and no other available "
-                "provider could take the job. We are sorry for the inconvenience. "
-                "Please start a new booking for another slot, or reply /human for help."
+            message = _bilingual(
+                f"Booking cancelled\nBooking: {booking.booking_number}\nThe provider did not assign a technician within the required time, "
+                "and no available provider could take the job. We are sorry for the inconvenience. Start a new booking for another slot, "
+                "or reply /human for help.",
+                f"Booking cancel ਹੋ ਗਈ\nBooking: {booking.booking_number}\nProvider ਨੇ required time ਵਿੱਚ technician assign ਨਹੀਂ ਕੀਤਾ ਅਤੇ ਕੋਈ available provider job ਨਹੀਂ ਲੈ ਸਕਿਆ। "
+                "ਅਸੁਵਿਧਾ ਲਈ ਸਾਨੂੰ ਅਫਸੋਸ ਹੈ। ਹੋਰ slot ਲਈ ਨਵੀਂ booking ਕਰੋ ਜਾਂ ਮਦਦ ਲਈ /human ਲਿਖੋ।",
             )
             result = await meta_client.send_text(
                 thread.channel_user_id, message, channel=CHANNEL_INSTAGRAM, config=config,

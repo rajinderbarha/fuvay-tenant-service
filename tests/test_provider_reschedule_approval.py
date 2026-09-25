@@ -223,7 +223,9 @@ async def test_instagram_prompt_has_explicit_approve_and_keep_buttons(monkeypatc
         {"id": f"rsc|{request.id}|approve", "title": "Approve new slot"},
         {"id": f"rsc|{request.id}|reject", "title": "Keep current slot"},
     ]
-    assert "current slot stays confirmed" in notify.await_args.args[2].lower()
+    message = notify.await_args.args[2]
+    assert "current slot remains confirmed" in message.lower()
+    assert "ਤੁਹਾਡੀ approval ਤੋਂ ਬਿਨਾਂ" in message
 
 
 @pytest.mark.asyncio

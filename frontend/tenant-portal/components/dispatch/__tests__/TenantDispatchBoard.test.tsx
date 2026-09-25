@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { TenantDispatchBoard } from "../TenantDispatchBoard";
 import type { HsDispatchProjection } from "../../../lib/api";
@@ -54,7 +54,7 @@ describe("TenantDispatchBoard", () => {
   it("renders the supplied compact dispatch hierarchy", () => {
     render(<TenantDispatchBoard board={projection} date="2026-09-04" selectedJobId={null} onSelectJob={() => {}} />);
 
-    expect(screen.getByText("Assigned today")).toBeInTheDocument();
+    expect(screen.getByText("Assigned · on track")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Needs a technician" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Assigned jobs" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /SLA breached jobs/ })).toBeInTheDocument();
@@ -74,6 +74,8 @@ describe("TenantDispatchBoard", () => {
     expect(screen.getAllByText("SLA breached").length).toBeGreaterThan(0);
     expect(screen.getByText("1 needs action")).toBeInTheDocument();
     expect(screen.getAllByText("Jaspreet Singh").length).toBeGreaterThan(0);
+    expect(within(screen.getByLabelText("Assigned jobs queue")).queryByText("JOB-0001")).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("SLA breached jobs queue")).getByText("JOB-0001")).toBeInTheDocument();
   });
 
   it("keeps job selection connected to the assignment workspace", () => {

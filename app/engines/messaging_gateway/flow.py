@@ -54,6 +54,10 @@ from app.engines.messaging_gateway.dev_identity import instagram_phone_bypass_en
 
 logger = structlog.get_logger(__name__)
 
+
+def _dual(english: str, punjabi: str) -> str:
+    return f"{english.strip()}\n\n{punjabi.strip()}"
+
 #: Mirrors `home_service_booking.constants.TERMINAL_DRAFT_STATUSES`, copied
 #: rather than imported so this module keeps no dependency on that engine.
 _TERMINAL = {"confirmed", "cancelled", "expired", "failed"}
@@ -188,7 +192,10 @@ CANCEL_REASON_LABELS = {
 #: A technician has opened up the unit and needs a part. Nothing else in the
 #: chat matters until the customer answers: the job is halted waiting for it,
 #: and the answer changes what they pay.
-PARTS_HEADER = "Your technician needs a part to finish the job."
+PARTS_HEADER = _dual(
+    "Parts approval needed. Your technician needs a part to finish the job.",
+    "Part ਦੀ approval ਲੋੜੀਂਦੀ ਹੈ। ਕੰਮ ਪੂਰਾ ਕਰਨ ਲਈ ਟੈਕਨੀਸ਼ੀਅਨ ਨੂੰ ਇੱਕ part ਚਾਹੀਦਾ ਹੈ।",
+)
 PARTS_LINE = "{part} × {quantity} — {total}"
 PARTS_REASON = "Why: {reason}"
 PARTS_TOTALS = "Estimate now {current} → {new} with this part."
@@ -198,32 +205,64 @@ PARTS_TOTALS = "Estimate now {current} → {new} with this part."
 PARTS_ADDS = "This adds {total} to your estimate."
 PARTS_APPROVE_ROW = "Approve"
 PARTS_DECLINE_ROW = "Decline"
-PARTS_APPROVED = "Approved. The technician will fit the part and carry on."
+PARTS_APPROVED = _dual(
+    "Part approved. The technician will fit it and continue the work.",
+    "Part approve ਹੋ ਗਿਆ ਹੈ। ਟੈਕਨੀਸ਼ੀਅਨ ਇਸਨੂੰ ਲਗਾ ਕੇ ਕੰਮ ਜਾਰੀ ਰੱਖੇਗਾ।",
+)
 PARTS_DECLINED = (
-    "Declined. The technician will finish what they can without the part."
+    "Part declined. The technician will finish what is possible without it.\n\n"
+    "Part decline ਹੋ ਗਿਆ ਹੈ। ਟੈਕਨੀਸ਼ੀਅਨ ਇਸ ਤੋਂ ਬਿਨਾਂ ਜਿੰਨਾ ਸੰਭਵ ਹੋਵੇ ਕੰਮ ਪੂਰਾ ਕਰੇਗਾ।"
 )
 PARTS_DECIDED_ALREADY = "That parts request has already been answered."
-QUOTE_HEADER = "Your provider sent an estimate for this job."
+QUOTE_HEADER = _dual(
+    "Estimate approval needed. Your provider sent an estimate for this job.",
+    "Estimate ਦੀ approval ਲੋੜੀਂਦੀ ਹੈ। Provider ਨੇ ਇਸ job ਲਈ estimate ਭੇਜਿਆ ਹੈ।",
+)
 QUOTE_LINE = "Estimate {number}: {total}"
 QUOTE_APPROVE_ROW = "Approve estimate"
 QUOTE_DECLINE_ROW = "Decline estimate"
 QUOTE_REVISE_ROW = "Ask for changes"
-QUOTE_APPROVED = "Estimate approved. The technician can continue the job."
-QUOTE_DECLINED = "Estimate declined. The provider has been notified."
+QUOTE_APPROVED = _dual(
+    "Estimate approved. The technician can continue the job.",
+    "Estimate approve ਹੋ ਗਿਆ ਹੈ। ਟੈਕਨੀਸ਼ੀਅਨ job ਜਾਰੀ ਰੱਖ ਸਕਦਾ ਹੈ।",
+)
+QUOTE_DECLINED = _dual(
+    "Estimate declined. The provider has been notified.",
+    "Estimate decline ਹੋ ਗਿਆ ਹੈ। Provider ਨੂੰ ਸੂਚਿਤ ਕਰ ਦਿੱਤਾ ਗਿਆ ਹੈ।",
+)
 QUOTE_REVISION_REQUESTED = (
-    "Changes requested. The provider will contact you before sending a new estimate."
+    "Estimate changes requested. The provider will contact you before sending a new estimate.\n\n"
+    "Estimate ਵਿੱਚ changes ਮੰਗੇ ਗਏ ਹਨ। ਨਵਾਂ estimate ਭੇਜਣ ਤੋਂ ਪਹਿਲਾਂ provider ਤੁਹਾਡੇ ਨਾਲ ਸੰਪਰਕ ਕਰੇਗਾ।"
 )
 QUOTE_DECIDED_ALREADY = "That estimate is no longer waiting for your decision."
-HANDOVER_HEADER = "The technician has submitted the completion proof for your service."
+HANDOVER_HEADER = _dual(
+    "Service handover approval needed. The technician submitted the completion proof.",
+    "Service handover ਦੀ approval ਲੋੜੀਂਦੀ ਹੈ। ਟੈਕਨੀਸ਼ੀਅਨ ਨੇ completion proof submit ਕੀਤਾ ਹੈ।",
+)
 HANDOVER_ACK_ROW = "Confirm handover"
-HANDOVER_ACKNOWLEDGED = "Service handover confirmed. The provider can continue closure."
+HANDOVER_ACKNOWLEDGED = _dual(
+    "Service handover confirmed. The provider can continue closure.",
+    "Service handover confirm ਹੋ ਗਿਆ ਹੈ। Provider ਹੁਣ job closure ਜਾਰੀ ਰੱਖ ਸਕਦਾ ਹੈ।",
+)
 HANDOVER_DECIDED_ALREADY = "That handover is no longer waiting for your confirmation."
-PAYMENT_HEADER = "The provider recorded a direct payment for this service."
-PAYMENT_NOTICE = "You paid the provider directly. Fuvay did not collect this money."
+PAYMENT_HEADER = _dual(
+    "Direct payment confirmation needed. The provider recorded a payment for this service.",
+    "Direct payment ਦੀ confirmation ਲੋੜੀਂਦੀ ਹੈ। Provider ਨੇ ਇਸ service ਲਈ payment ਦਰਜ ਕੀਤੀ ਹੈ।",
+)
+PAYMENT_NOTICE = _dual(
+    "You paid the provider directly. Fuvay did not collect this money.",
+    "ਤੁਸੀਂ payment ਸਿੱਧੀ provider ਨੂੰ ਕੀਤੀ ਹੈ। ਇਹ ਰਕਮ Fuvay ਨੇ collect ਨਹੀਂ ਕੀਤੀ।",
+)
 PAYMENT_CONFIRM_ROW = "Yes, I paid"
 PAYMENT_NOT_PAID_ROW = "I did not pay"
-PAYMENT_CONFIRMED = "Payment confirmed. The technician can now close the job. Once the work is completed, we will send your rating options and warranty PDF here."
-PAYMENT_MISMATCH_REPORTED = "Payment issue reported. The provider must resolve it before closing the job."
+PAYMENT_CONFIRMED = _dual(
+    "Payment confirmed. The technician can now close the job. After completion, your rating options and warranty PDF will arrive here.",
+    "Payment confirm ਹੋ ਗਈ ਹੈ। ਟੈਕਨੀਸ਼ੀਅਨ ਹੁਣ job close ਕਰ ਸਕਦਾ ਹੈ। Completion ਤੋਂ ਬਾਅਦ rating options ਅਤੇ warranty PDF ਇੱਥੇ ਆਉਣਗੇ।",
+)
+PAYMENT_MISMATCH_REPORTED = _dual(
+    "Payment issue reported. The provider must resolve it before closing the job.",
+    "Payment issue report ਹੋ ਗਿਆ ਹੈ। Job close ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ provider ਨੂੰ ਇਹ resolve ਕਰਨਾ ਪਵੇਗਾ।",
+)
 PAYMENT_DECIDED_ALREADY = "That payment is no longer waiting for your confirmation."
 PAYMENT_REPORTED_HEADER = (
     "You told us you did not pay {amount} for this service. The provider has "

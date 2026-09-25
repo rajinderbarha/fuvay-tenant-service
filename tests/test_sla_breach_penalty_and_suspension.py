@@ -47,6 +47,34 @@ class TestTheClockRunsFromTheScheduledSlot:
             charged_so_far=Decimal("150"), total_penalty=Decimal("150"),
         ) == Decimal("0")
 
+    @pytest.mark.asyncio
+    async def test_provider_penalty_notice_uses_service_and_job_number_not_uuid(self):
+        from app.engines.execution import sla_breach_service as sla
+
+        owner = uuid.uuid4()
+        owner_result = MagicMock()
+        owner_result.scalar.return_value = owner
+        title_result = MagicMock()
+        title_result.scalar.return_value = "Water leakage"
+        db = SimpleNamespace(
+            execute=AsyncMock(side_effect=[owner_result, title_result]),
+            add=MagicMock(),
+        )
+        job = SimpleNamespace(
+            id=uuid.uuid4(), tenant_id=uuid.uuid4(), booking_id=uuid.uuid4(),
+            job_number="JOB-20260925-000042",
+        )
+
+        await sla._notify_provider(
+            db, job=job, amount=Decimal("50"), cancelled=False,
+        )
+
+        notice = db.add.call_args.args[0]
+        assert notice.title == "SLA penalty · Water leakage"
+        assert "Service: Water leakage" in notice.body
+        assert "Job: JOB-20260925-000042" in notice.body
+        assert str(job.id) not in notice.body
+
     def test_rescheduling_moves_the_deadline(self):
         from app.engines.home_service_assignment import service
         src = inspect.getsource(service)

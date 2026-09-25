@@ -219,7 +219,9 @@ async def test_flow_routes_to_addons_before_final_confirmation(context, monkeypa
     c.thread.customer_id = uuid.uuid4()
     c.thread.zipcode, c.thread.city = '140412', 'Test city'
     c.thread.pending_phone_ciphertext = None
-    draft = {**c.row.to_dict(), 'preferred_date':'2026-09-10',
+    visit_date = (datetime.now(timezone.utc) + timedelta(days=2)).date().isoformat()
+    draft = {**c.row.to_dict(), 'preferred_date':visit_date,
+             'preferred_time_window':'10:00-12:00',
              'address_snapshot':{'address_line_1':'House 7 Test Road'}}
     monkeypatch.setattr(flow, '_serviceable_categories', AsyncMock(return_value=['home_services']))
     monkeypatch.setattr(pickers, 'build_picker', AsyncMock(return_value=None))
@@ -238,7 +240,9 @@ async def test_review_summary_lists_lines_and_edit_action(context):
         'offering_name':'Cleaning', 'price_estimate':c.row.price_snapshot}}}))
     turn = await flow._confirm_step(executor, c.row.to_dict(), c.thread)
     assert 'Extra cleaning' in turn.text and '25.0' in turn.text
-    assert [r['title'] for r in turn.picker['rows']] == ['Confirm booking', 'Edit add-ons', 'Start over']
+    assert [r['title'] for r in turn.picker['rows']] == [
+        'Booking confirm ਕਰੋ', 'Add-ons edit ਕਰੋ', 'ਦੁਬਾਰਾ start',
+    ]
 
 
 @pytest.mark.asyncio

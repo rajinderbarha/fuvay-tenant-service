@@ -47,7 +47,8 @@ async def test_final_assignment_failure_uses_captured_sender(monkeypatch):
     assert await booking_updates.send_assignment_cancelled(job.id) is True
     assert send.call_args.args[0] == "igsid-booker"
     assert "BK-15" in send.call_args.args[1]
-    assert "no other available provider" in send.call_args.args[1]
+    assert "no available provider could take the job" in send.call_args.args[1]
+    assert "Booking cancel ਹੋ ਗਈ" in send.call_args.args[1]
     db.commit.assert_awaited_once()
 
 

@@ -61,6 +61,12 @@ def _message(send):
     return send.call_args.args[1]
 
 
+def test_every_fixed_lifecycle_stage_notice_is_bilingual():
+    for message, _title in booking_updates._STAGE_MESSAGES.values():
+        assert "\n\n" in message
+        assert any("\u0a00" <= char <= "\u0a7f" for char in message)
+
+
 # ── One phrasing for the visit, everywhere ───────────────────────────────────
 
 @pytest.mark.parametrize("scheduled, window, expected", [
@@ -91,10 +97,12 @@ async def test_the_assigned_message_names_the_technician_and_the_visit(monkeypat
     db, send = _wire(monkeypatch, _booking(job))
 
     assert await booking_updates.send_technician_assigned(db, job) is True
-    assert _message(send) == (
-        "Ramesh Kumar is assigned to booking BK-77. "
-        "They are scheduled to visit you today at 10:00-12:00."
-    )
+    message = _message(send)
+    assert "Technician assigned" in message
+    assert "Booking: BK-77" in message
+    assert "Ramesh Kumar" in message
+    assert "today at 10:00-12:00" in message
+    assert "ਟੈਕਨੀਸ਼ੀਅਨ assign ਹੋ ਗਿਆ ਹੈ" in message
     assert [row["id"] for row in send.call_args.args[2]] == ["tr|"]
 
 
@@ -104,10 +112,11 @@ async def test_the_on_the_way_message_repeats_the_booked_time(monkeypatch):
     db, send = _wire(monkeypatch, _booking(job))
 
     assert await booking_updates.send_on_the_way(db, job) is True
-    assert _message(send) == (
-        "Ramesh Kumar is on the way to you now. "
-        "Your visit is scheduled today at 10:00-12:00."
-    )
+    message = _message(send)
+    assert "Technician on the way" in message
+    assert "Ramesh Kumar" in message
+    assert "today at 10:00-12:00" in message
+    assert "ਟੈਕਨੀਸ਼ੀਅਨ ਰਸਤੇ ਵਿੱਚ ਹੈ" in message
 
 
 @pytest.mark.asyncio
@@ -116,7 +125,9 @@ async def test_the_arrived_message_says_which_visit(monkeypatch):
     db, send = _wire(monkeypatch, _booking(job))
 
     assert await booking_updates.send_arrived(db, job) is True
-    assert _message(send) == "Ramesh Kumar has arrived for your visit today at 10:00-12:00."
+    message = _message(send)
+    assert "Ramesh Kumar has arrived for your visit today at 10:00-12:00." in message
+    assert "ਪਹੁੰਚ ਅਪਡੇਟ" in message
 
 
 @pytest.mark.asyncio
@@ -125,9 +136,11 @@ async def test_an_undated_job_never_promises_a_time(monkeypatch):
     db, send = _wire(monkeypatch, _booking(job))
 
     await booking_updates.send_on_the_way(db, job)
-    assert _message(send) == "Ramesh Kumar is on the way to you now."
+    assert "Ramesh Kumar is travelling to your service location now." in _message(send)
+    assert "10:00-12:00" not in _message(send)
     await booking_updates.send_arrived(db, job)
-    assert _message(send) == "Ramesh Kumar has arrived for your service."
+    assert "Ramesh Kumar has arrived for your service." in _message(send)
+    assert "10:00-12:00" not in _message(send)
 
 
 # ── Announced once per technician ────────────────────────────────────────────
@@ -219,6 +232,7 @@ async def test_once_assigned_the_reminder_is_unchanged(monkeypatch, status):
 
     assert await booking_updates.send_visit_reminder(
         db, job, "today at 10:00-12:00") is True
-    assert _message(send) == (
-        "Reminder: Ramesh Kumar is scheduled to visit you today at 10:00-12:00."
-    )
+    message = _message(send)
+    assert "Visit reminder" in message
+    assert "Ramesh Kumar is scheduled to visit you today at 10:00-12:00." in message
+    assert "ਦੀ ਤੁਹਾਡੇ ਕੋਲ visit" in message

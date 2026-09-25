@@ -325,14 +325,28 @@ async def _notify_provider(db: AsyncSession, *, job, amount: Decimal,
             "AND is_active = true LIMIT 1"), {"t": str(job.tenant_id)})).scalar()
         if owner is None:
             return
-        body = (f"Rs.{amount:,.2f} was deducted for missing the service window on job "
-                f"{job.id}.")
+        service_title = None
+        try:
+            service_title = (await db.execute(text(
+                "SELECT COALESCE(NULLIF(TRIM(b.issue_summary), ''), "
+                "                NULLIF(TRIM(ms.service_name), ''), 'Service visit') "
+                "FROM service_bookings b "
+                "LEFT JOIN master_services ms ON ms.id = b.offering_id "
+                "WHERE b.id = :booking_id LIMIT 1"
+            ), {"booking_id": str(job.booking_id)})).scalar()
+        except Exception as exc:  # noqa: BLE001 - a label cannot block the notice
+            logger.info("sla_breach.provider_notice_label_missing",
+                        job_id=str(job.id), error=str(exc))
+        service_title = str(service_title).strip() if isinstance(service_title, str) else "Service visit"
+        job_reference = str(getattr(job, "job_number", "") or "").strip() or "Job"
+        body = (f"₹{amount:,.2f} was deducted for missing the promised service window. "
+                f"Service: {service_title}. Job: {job_reference}.")
         body += (" The booking was cancelled and the customer can rebook."
                  if cancelled else " The job remains open.")
         db.add(InAppNotification(
             user_id=owner, tenant_id=job.tenant_id,
             notification_type="sla_penalty_charged",
-            title="Service level penalty applied",
+            title=f"SLA penalty · {service_title[:60]}",
             body=body,
             action_url="/home-services/finance", action_label="View finance",
             source_record_type="service_jobs", source_record_id=job.id,

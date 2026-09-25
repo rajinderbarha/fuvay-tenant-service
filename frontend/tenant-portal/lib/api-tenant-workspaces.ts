@@ -744,7 +744,14 @@ export interface HsDispatchJobSummary {
     notification_sent: boolean;
   } | null;
   has_conflict?: boolean;
-  customer_health?: { score: number; band: string; can_book: boolean } | null;
+  customer_health?: {
+    score: number;
+    band: string;
+    can_book: boolean;
+    advance_required_pct?: number;
+    signals?: Record<string, number>;
+    computed_at?: string;
+  } | null;
 }
 
 export interface HsDispatchTechnician {
