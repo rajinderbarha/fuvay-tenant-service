@@ -31,6 +31,8 @@ def test_migration_retires_lowercase_lg_and_adds_database_guard():
     migration = (Path(__file__).parents[1] / "alembic" / "versions" /
                  "377_prevent_duplicate_brand_names.py").read_text(encoding="utf-8")
     assert "lower(btrim(name)) = 'lg'" in migration
-    assert "replacement_brand_id = target_id" in migration
+    assert "replacement_brand_id = v_target_brand_id" in migration
+    assert "v_source_brand_id uuid;" in migration
+    assert "source_id uuid;" not in migration
     assert "uq_brands_live_normalized_name" in migration
     assert "unique=True" in migration
