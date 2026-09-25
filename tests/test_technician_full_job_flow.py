@@ -331,6 +331,8 @@ async def _seed(db, *, inspection_required: bool, quote_approval_required: bool)
 
 
 async def _cleanup(db, ids):
+    await db.execute(text("DELETE FROM service_job_arrival_challenges WHERE job_id=:jid"), {"jid": ids["job"]})
+    await db.execute(text("DELETE FROM technician_live_locations WHERE job_id=:jid"), {"jid": ids["job"]})
     await db.execute(text("DELETE FROM service_job_work_sessions WHERE job_id=:jid"), {"jid": ids["job"]})
     await db.execute(text("DELETE FROM service_job_completion_proofs WHERE job_id=:jid"), {"jid": ids["job"]})
     await db.execute(text("DELETE FROM service_job_quotes WHERE job_id=:jid"), {"jid": ids["job"]})
@@ -347,6 +349,87 @@ async def _cleanup(db, ids):
     await db.execute(text("DELETE FROM master_services WHERE id=:ms"), {"ms": ids["ms"]})
     await db.execute(text("DELETE FROM job_types WHERE id=:jt"), {"jt": ids["jt"]})
     await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_instagram_arrival_needs_customer_confirmation_and_is_chat_scoped(monkeypatch):
+    """GPS is evidence, while the exact booking chat is the arrival authority."""
+    from app.database import get_session_factory, init_db
+    from app.engines.execution.arrival_confirmation_service import (
+        confirm_arrival, pending_arrivals_for_customer,
+        request_arrival_confirmation,
+    )
+    from app.engines.final_records.models import ServiceJob
+
+    await init_db()
+    factory = get_session_factory()
+    async with factory() as db:
+        ids = await _seed(db, inspection_required=False, quote_approval_required=False)
+        try:
+            await db.execute(text(
+                "UPDATE service_bookings SET source_channel='instagram', "
+                "source_actor_id='ig-arrival-owner' WHERE id=:bid"
+            ), {"bid": ids["booking"]})
+            await db.execute(text(
+                "UPDATE service_jobs SET status='on_the_way' WHERE id=:jid"
+            ), {"jid": ids["job"]})
+            await db.execute(text(
+                "INSERT INTO technician_live_locations "
+                "(job_id, staff_id, tenant_id, latitude, longitude, accuracy_meters, "
+                " recorded_at, created_at, updated_at) "
+                "VALUES (:jid, :sid, :tid, 30.7001000, 76.4001000, 12, now(), now(), now())"
+            ), {"jid": ids["job"], "sid": ids["staff"], "tid": ids["tenant"]})
+            await db.commit()
+
+            async def delivered(*_args, **_kwargs):
+                return True
+
+            monkeypatch.setattr(
+                "app.engines.messaging_gateway.booking_updates."
+                "send_arrival_confirmation_request", delivered,
+            )
+            monkeypatch.setattr(
+                "app.engines.messaging_gateway.booking_updates."
+                "send_arrival_confirmed", delivered,
+            )
+
+            job = await db.get(ServiceJob, ids["job"])
+            requested = await request_arrival_confirmation(
+                db, job=job, staff_member_id=ids["staff"],
+                requested_by_user_id=ids["staff"],
+            )
+            await db.commit()
+            assert requested["status"] == "awaiting_customer_confirmation"
+            assert (await db.get(ServiceJob, ids["job"])).status == "on_the_way"
+
+            correct_chat = await pending_arrivals_for_customer(
+                db, ids["customer"], source_channel="instagram",
+                source_actor_id="ig-arrival-owner",
+            )
+            other_chat = await pending_arrivals_for_customer(
+                db, ids["customer"], source_channel="instagram",
+                source_actor_id="ig-different-account",
+            )
+            assert len(correct_chat) == 1
+            assert other_chat == []
+
+            confirmed = await confirm_arrival(
+                db, challenge_id=uuid.UUID(requested["challenge_id"]),
+                source="instagram_customer", customer_id=ids["customer"],
+                actor_user_id=ids["customer"], expected_job_id=ids["job"],
+            )
+            await db.commit()
+            assert confirmed["status"] == "reached_site"
+            row = (await db.execute(text(
+                "SELECT status, arrival_verified_at FROM service_jobs WHERE id=:jid"
+            ), {"jid": ids["job"]})).first()
+            assert row.status == "reached_site"
+            assert row.arrival_verified_at is not None
+            assert (await db.execute(text(
+                "SELECT count(*) FROM technician_live_locations WHERE job_id=:jid"
+            ), {"jid": ids["job"]})).scalar_one() == 0
+        finally:
+            await _cleanup(db, ids)
 
 
 @pytest.mark.asyncio

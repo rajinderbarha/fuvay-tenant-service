@@ -3535,6 +3535,21 @@ export interface ExecutionMediaRecord {
   created_at: string | null;
 }
 
+export interface ArrivalCoordinates {
+  latitude: number;
+  longitude: number;
+  accuracy_meters?: number;
+}
+
+export interface ArrivalRequestResult {
+  job_id: string;
+  status: string;
+  challenge_id?: string;
+  expires_at?: string;
+  notification_sent?: boolean;
+  instruction?: string;
+}
+
 // ── Sprint 21: Provider Home Service Execution API ────────────────────────────
 export const homeServiceExecutionApi = {
   accept:             (jobId: string) =>
@@ -3543,8 +3558,10 @@ export const homeServiceExecutionApi = {
     apiFetch<Record<string, unknown>>(`/v1/staff/service-jobs/${jobId}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
   onTheWay:           (jobId: string) =>
     apiFetch<Record<string, unknown>>(`/v1/staff/service-jobs/${jobId}/on-the-way`, { method: "POST" }),
-  reachedSite:        (jobId: string) =>
-    apiFetch<Record<string, unknown>>(`/v1/staff/service-jobs/${jobId}/reached-site`, { method: "POST" }),
+  reachedSite:        (jobId: string, location?: ArrivalCoordinates) =>
+    apiFetch<Record<string, unknown>>(`/v1/staff/service-jobs/${jobId}/reached-site`, {
+      method: "POST", body: location ? JSON.stringify(location) : undefined,
+    }),
   startInspection:    (jobId: string) =>
     apiFetch<Record<string, unknown>>(`/v1/staff/service-jobs/${jobId}/start-inspection`, { method: "POST" }),
   completeInspection: (jobId: string) =>
@@ -4761,7 +4778,11 @@ export const homeServiceStaffJobsApi = {
     unwrapStaffJobResult<{ job_id: string; status: string }>(
       await apiFetch<unknown>(`/v1/staff/service-jobs/${jobId}/reject`, { method: "POST", body: JSON.stringify({ reason }) })),
   onTheWay: (jobId: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/on-the-way`, { method: "POST" }),
-  reachedSite: (jobId: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/reached-site`, { method: "POST" }),
+  reachedSite: (jobId: string, location?: ArrivalCoordinates) =>
+    apiFetch<HomeServiceJobItem | ArrivalRequestResult>(
+      `/v1/staff/service-jobs/${jobId}/reached-site`, {
+        method: "POST", body: location ? JSON.stringify(location) : undefined,
+      }),
   startInspection: (jobId: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/start-inspection`, { method: "POST" }),
   completeInspection: (jobId: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/complete-inspection`, { method: "POST" }),
   startService: (jobId: string) => apiFetch<HomeServiceJobItem>(`/v1/staff/service-jobs/${jobId}/start-service`, { method: "POST" }),

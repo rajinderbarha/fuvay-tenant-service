@@ -1691,6 +1691,68 @@ class MessagingGatewayService:
             })
         return actions
 
+    async def pending_arrivals(self, thread: MessagingThread) -> list[dict]:
+        """Arrival claims belonging to this verified customer identity."""
+        if not thread.customer_id:
+            return []
+        from app.engines.execution.arrival_confirmation_service import (
+            pending_arrivals_for_customer,
+        )
+        return await pending_arrivals_for_customer(
+            self.db, thread.customer_id, source_channel=thread.channel,
+            source_actor_id=thread.channel_user_id,
+        )
+
+    async def decide_arrival(
+        self, thread: MessagingThread, challenge_id: str, decision: str,
+    ) -> str:
+        """Apply an Instagram arrival decision through the canonical gate."""
+        if not thread.customer_id:
+            return "Please verify your booking identity before confirming arrival."
+        from app.engines.execution.arrival_confirmation_service import (
+            confirm_arrival, deny_arrival,
+        )
+        try:
+            # A person may have multiple Instagram identities linked to one
+            # customer.  Only the exact account captured on this booking may
+            # decide its doorstep claim; this mirrors every outbound update.
+            from app.engines.execution.models import ServiceJobArrivalChallenge
+            from app.engines.final_records.models import ServiceBooking
+            challenge = await self.db.get(
+                ServiceJobArrivalChallenge, uuid.UUID(str(challenge_id)),
+            )
+            booking = (
+                await self.db.get(ServiceBooking, challenge.booking_id)
+                if challenge is not None else None
+            )
+            if (challenge is None or booking is None
+                    or str(challenge.customer_id) != str(thread.customer_id)
+                    or booking.source_channel != thread.channel
+                    or booking.source_actor_id != thread.channel_user_id):
+                return "This arrival request is not available in this Instagram chat."
+            if decision == "confirm":
+                await confirm_arrival(
+                    self.db, challenge_id=uuid.UUID(str(challenge_id)),
+                    source="instagram_customer", customer_id=thread.customer_id,
+                    actor_user_id=thread.customer_id,
+                )
+                return (
+                    "Arrival confirmed. The technician may now begin the inspection. "
+                    "ਪਹੁੰਚ confirm ਹੋ ਗਈ ਹੈ।"
+                )
+            if decision == "deny":
+                result = await deny_arrival(
+                    self.db, challenge_id=uuid.UUID(str(challenge_id)),
+                    customer_id=thread.customer_id,
+                )
+                return str(result["message"])
+        except Exception as exc:  # old/double taps are ordinary chat behaviour
+            logger.info("messaging_gateway.arrival_decision_rejected",
+                        challenge_id=challenge_id, decision=decision, error=str(exc))
+            return str(getattr(exc, "detail", None) or
+                       "This arrival request is no longer waiting for a decision.")
+        return "Please choose whether the technician is present."
+
     async def acknowledge_handover(
         self, thread: MessagingThread, job_id: str,
     ) -> str:

@@ -53,6 +53,33 @@ PROVIDER_PROGRESS_STATUSES = frozenset({
 _HS_KEY = "home_services"
 
 
+async def stage_waiting_on_customer(db: AsyncSession, job) -> bool:
+    """Whether a nominally active stage is blocked on a real customer action.
+
+    ``work_done`` starts as provider-owned: the technician must submit proof,
+    request handover and declare payment.  Once either customer confirmation
+    is genuinely pending, charging the provider for the same elapsed time is
+    incorrect.  This query is deliberately based on durable records rather
+    than a client-supplied flag.
+    """
+    if getattr(job, "status", None) != "work_done":
+        return False
+    result = await db.execute(text(
+        "SELECT ("
+        " EXISTS (SELECT 1 FROM service_job_completion_proofs p "
+        "         WHERE p.job_id=:job_id AND p.status='submitted' "
+        "           AND p.handover_status='requested') "
+        " OR EXISTS (SELECT 1 FROM service_payment_records r "
+        "            WHERE r.job_id=:job_id "
+        "              AND r.provider_confirmed_at IS NOT NULL "
+        "              AND r.customer_confirmed=false "
+        "              AND COALESCE(r.payment_status,'') NOT IN "
+        "                  ('dispute_open','disputed','reversed','cancelled'))"
+        ")"
+    ), {"job_id": str(job.id)})
+    return bool(result.scalar())
+
+
 async def _policy(db: AsyncSession):
     """The published Home Services monetization policy, scoped to its vertical.
 
@@ -434,6 +461,9 @@ async def enforce_stalled_provider_stage(
     """
     if job.status not in PROVIDER_PROGRESS_STATUSES:
         return {"eligible": False, "penalised": False, "closed": False}
+    if await stage_waiting_on_customer(db, job):
+        return {"eligible": False, "penalised": False, "closed": False,
+                "waiting_on": "customer"}
 
     policy = await _policy(db)
     if policy is None or policy.sla_breach_hours is None:
@@ -512,6 +542,9 @@ async def enforce_stalled_provider_stage(
     close_hours = max(1, min(168, int(policy.sla_close_after_hours or 24)))
     final_due = first_due + dt.timedelta(hours=close_hours)
     if current < final_due:
+        if penalised:
+            from app.engines.tenant_engine.health import refresh_provider_operational_health
+            await refresh_provider_operational_health(db, job.tenant_id)
         return {"eligible": True, "penalised": penalised, "closed": False,
                 "first_due_at": first_due.isoformat(), "final_due_at": final_due.isoformat()}
 
@@ -573,6 +606,9 @@ async def enforce_stalled_provider_stage(
             db, job=job, compensated=False, amount=first_taken + final_taken,
         )
         closed = True
+    if penalised or final_taken > 0 or closed:
+        from app.engines.tenant_engine.health import refresh_provider_operational_health
+        await refresh_provider_operational_health(db, job.tenant_id)
     return {"eligible": True, "penalised": penalised or final_taken > 0,
             "closed": closed, "first_due_at": first_due.isoformat(),
             "final_due_at": final_due.isoformat()}
@@ -587,7 +623,8 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
     policy = await _policy(db)
     if policy is None:
         return {"breached": 0, "penalised": 0, "compensated": 0,
-                "suspended": 0, "reinstated": 0, "reason": "no_published_policy"}
+                "suspended": 0, "reinstated": 0, "cancelled_job_ids": [],
+                "reason": "no_published_policy"}
 
     cap = Decimal(str(policy.sla_penalty_debt_cap)) if policy.sla_penalty_debt_cap is not None else None
     statuses = policy.sla_breachable_statuses or list(BREACHABLE_STATUSES)
@@ -603,6 +640,7 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
 
     due = (await db.execute(text(
         "SELECT j.id, j.tenant_id, j.booking_id, j.customer_id, j.status, j.job_type_id, "
+        "       j.job_number, j.assigned_staff_id, "
         "       j.sla_penalty_day_count, COALESCE(j.sla_penalty_charged, 0) AS charged_so_far, "
         "       COALESCE((SELECT i.total_amount FROM service_invoices i "
         "                 WHERE i.job_id=j.id AND i.status<>'cancelled' "
@@ -615,6 +653,8 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
     ), {"statuses": statuses, "lim": limit})).fetchall()
 
     breached = penalised = compensated = 0
+    affected_tenants: set = set()
+    cancelled_job_ids: list[str] = []
     for job in due:
         previous_stage = int(job.sla_penalty_day_count or 0)
         final_day = previous_stage >= 1
@@ -657,6 +697,7 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
                     source=penalty_source)
             if taken > 0:
                 penalised += 1
+                affected_tenants.add(job.tenant_id)
 
         await db.execute(text(
             "UPDATE service_jobs SET sla_breached_at=COALESCE(sla_breached_at, now()), "
@@ -674,6 +715,16 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
             await _notify_provider(db, job=job, amount=taken,
                                    cancelled=bool(final_day and policy.sla_auto_cancel))
 
+        if not final_day:
+            # The customer should not keep seeing "on the way" with no
+            # explanation after the promised slot is missed. Delivery is
+            # best-effort and exactly scoped to the booking's Instagram ID.
+            from app.engines.messaging_gateway.booking_updates import send_stage_delay
+            await send_stage_delay(
+                db, job, stage=job.status, critical=True,
+                waiting_on="provider",
+            )
+
         if final_day:
             if policy.sla_auto_cancel:
                 close_hours = max(1, min(168, int(policy.sla_close_after_hours or 24)))
@@ -686,15 +737,26 @@ async def sweep(db: AsyncSession, *, limit: int = 200) -> dict:
                     policy.sla_penalty_to_customer
                     and (Decimal(str(job.charged_so_far or 0)) + taken) > 0),
                     amount=Decimal(str(job.charged_so_far or 0)) + taken)
+                cancelled_job_ids.append(str(job.id))
+                affected_tenants.add(job.tenant_id)
 
         logger.info("sla_breach.actioned", job_id=str(job.id), tenant_id=str(job.tenant_id),
                     penalty_taken=float(taken), day_number=day_number, final_day=final_day,
                     compensated_customer=bool(policy.sla_penalty_to_customer and taken > 0))
 
+    # Health is a live matching input.  Refresh it before evaluating the
+    # suspension threshold so a new breach changes ranking/suspension in this
+    # same transaction instead of waiting for an unrelated later refresh.
+    if affected_tenants:
+        from app.engines.tenant_engine.health import refresh_provider_operational_health
+        for tenant_id in affected_tenants:
+            await refresh_provider_operational_health(db, tenant_id)
+
     suspended = await _apply_health_suspensions(db, policy)
     reinstated = await reinstate_due(db, policy)
     return {"breached": breached, "penalised": penalised, "compensated": compensated,
-            "suspended": suspended, "reinstated": reinstated}
+            "suspended": suspended, "reinstated": reinstated,
+            "cancelled_job_ids": cancelled_job_ids}
 
 
 async def settle_no_arrival_close(db: AsyncSession, *, job_id) -> Decimal:

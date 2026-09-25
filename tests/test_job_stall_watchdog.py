@@ -92,10 +92,29 @@ def test_watches_every_status_no_other_timer_covers():
         assert status in watchdog.STALL_LIMIT_MINUTES
 
 
-def test_travel_is_left_to_the_travel_timeout_sweep():
-    """`travel_timeout` cancels an overdue journey at the buffer deadline. A
-    stall alert here would race it at that same deadline."""
-    assert "on_the_way" not in watchdog.STALL_LIMIT_MINUTES
+def test_travel_delay_is_warned_but_cancellation_stays_with_travel_timeout():
+    """Journey time can expire before the slot is late; warn during that gap."""
+    from app.engines.execution.sla_breach_service import PROVIDER_PROGRESS_STATUSES
+
+    assert "on_the_way" in watchdog.STALL_LIMIT_MINUTES
+    assert "on_the_way" not in PROVIDER_PROGRESS_STATUSES
+
+
+@pytest.mark.asyncio
+async def test_travel_delay_warns_before_the_slot_bound_cancellation(policy):
+    now = datetime.now(timezone.utc)
+    job = _job("on_the_way", entered_minutes_ago=40)
+    job.sla_due_at = now + timedelta(minutes=20)
+    job.scheduled_date = now.date()
+    job.scheduled_time_window = "09:00-11:00"
+    db = _db([job])
+
+    result = await watchdog.sweep(db)
+
+    assert result["escalated"] == 1
+    event = next(row for row in db.added if hasattr(row, "event_type"))
+    assert event.event_type == "job_stalled"
+    assert event.event_metadata["status"] == "on_the_way"
 
 
 def test_never_watches_a_terminal_status():

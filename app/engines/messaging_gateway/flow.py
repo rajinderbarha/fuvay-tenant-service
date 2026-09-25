@@ -45,7 +45,7 @@ from app.engines.messaging_gateway.constants import (
     PICK_PROBLEM,
     PICK_HANDOVER, PICK_PARTS, PICK_PAYMENT, PICK_QUESTION, PICK_QUOTE,
     PICK_RATING, PICK_RESTART, PICK_SKIP, PICK_SLOT, PICK_PHONE, PICK_COMPLAINT,
-    PICK_WARRANTY,
+    PICK_WARRANTY, PICK_ARRIVAL,
     PICK_TRACK, PICK_ADDON,
     PICKER_SEP, SLOT_EMERGENCY_FLAG,
 )
@@ -411,7 +411,7 @@ async def advance(
         if not thread.zipcode and kind not in {
             PICK_RESTART, PICK_AREA, PICK_AREA_CITY, PICK_TRACK, PICK_CANCEL,
             PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_RATING,
-            PICK_COMPLAINT, PICK_WARRANTY,
+            PICK_COMPLAINT, PICK_WARRANTY, PICK_ARRIVAL,
         }:
             # Instagram quick replies and buttons on old messages remain
             # tappable. Once a new booking has cleared its area, an old
@@ -420,7 +420,7 @@ async def advance(
         if _is_finished(draft) and kind not in {
             PICK_RESTART, PICK_TRACK, PICK_CANCEL, PICK_PARTS, PICK_QUOTE,
             PICK_HANDOVER, PICK_PAYMENT, PICK_RATING, PICK_COMPLAINT,
-            PICK_WARRANTY,
+            PICK_WARRANTY, PICK_ARRIVAL,
         }:
             # Old service cards remain tappable after confirmation. Treat a
             # category/service choice as the start of another booking, which
@@ -589,6 +589,17 @@ async def _navigate(db, executor, reply_id: str, draft, thread, channel: str,
             return None
         note = await identity.acknowledge_handover(thread, job_id)
         following = await _closure_step(identity, thread, channel)
+        if following:
+            following.text = f"{note}\n\n{following.text}"
+            return following
+        return await _booked_menu_for(identity, thread, "", note)
+
+    if kind == PICK_ARRIVAL:
+        if identity is None:
+            return None
+        challenge_id, _, decision = rest.partition(PICKER_SEP)
+        note = await identity.decide_arrival(thread, challenge_id, decision)
+        following = await _arrival_step(identity, thread, channel)
         if following:
             following.text = f"{note}\n\n{following.text}"
             return following
@@ -1777,6 +1788,46 @@ async def _parts_step(
     })
 
 
+async def _arrival_step(
+    identity, thread, channel: str, booking_number: str = "",
+) -> Turn | None:
+    """Render the oldest live doorstep claim before any lower-priority action."""
+    if identity is None:
+        return None
+    try:
+        pending = await identity.pending_arrivals(thread)
+    except Exception as exc:  # an arrival read must never break the chat
+        logger.warning("messaging_gateway.flow.pending_arrival_failed",
+                       thread_id=str(getattr(thread, "id", "-")), error=str(exc))
+        return None
+    if booking_number:
+        pending = [
+            item for item in pending
+            if str(item.get("booking_number") or "") == booking_number
+        ]
+    if not pending:
+        return None
+    item = pending[0]
+    challenge_id = item["challenge_id"]
+    text = (
+        f"The technician says they are at your location for booking "
+        f"{item.get('booking_number') or item.get('job_number')}.\n\n"
+        "ਕੀ technician ਤੁਹਾਡੇ ਸਾਹਮਣੇ ਪਹੁੰਚ ਗਿਆ ਹੈ? "
+        "Confirm only after you can see the technician."
+    )
+    return Turn(text, {
+        "body": "Confirm technician arrival",
+        "rows": [
+            {"id": PICKER_SEP.join((PICK_ARRIVAL, challenge_id, "confirm")),
+             "title": "Yes, arrived"},
+            {"id": PICKER_SEP.join((PICK_ARRIVAL, challenge_id, "deny")),
+             "title": "No, not here"},
+        ],
+        "list_button": "Choose", "section_title": "Arrival check",
+        "presentation": "buttons",
+    })
+
+
 async def _quote_step(
     identity, thread, channel: str, booking_number: str = "",
 ) -> Turn | None:
@@ -2035,7 +2086,9 @@ async def _track_step(thread, identity, booking_number: str, channel: str) -> Tu
     if not booking_number and len(bookings) == 1:
         booking_number = bookings[0]["number"]
 
-    action = await _parts_step(identity, thread, channel, booking_number)
+    action = await _arrival_step(identity, thread, channel, booking_number)
+    if action is None:
+        action = await _parts_step(identity, thread, channel, booking_number)
     if action is None:
         action = await _quote_step(identity, thread, channel, booking_number)
     if action is None:
@@ -2107,6 +2160,9 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     # a booking flow started underneath an unanswered parts request would bury
     # the one message the customer needs to act on.
     if not draft or _is_finished(draft):
+        arrival = await _arrival_step(identity, thread, channel)
+        if arrival:
+            return arrival
         parts = await _parts_step(identity, thread, channel)
         if parts:
             return parts

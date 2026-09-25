@@ -1,9 +1,7 @@
-"""A technician who taps "On my way" and never arrives loses the job.
+"""A technician who taps "On my way" and never arrives is closed safely.
 
-Before this sweep the job stayed `on_the_way` until the slot SLA closed it, up
-to a day later: the provider got two alerts, and the customer heard nothing and
-kept seeing a technician on the way. Now the job is cancelled when the travel
-buffer runs out, and the customer is told the technician is not available.
+Travel expiry alerts first. The SLA deducts the missed-slot charge, then this
+final safety net closes only when the persisted final deadline has elapsed.
 """
 from __future__ import annotations
 
@@ -21,7 +19,8 @@ from app.engines.execution.sla_breach_service import (
 from app.jobs import travel_timeout
 
 
-def _row(*, entered_minutes_ago, limit=30, snapshot=True, travel_minutes=30):
+def _row(*, entered_minutes_ago, limit=30, snapshot=True, travel_minutes=30,
+         penalty_day_count=1, final_due_minutes_ago=1):
     now = datetime.now(timezone.utc)
     return NS(
         id=uuid.uuid4(), tenant_id=uuid.uuid4(), booking_id=uuid.uuid4(),
@@ -31,6 +30,8 @@ def _row(*, entered_minutes_ago, limit=30, snapshot=True, travel_minutes=30):
         stage_metadata=({"stage_timer": {"status": "on_the_way", "limit_minutes": limit}}
                         if snapshot else None),
         entered_at=now - timedelta(minutes=entered_minutes_ago),
+        sla_penalty_day_count=penalty_day_count,
+        sla_next_penalty_at=now - timedelta(minutes=final_due_minutes_ago),
     )
 
 
@@ -94,7 +95,7 @@ def settle(monkeypatch):
 # ── cancellation ─────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_cancels_a_journey_past_its_buffer():
+async def test_cancels_only_after_the_persisted_final_sla_deadline():
     row = _row(entered_minutes_ago=31, limit=30)
     db = _db([row])
 
@@ -360,6 +361,7 @@ async def test_a_technician_who_set_off_early_is_not_cancelled_inside_the_window
     the road, for a visit whose window had not even opened.
     """
     row = _slot_row(entered_minutes_ago=90, late_in_minutes=60)
+    row.sla_penalty_day_count = 0
     db = _db([row])
 
     result = await travel_timeout.sweep(db)
@@ -369,8 +371,22 @@ async def test_a_technician_who_set_off_early_is_not_cancelled_inside_the_window
 
 
 @pytest.mark.asyncio
-async def test_once_the_window_has_closed_the_no_show_is_cancelled_and_says_why():
+async def test_slot_end_alone_does_not_cancel_before_the_24_hour_close_window():
     row = _slot_row(entered_minutes_ago=180, late_in_minutes=-5)
+    row.sla_penalty_day_count = 0
+    db = _db([row])
+
+    result = await travel_timeout.sweep(db)
+
+    assert result["cancelled"] == 0
+    assert _updates(db, "service_jobs") == []
+
+
+@pytest.mark.asyncio
+async def test_after_first_charge_the_final_deadline_closes_and_says_why():
+    row = _slot_row(entered_minutes_ago=1500, late_in_minutes=-1445)
+    row.sla_penalty_day_count = 1
+    row.sla_next_penalty_at = datetime.now(timezone.utc) - timedelta(minutes=5)
     db = _db([row])
 
     result = await travel_timeout.sweep(db)
@@ -378,15 +394,15 @@ async def test_once_the_window_has_closed_the_no_show_is_cancelled_and_says_why(
     assert result["cancelled"] == 1
     reason = _updates(db, "service_jobs")[0]["reason"]
     assert reason.startswith(travel_timeout.FAILURE_REASON_PREFIX)
-    assert "booked visit window" in reason
     cancelled = next(e for e in _events(db) if e.event_type == "job_cancelled")
-    assert cancelled.event_metadata["deadline_at"] == row.sla_due_at.isoformat()
+    assert cancelled.event_metadata["deadline_at"] == row.sla_next_penalty_at.isoformat()
 
 
 @pytest.mark.asyncio
 async def test_a_late_start_still_gets_its_whole_buffer():
     """Setting off ten minutes before the window closes is not a no-show yet."""
     row = _slot_row(entered_minutes_ago=15, late_in_minutes=-5)
+    row.sla_penalty_day_count = 0
     db = _db([row])
 
     assert (await travel_timeout.sweep(db))["cancelled"] == 0

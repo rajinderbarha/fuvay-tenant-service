@@ -25,7 +25,12 @@ async def run_once() -> dict:
     async with get_session_factory()() as db:
         result = await sla.sweep(db)
         await db.commit()
-        return result
+    # Meta messages cannot be rolled back, so cancellation is sent only after
+    # the database transaction has committed successfully.
+    from app.engines.messaging_gateway.booking_updates import send_sla_cancelled
+    for job_id in result.get("cancelled_job_ids", []):
+        await send_sla_cancelled(job_id)
+    return result
 
 
 async def background_loop() -> None:

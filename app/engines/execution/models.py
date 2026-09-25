@@ -2,7 +2,7 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Index, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, Index, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import ServiceOSBase
@@ -36,6 +36,47 @@ class ServiceJobExecutionEvent(ServiceOSBase):
             "actor_role": self.actor_role,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class ServiceJobArrivalChallenge(ServiceOSBase):
+    """Customer-backed proof that a technician really reached the property.
+
+    Punjab addresses are frequently not precise enough for a map geofence to
+    be authoritative.  The technician's fresh GPS fix is therefore retained
+    as evidence, while the customer's Instagram decision (or a one-time code
+    given at the door) is the authority that advances the job.
+    """
+
+    __tablename__ = "service_job_arrival_challenges"
+    __table_args__ = (
+        Index("ix_sjac_job_status", "job_id", "status"),
+        Index("ix_sjac_customer", "customer_id"),
+        Index("ix_sjac_expires", "expires_at"),
+        Index(
+            "uq_sjac_one_pending_per_job", "job_id", unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    job_id:                    Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    booking_id:                Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    tenant_id:                 Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    customer_id:               Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    staff_member_id:           Mapped[uuid.UUID]        = mapped_column(UUID(as_uuid=True), nullable=False)
+    requested_by_user_id:      Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    status:                    Mapped[str]              = mapped_column(String(20), nullable=False, default="pending")
+    otp_hash:                  Mapped[str]              = mapped_column(String(64), nullable=False)
+    failed_code_attempts:      Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
+    requested_at:              Mapped[datetime]         = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at:                Mapped[datetime]         = mapped_column(DateTime(timezone=True), nullable=False)
+    responded_at:              Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    response_source:           Mapped[str | None]       = mapped_column(String(30), nullable=True)
+    denial_reason:             Mapped[str | None]       = mapped_column(String(300), nullable=True)
+    technician_latitude:       Mapped[float]            = mapped_column(Numeric(10, 7), nullable=False)
+    technician_longitude:      Mapped[float]            = mapped_column(Numeric(10, 7), nullable=False)
+    technician_accuracy_meters:Mapped[float | None]     = mapped_column(Numeric(8, 2), nullable=True)
+    location_recorded_at:      Mapped[datetime]         = mapped_column(DateTime(timezone=True), nullable=False)
+    notification_sent_at:      Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ServiceJobExecutionNote(ServiceOSBase):

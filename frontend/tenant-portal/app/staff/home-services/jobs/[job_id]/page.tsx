@@ -40,12 +40,25 @@ export default function StaffHomeServiceJobDetailPage() {
     { onSuccess: () => { contact.refetch(); job.refetch(); } },
   );
 
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const statusAction = useAction(
     useCallback(async (fnName: keyof typeof homeServiceStaffJobsApi) => {
+      if (fnName === "reachedSite") {
+        const location = await readCurrentLocation();
+        return homeServiceStaffJobsApi.reachedSite(jobId, location);
+      }
       const fn = homeServiceStaffJobsApi[fnName] as (id: string) => Promise<unknown>;
       return fn(jobId);
     }, [jobId]),
-    { onSuccess: () => { job.refetch(); } },
+    { onSuccess: (result) => {
+      const arrival = result as { status?: string; instruction?: string } | null;
+      setActionNotice(
+        arrival?.status === "awaiting_customer_confirmation"
+          ? (arrival.instruction || "Waiting for the customer to confirm arrival in Instagram.")
+          : null,
+      );
+      job.refetch();
+    } },
   );
 
   const [rejectReason, setRejectReason] = useState("");
@@ -138,6 +151,11 @@ export default function StaffHomeServiceJobDetailPage() {
                 {statusAction.error && (
                   <p style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 8 }}>
                     {statusAction.error}{statusAction.requestId && ` — Request ID: ${statusAction.requestId}`}
+                  </p>
+                )}
+                {actionNotice && !statusAction.error && (
+                  <p style={{ fontSize: 12, color: "var(--success-text)", marginTop: 8 }}>
+                    {actionNotice}
                   </p>
                 )}
                 {j.status === "assigned" && (
@@ -255,6 +273,31 @@ export default function StaffHomeServiceJobDetailPage() {
       ) : null}
     </StaffLayout>
   );
+}
+
+function readCurrentLocation(): Promise<{
+  latitude: number; longitude: number; accuracy_meters: number;
+}> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return Promise.reject(new Error(
+      "This device cannot provide GPS. Enable location on the staff device and try again.",
+    ));
+  }
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      position => resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy_meters: position.coords.accuracy,
+      }),
+      error => reject(new Error(
+        error.code === error.PERMISSION_DENIED
+          ? "Location permission is required to confirm arrival."
+          : "A fresh GPS location could not be captured. Move to an open area and try again.",
+      )),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 },
+    );
+  });
 }
 
 function StageCountdown({ timer }: { timer: NonNullable<import("../../../../../lib/api").HomeServiceJobItem["stage_timer"]> }) {

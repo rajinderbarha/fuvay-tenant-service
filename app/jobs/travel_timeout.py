@@ -1,18 +1,13 @@
-"""Cancel a job whose technician started travelling and never arrived.
+"""Final safety-net closure for a technician who never arrived.
 
-Tapping "On my way" snapshots the provider's travel buffer into the
-transition event (`stage_timer_service`). If the job is still `on_the_way`
-when that buffer runs out, the technician has not reached the customer, has
-not marked them unavailable and has not cancelled. Before this sweep the job
-then sat open until the slot SLA closed it, up to a day later, while the
-customer's app kept showing a technician on the way.
-
-The job is now cancelled at the buffer deadline, always: no policy switch or
-job-type cancellation rule keeps it open. The deadline is never earlier than
-the moment the visit is actually late, though: a technician who sets off early
-is on time until the booked window ends. The customer is told the technician
-is not available, in the app and in the Instagram chat they booked from, and
-the provider pays the same missed-arrival penalty the SLA engine would have.
+The stage watchdog alerts the provider, technician and customer when the
+provider's travel time runs out.  The normal SLA engine then deducts the first
+missed-slot amount (normally Rs.50) when the visit becomes late.  This worker
+must not cancel at either of those moments: it closes only after that first
+charge has happened and the persisted final deadline (normally 24 hours later)
+has elapsed.  It is a minute-level safety net for the SLA sweep, using the same
+idempotent final top-up to reach the configured cumulative amount (normally
+Rs.150).
 
 The provider-health signal is unchanged. The stall watchdog used to record a
 provider-owned `job_stalled` event at this same deadline, and health counts
@@ -44,7 +39,8 @@ _CANDIDATE_SQL = text(
     """
     SELECT j.id, j.tenant_id, j.booking_id, j.customer_id, j.job_number,
            j.assigned_staff_id, b.booking_number,
-           j.sla_due_at, j.scheduled_date, j.scheduled_time_window,
+           j.sla_due_at, j.sla_next_penalty_at, j.sla_penalty_day_count,
+           j.scheduled_date, j.scheduled_time_window,
            w.buffer_minutes_between_jobs AS travel_minutes,
            entered.metadata AS stage_metadata,
            COALESCE(entered.at, j.updated_at, j.created_at) AS entered_at
@@ -263,7 +259,17 @@ async def sweep(db, *, limit: int = 200) -> dict:
             continue
         entered_at = _aware(row.entered_at)
         minutes = travel_limit_minutes(row)
-        deadline = travel_deadline(row, entered_at, minutes)
+        # Day 0 is the travel warning / first missed-slot charge window. The
+        # explicit product rule is Rs.50 then closure/top-up after the final
+        # delay (normally 24 hours), never immediate cancellation at slot end.
+        if int(getattr(row, "sla_penalty_day_count", 0) or 0) < 1:
+            continue
+        final_due = getattr(row, "sla_next_penalty_at", None)
+        if final_due is None:
+            continue
+        deadline = max(
+            entered_at + timedelta(minutes=minutes), _aware(final_due),
+        )
         if now < deadline:
             continue
         try:

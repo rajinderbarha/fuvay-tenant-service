@@ -384,3 +384,22 @@ class TestPostArrivalDeadlockEnforcement:
         )
         assert outcome == {"eligible": False, "penalised": False, "closed": False}
         db.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_work_done_waiting_for_customer_confirmation_is_not_charged(self):
+        from app.engines.execution import sla_breach_service as sla
+
+        customer_wait = MagicMock()
+        customer_wait.scalar.return_value = True
+        db = SimpleNamespace(execute=AsyncMock(return_value=customer_wait), add=MagicMock())
+        outcome = await sla.enforce_stalled_provider_stage(
+            db,
+            job=SimpleNamespace(status="work_done", id=uuid.uuid4()),
+            entered_at=dt.datetime.now(dt.timezone.utc),
+            stage_limit_minutes=1,
+        )
+        assert outcome == {
+            "eligible": False, "penalised": False, "closed": False,
+            "waiting_on": "customer",
+        }
+        db.execute.assert_awaited_once()

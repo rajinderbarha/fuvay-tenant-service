@@ -558,6 +558,8 @@ class HomeServiceJobExecutionService:
             metadata={"scheduled_date": scheduled_date, "window": scheduled_time_window},
         )
         await db.flush()
+        from app.engines.messaging_gateway.booking_updates import send_stage_update
+        await send_stage_update(db, job, JS_SCHEDULED)
         return job.to_dict()
 
     # ── field progression ─────────────────────────────────────────────────────
@@ -583,6 +585,31 @@ class HomeServiceJobExecutionService:
                 "Travel can be started on the day of the visit.",
                 status_code=409,
             )
+        # Do not let a technician create a misleading "on the way" state
+        # hours before the promised visit.  The provider's configured travel
+        # buffer is the earliest legitimate departure time; the same value is
+        # snapshotted by the stage timer and enforced by travel_timeout.
+        from app.engines.weather.slots import slot_start
+        starts_at = slot_start(job.scheduled_date, job.scheduled_time_window)
+        if starts_at is not None:
+            configured = (await db.execute(_sa_text(
+                "SELECT buffer_minutes_between_jobs "
+                "FROM tenant_booking_window_settings WHERE tenant_id=:tenant_id"
+            ), {"tenant_id": str(job.tenant_id)})).scalar()
+            try:
+                travel_minutes = min(1440, max(5, int(configured or 30)))
+            except (TypeError, ValueError):
+                travel_minutes = 30
+            earliest_departure = starts_at - timedelta(minutes=travel_minutes)
+            now_local = datetime.now(starts_at.tzinfo)
+            if now_local < earliest_departure:
+                raise ServiceOSException(
+                    "TRAVEL_TOO_EARLY",
+                    "Travel can be started near the booked slot, not before "
+                    f"{earliest_departure.strftime('%d %b %Y, %I:%M %p')}.",
+                    status_code=409,
+                    context={"earliest_departure_at": earliest_departure.isoformat()},
+                )
         await self._set_status(db, job, JS_ON_THE_WAY, EV_ON_THE_WAY, user_id, "staff", request_id=request_id)
         # Repair/enrol the scheduled-arrival SLA at the moment travel starts.
         # This protects legacy jobs that predate assignment-time SLA stamping.
@@ -689,6 +716,20 @@ class HomeServiceJobExecutionService:
     async def mark_reached_site(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
+        # Instagram addresses in Punjab are frequently approximate.  For
+        # those bookings a technician GPS fix is evidence, but the customer's
+        # in-chat decision/doorstep code is the authority that advances the
+        # job.  Do not stop SLA or claim arrival at this point.
+        from app.engines.final_records.models import ServiceBooking
+        booking = await db.get(ServiceBooking, job.booking_id)
+        if booking and booking.source_channel == "instagram":
+            from app.engines.execution.arrival_confirmation_service import (
+                request_arrival_confirmation,
+            )
+            return await request_arrival_confirmation(
+                db, job=job, staff_member_id=staff_member_id,
+                requested_by_user_id=user_id,
+            )
         from app.engines.execution.arrival_verification import verify_arrival
         arrival = await verify_arrival(db, job=job, staff_member_id=staff_member_id)
         await self._set_status(db, job, JS_REACHED_SITE, EV_REACHED_SITE, user_id, "staff", request_id=request_id)
@@ -736,6 +777,8 @@ class HomeServiceJobExecutionService:
         job.sla_next_penalty_at = None
         job.sla_stopped_at = _now()
         await db.flush()
+        from app.engines.messaging_gateway.booking_updates import send_stage_update
+        await send_stage_update(db, job, JS_INSPECTION_STARTED)
         return job.to_dict()
 
     async def complete_inspection(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
@@ -746,6 +789,8 @@ class HomeServiceJobExecutionService:
         await assert_gate_satisfied(db, job, GATE_BEFORE_INSPECTION_COMPLETE)
         await self._set_status(db, job, JS_INSPECTION_DONE, EV_INSPECTION_COMPLETED, user_id, "staff", request_id=request_id)
         await db.flush()
+        from app.engines.messaging_gateway.booking_updates import send_stage_update
+        await send_stage_update(db, job, JS_INSPECTION_DONE)
         return job.to_dict()
 
     async def start_service(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
@@ -779,6 +824,8 @@ class HomeServiceJobExecutionService:
         from app.engines.execution.usage_credit_deduction import attempt_charge_at_event
         await attempt_charge_at_event(
             db, job=job, chargeable_event="work_started", request_id=request_id)
+        from app.engines.messaging_gateway.booking_updates import send_stage_update
+        await send_stage_update(db, job, JS_SERVICE_STARTED)
         return job.to_dict()
 
     async def mark_work_done(self, db, job_id, tenant_id, staff_member_id, user_id, request_id=None):
@@ -791,6 +838,8 @@ class HomeServiceJobExecutionService:
         from app.engines.execution.usage_credit_deduction import attempt_charge_at_event
         await attempt_charge_at_event(
             db, job=job, chargeable_event="work_done", request_id=request_id)
+        from app.engines.messaging_gateway.booking_updates import send_stage_update
+        await send_stage_update(db, job, JS_WORK_DONE)
         return job.to_dict()
 
     async def mark_customer_not_available(self, db, job_id, tenant_id, staff_member_id, user_id, notes=None, request_id=None):
@@ -798,6 +847,8 @@ class HomeServiceJobExecutionService:
         self._assert_staff_owns_job(job, staff_member_id)
         await self._set_status(db, job, JS_CUSTOMER_NOT_AVAIL, EV_CUSTOMER_NOT_AVAIL, user_id, "staff", notes=notes, request_id=request_id)
         await db.flush()
+        from app.engines.messaging_gateway.booking_updates import send_stage_update
+        await send_stage_update(db, job, JS_CUSTOMER_NOT_AVAIL)
         return job.to_dict()
 
     async def mark_quote_required(self, db, job_id, tenant_id, staff_member_id, user_id, notes=None, request_id=None):
@@ -805,6 +856,8 @@ class HomeServiceJobExecutionService:
         self._assert_staff_owns_job(job, staff_member_id)
         await self._set_status(db, job, JS_QUOTE_REQUIRED, EV_QUOTE_REQUIRED, user_id, "staff", notes=notes, request_id=request_id)
         await db.flush()
+        from app.engines.messaging_gateway.booking_updates import send_stage_update
+        await send_stage_update(db, job, JS_QUOTE_REQUIRED)
         return job.to_dict()
 
     async def mark_parts_required(self, db, job_id, tenant_id, staff_member_id, user_id, notes=None, request_id=None):
@@ -813,6 +866,8 @@ class HomeServiceJobExecutionService:
         # parts_required → quote_required (same terminal status for this sprint)
         await self._set_status(db, job, JS_QUOTE_REQUIRED, EV_PARTS_REQUIRED, user_id, "staff", notes=notes, request_id=request_id)
         await db.flush()
+        from app.engines.messaging_gateway.booking_updates import send_stage_update
+        await send_stage_update(db, job, JS_QUOTE_REQUIRED)
         return job.to_dict()
 
     async def _assert_checklist_satisfied(self, db: AsyncSession, job) -> None:
@@ -1650,7 +1705,10 @@ class HomeServiceJobExecutionService:
         endpoint (`/work-done`, `/notes`, `/media`) was missing. Prepares
         `service_jobs.completion_data` for HS9's usage-credit deduction —
         does NOT deduct credits itself (out of scope, per the ticket)."""
-        from app.engines.execution.models import PartsRequest
+        from app.engines.execution.models import CompletionProof, PartsRequest
+        from app.engines.invoice_payment.models import ServicePaymentRecord
+        from app.engines.invoice_payment.direct_payments_constants import RS_CONFIRMED
+        from app.engines.invoice_payment.direct_payments_service import DirectPaymentsService
 
         job = await self._get_job(db, job_id, tenant_id)
         self._assert_staff_owns_job(job, staff_member_id)
@@ -1684,6 +1742,49 @@ class HomeServiceJobExecutionService:
                 ERR_PAYMENT_MODE_INVALID,
                 "Payment mode must be customer_pays_provider_directly for Home Services.",
                 status_code=422,
+            )
+
+        # These are server-side closure invariants, not merely UI steps.  The
+        # mobile wrapper already checked them, but the older staff endpoint
+        # called this canonical method directly and could bypass proof,
+        # customer handover and payment reconciliation entirely.
+        proof = (await db.execute(select(CompletionProof).where(
+            CompletionProof.job_id == job.id,
+            CompletionProof.tenant_id == tenant_id,
+        ))).scalars().first()
+        if not proof or proof.status != "submitted":
+            raise ServiceOSException(
+                "COMPLETION_PROOF_NOT_SUBMITTED",
+                "Submit the completion proof before completing this job.",
+                status_code=409,
+            )
+        if proof.handover_status not in ("acknowledged", "customer_unavailable"):
+            raise ServiceOSException(
+                "CUSTOMER_HANDOVER_NOT_ACKNOWLEDGED",
+                "Customer handover must be acknowledged before completing this job.",
+                status_code=409,
+            )
+        payment = (await db.execute(select(ServicePaymentRecord).where(
+            ServicePaymentRecord.job_id == job.id,
+            ServicePaymentRecord.tenant_id == tenant_id,
+        ).order_by(ServicePaymentRecord.created_at.desc()).limit(1))).scalars().first()
+        if payment is None:
+            raise ServiceOSException(
+                "PAYMENT_NOT_DECLARED",
+                "Record the customer's direct payment before completing this job.",
+                status_code=409,
+            )
+        if DirectPaymentsService.derive_status(payment) != RS_CONFIRMED:
+            raise ServiceOSException(
+                "PAYMENT_NOT_RECONCILED",
+                "Customer payment must be confirmed before completing this job.",
+                status_code=409,
+            )
+        if abs(Decimal(str(collected_amount)) - Decimal(str(payment.collected_amount))) > Decimal("0.01"):
+            raise ServiceOSException(
+                "COLLECTED_AMOUNT_MISMATCH",
+                "The completion amount must match the confirmed payment record.",
+                status_code=409,
             )
         if require_completion_photo and not completion_photo_ids:
             raise ServiceOSException(

@@ -156,6 +156,17 @@ class CancelBody(BaseModel):
     reason: str
 
 
+class ArrivalRequestBody(BaseModel):
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    accuracy_meters: Optional[float] = Field(default=None, gt=0, le=5000)
+
+
+class ArrivalCodeBody(BaseModel):
+    challenge_id: uuid.UUID
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
 # HS8B — real parts request workflow
 class PartsRequestBody(BaseModel):
     # The part comes from the provider's inventory, which supplies its name and
@@ -272,11 +283,56 @@ async def staff_on_the_way(job_id: uuid.UUID, r: Request, user=Depends(require_s
 
 
 @staff_router.post("/{job_id}/reached-site")
-async def staff_reached_site(job_id: uuid.UUID, r: Request, user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
+async def staff_reached_site(job_id: uuid.UUID, r: Request,
+                             body: Optional[ArrivalRequestBody] = None,
+                             user=Depends(require_staff_or_above_mutation), db=Depends(get_db)):
     rid = getattr(r.state, "request_id", "—")
-    result = await _svc.mark_reached_site(db, job_id, uuid.UUID(str(user.tenant_id)), (await _staff_member_id(user, db)), uuid.UUID(str(user.user_id)), request_id=rid)
+    staff_id = await _staff_member_id(user, db)
+    if body and ((body.latitude is None) != (body.longitude is None)):
+        raise ServiceOSException(
+            "ARRIVAL_LOCATION_INCOMPLETE",
+            "Both latitude and longitude are required together.", status_code=422,
+        )
+    if body and body.latitude is not None and body.longitude is not None:
+        from app.engines.home_service_assignment.service import HomeServiceJobAssignmentService
+        try:
+            await HomeServiceJobAssignmentService(db).submit_technician_location(
+                job_id=job_id, staff_id=staff_id,
+                tenant_id=uuid.UUID(str(user.tenant_id)),
+                latitude=body.latitude, longitude=body.longitude,
+                accuracy_meters=body.accuracy_meters,
+            )
+        except ValueError as exc:
+            # The existing location service uses ValueError for its domain
+            # guards.  Translate it here so the mobile client gets a useful
+            # 4xx response instead of an opaque 500.
+            raise ServiceOSException(
+                "ARRIVAL_LOCATION_REJECTED", str(exc), status_code=422,
+            ) from exc
+    result = await _svc.mark_reached_site(
+        db, job_id, uuid.UUID(str(user.tenant_id)), staff_id,
+        uuid.UUID(str(user.user_id)), request_id=rid,
+    )
     await db.commit()
     return ok(result, rid, "staff-exec-reached")
+
+
+@staff_router.post("/{job_id}/confirm-arrival-code")
+async def staff_confirm_arrival_code(job_id: uuid.UUID, body: ArrivalCodeBody,
+                                     r: Request,
+                                     user=Depends(require_staff_or_above_mutation),
+                                     db=Depends(get_db)):
+    """Confirm physical arrival with the code visible only in customer chat."""
+    rid = getattr(r.state, "request_id", "arrival-code")
+    staff_id = await _staff_member_id(user, db)
+    from app.engines.execution.arrival_confirmation_service import confirm_arrival
+    result = await confirm_arrival(
+        db, challenge_id=body.challenge_id, source="technician_code",
+        staff_member_id=staff_id, actor_user_id=uuid.UUID(str(user.user_id)),
+        code=body.code, expected_job_id=job_id,
+    )
+    await db.commit()
+    return ok(result, rid, "staff-exec-arrival-code")
 
 
 @staff_router.post("/{job_id}/start-inspection")

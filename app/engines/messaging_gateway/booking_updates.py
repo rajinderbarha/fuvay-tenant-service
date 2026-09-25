@@ -25,6 +25,7 @@ EVENT_TYPE = "customer_assignment_cancelled_notified"
 # One "your technician" message per technician, wherever it is raised from.
 ASSIGNED_EVENT_TYPE = "customer_technician_assigned_notified"
 TECHNICIAN_UNAVAILABLE_EVENT_TYPE = "customer_technician_unavailable_notified"
+SLA_CANCELLED_EVENT_TYPE = "customer_sla_cancelled_notified"
 LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 
 
@@ -245,6 +246,125 @@ async def send_arrived(db, job) -> bool:
     )
 
 
+async def send_arrival_confirmation_request(db, job, challenge, code: str) -> bool:
+    """Ask the captured Instagram identity to verify the doorstep claim.
+
+    The OTP is intentionally delivered only here; it is never returned to the
+    technician API or placed in an execution event.
+    """
+    from app.engines.messaging_gateway.constants import PICK_ARRIVAL, PICKER_SEP
+
+    name = await _technician_name(db, job)
+    return await notify_job_customer(
+        db, job,
+        f"{name} says they are at your service location.\n\n"
+        "ਕੀ technician ਤੁਹਾਡੇ ਸਾਹਮਣੇ ਪਹੁੰਚ ਗਿਆ ਹੈ? Confirm only after you can "
+        f"see them. Your one-time arrival code is {code}. It expires in 10 minutes. "
+        "Do not share this code over a phone call.",
+        rows=[
+            {"id": PICKER_SEP.join((PICK_ARRIVAL, str(challenge.id), "confirm")),
+             "title": "Yes, arrived"},
+            {"id": PICKER_SEP.join((PICK_ARRIVAL, str(challenge.id), "deny")),
+             "title": "No, not here"},
+        ],
+        section_title="Confirm arrival",
+    )
+
+
+@_best_effort
+async def send_arrival_confirmed(db, job) -> bool:
+    return await notify_job_customer(
+        db, job,
+        "Arrival is verified. The technician can now begin inspection or the approved service.",
+        rows=[_track_row()], section_title="Arrival verified",
+    )
+
+
+_STAGE_MESSAGES = {
+    "scheduled": ("Your visit schedule has been updated.", "Visit scheduled"),
+    "inspection_started": (
+        "The technician has started the inspection. We will message you before any quoted work begins.",
+        "Inspection started",
+    ),
+    "inspection_done": (
+        "The inspection is complete. If an estimate is required, approve it here before work begins.",
+        "Inspection complete",
+    ),
+    "quote_required": (
+        "The technician is preparing an estimate or parts request. Work cannot continue without the required approval.",
+        "Approval required",
+    ),
+    "service_started": (
+        "The approved service work has started.", "Work started",
+    ),
+    "work_done": (
+        "The technician marked the work as done. Review the completion proof, handover and payment request before closure.",
+        "Work marked done",
+    ),
+    "customer_not_available": (
+        "The technician reported that the customer was unavailable. Contact the provider to reschedule or resolve the visit.",
+        "Customer unavailable",
+    ),
+}
+
+
+@_best_effort
+async def send_stage_update(db, job, stage: str) -> bool:
+    """Send one idempotent customer update for a meaningful field stage."""
+    content = _STAGE_MESSAGES.get(stage)
+    if not content:
+        return False
+    event_type = f"customer_{stage}_notified"[:60]
+    exists = await db.scalar(select(ServiceJobExecutionEvent.id).where(
+        ServiceJobExecutionEvent.job_id == job.id,
+        ServiceJobExecutionEvent.event_type == event_type,
+    ).limit(1))
+    if exists:
+        return False
+    message, title = content
+    sent = await notify_job_customer(
+        db, job, message, rows=[_track_row()], section_title=title,
+    )
+    if sent:
+        db.add(ServiceJobExecutionEvent(
+            booking_id=job.booking_id, job_id=job.id, tenant_id=job.tenant_id,
+            staff_member_id=job.assigned_staff_id, actor_role="platform",
+            event_type=event_type, old_status=job.status, new_status=job.status,
+            notes=f"Customer notified of {stage.replace('_', ' ')}.",
+        ))
+        await db.flush()
+    return sent
+
+
+@_best_effort
+async def send_stage_delay(
+    db, job, *, stage: str, critical: bool, waiting_on: str,
+) -> bool:
+    """Keep an Instagram customer informed when a live visit stops moving."""
+    stage_label = stage.replace("_", " ")
+    if waiting_on == "customer":
+        message = (
+            f"Booking {job.job_number} is waiting for your confirmation at "
+            f"the {stage_label} step. ਕਿਰਪਾ ਕਰਕੇ chat ਵਿੱਚ pending approval complete ਕਰੋ."
+        )
+        title = "Your action is needed"
+    elif critical:
+        message = (
+            f"Booking {job.job_number} is delayed at the {stage_label} step. "
+            "ਅਸੀਂ provider ਨੂੰ urgent action ਲਈ alert ਕਰ ਦਿੱਤਾ ਹੈ."
+        )
+        title = "Service delay update"
+    else:
+        message = (
+            f"Booking {job.job_number} has not progressed from {stage_label}. "
+            "Provider ਨੂੰ check ਕਰਨ ਲਈ alert ਕੀਤਾ ਗਿਆ ਹੈ; status ਇੱਥੇ track ਕਰੋ."
+        )
+        title = "Service status update"
+    return await notify_job_customer(
+        db, job, message, rows=[_track_row()], section_title=title,
+    )
+
+
 async def send_handover_request(db, job, *, reminder: bool = False) -> bool:
     from app.engines.messaging_gateway.constants import (
         PICK_COMPLAINT, PICK_HANDOVER, PICKER_SEP,
@@ -350,6 +470,56 @@ async def send_technician_unavailable_cancelled(job_id: str | uuid.UUID) -> bool
             return True
     except Exception as exc:  # noqa: BLE001 - notification must not stop the sweeper
         logger.warning("booking_updates.technician_unavailable_failed",
+                       job_id=str(job_id), error=str(exc))
+        return False
+
+
+async def send_sla_cancelled(job_id: str | uuid.UUID) -> bool:
+    """Tell the exact Instagram booking identity about final SLA closure."""
+    from app.database import get_session_factory
+    from app.engines.messaging_gateway.constants import PICK_RESTART, PICKER_SEP
+
+    try:
+        async with get_session_factory()() as db:
+            locked = await db.scalar(text(
+                "SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"
+            ), {"key": f"ig:sla_cancelled:{job_id}"})
+            if not locked:
+                return False
+            job = await db.get(ServiceJob, uuid.UUID(str(job_id)))
+            if (not job or job.status != "cancelled"
+                    or not (job.failure_reason or "").startswith(
+                        "Technician did not arrive")):
+                return False
+            booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
+            if booking is None:
+                return False
+            already = await db.scalar(select(ServiceJobExecutionEvent.id).where(
+                ServiceJobExecutionEvent.job_id == job.id,
+                ServiceJobExecutionEvent.event_type == SLA_CANCELLED_EVENT_TYPE,
+            ).limit(1))
+            if already:
+                return True
+            sent = await notify_booking_customer(
+                db, booking,
+                f"Booking {booking.booking_number} was cancelled because the technician "
+                "did not arrive within the service deadline. ਸਾਨੂੰ ਅਫਸੋਸ ਹੈ—ਤੁਸੀਂ ਹੁਣ "
+                "ਨਵੀਂ booking ਕਰ ਸਕਦੇ ਹੋ.",
+                rows=[{"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Book again"}],
+                section_title="Booking cancelled",
+            )
+            if not sent:
+                return False
+            db.add(ServiceJobExecutionEvent(
+                booking_id=booking.id, job_id=job.id, tenant_id=job.tenant_id,
+                actor_role="platform", event_type=SLA_CANCELLED_EVENT_TYPE,
+                notes=f"SLA cancellation sent to the booking's {booking.source_channel} chat.",
+                request_id="job:sla_breach",
+            ))
+            await db.commit()
+            return True
+    except Exception as exc:  # noqa: BLE001 - never break the worker over Meta
+        logger.warning("booking_updates.sla_cancelled_failed",
                        job_id=str(job_id), error=str(exc))
         return False
 

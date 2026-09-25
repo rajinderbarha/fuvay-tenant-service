@@ -22,8 +22,9 @@ missed-arrival SLA still owns penalties and safe closure before verified field
 work begins.  Post-arrival stalls remain visible to a human who can continue or
 cancel the job with the correct reason.
 
-`on_the_way` is not watched here: `travel_timeout` cancels the job at that same
-deadline, and an alert racing the cancellation would only add noise.
+`on_the_way` is warned here only when the configured journey time has elapsed
+but the booked slot is not late yet.  Once its real cancellation deadline is
+reached, `travel_timeout` owns the cancellation and this worker stays quiet.
 """
 from __future__ import annotations
 
@@ -47,6 +48,9 @@ CRITICAL_EVENT_TYPE = "job_stage_critical"
 #: SLA. A real deep-clean can run for hours, so a limit tight enough to be
 #: "helpful" would only teach providers to ignore the alert.
 STALL_LIMIT_MINUTES: dict[str, int] = {
+    # The stage snapshot carries the provider's actual travel setting.  This
+    # fallback exists for legacy journeys that predate snapshots.
+    "on_the_way": 30,
     # On site but nothing started. The shortest limit here: arriving and then
     # going quiet is the strongest signal that something went wrong.
     "reached_site": 45,
@@ -72,6 +76,7 @@ _CANDIDATE_SQL = text(
     SELECT j.id, j.tenant_id, j.booking_id, j.job_number, j.status,
            j.assigned_staff_id,
            j.customer_id, j.job_type_id, j.scheduled_date, j.scheduled_time_window,
+           j.sla_due_at,
            COALESCE((SELECT i.total_amount FROM service_invoices i
                      WHERE i.job_id=j.id AND i.status<>'cancelled'
                      ORDER BY i.created_at DESC LIMIT 1), 0) AS job_value,
@@ -122,7 +127,8 @@ def _limit_minutes(status: str, policy, job=None) -> int:
         return default
 
 
-async def _notify_provider(db, *, job, minutes: int) -> None:
+async def _notify_provider(db, *, job, minutes: int,
+                           waiting_on: str | None = None) -> None:
     """Tell the provider's owner, in the words of whoever has to act.
 
     Best-effort: an escalation that cannot be delivered must still be recorded.
@@ -137,7 +143,7 @@ async def _notify_provider(db, *, job, minutes: int) -> None:
             return
         hours = minutes / 60
         elapsed = f"{minutes} minutes" if minutes < 120 else f"{hours:.0f} hours"
-        waiting_on = _WAITING_ON.get(job.status)
+        waiting_on = waiting_on or _WAITING_ON.get(job.status)
         if waiting_on == "customer":
             body = (f"Job {job.job_number} has been waiting on the customer for "
                     f"over {elapsed}. Follow it up so it does not stall.")
@@ -206,6 +212,13 @@ async def sweep(db, *, limit: int = 100) -> dict:
             entered_at = entered_at.replace(tzinfo=timezone.utc)
         if now - entered_at < timedelta(minutes=minutes):
             continue
+        if job.status == "on_the_way":
+            # Journey time has expired, so alert while the visit can still be
+            # recovered. At/after the slot-bound deadline the minute-level
+            # travel_timeout worker cancels and notifies instead.
+            from app.jobs.travel_timeout import travel_deadline
+            if now >= travel_deadline(job, entered_at, minutes):
+                continue
         # One escalation per entry into a status, not one per sweep: a job
         # left overnight must not generate a notification every ten minutes.
         # A LATER re-entry into the same status escalates again, because
@@ -233,6 +246,9 @@ async def sweep(db, *, limit: int = 100) -> dict:
             db, job=job, entered_at=entered_at,
             stage_limit_minutes=minutes, now=now,
         )
+        waiting_on = stage_enforcement.get("waiting_on") or _WAITING_ON.get(
+            job.status, "provider",
+        )
         if stage_enforcement.get("penalised"):
             penalised += 1
         if stage_enforcement.get("closed"):
@@ -259,14 +275,20 @@ async def sweep(db, *, limit: int = 100) -> dict:
                 "status": job.status,
                 "stalled_minutes": stalled_for,
                 "limit_minutes": minutes,
-                "waiting_on": _WAITING_ON.get(job.status, "provider"),
+                "waiting_on": waiting_on,
                 "entered_at": entered_at.isoformat(),
                 "outcome": "critical_provider_intervention_required" if is_critical else "escalated_no_status_change",
             },
             request_id="job:stall_watchdog",
         ))
         await db.flush()
-        await _notify_provider(db, job=job, minutes=minutes)
+        await _notify_provider(db, job=job, minutes=minutes,
+                               waiting_on=waiting_on)
+        from app.engines.messaging_gateway.booking_updates import send_stage_delay
+        await send_stage_delay(
+            db, job, stage=job.status, critical=is_critical,
+            waiting_on=waiting_on,
+        )
         if is_critical:
             critical += 1
         else:
