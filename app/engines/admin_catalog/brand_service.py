@@ -262,6 +262,18 @@ class BrandService:
         norm = normalize_brand_name(name)
         slug = _slugify(name)
 
+        existing = await self.db.scalar(select(Brand).where(
+            Brand.normalized_name == norm,
+            Brand.deleted_at.is_(None),
+        ))
+        if existing:
+            raise ServiceOSException(
+                "BRAND_DUPLICATE",
+                f"Brand '{existing.name}' already exists. Brand names are case-insensitive.",
+                status_code=409,
+                context={"existing_brand_id": str(existing.id), "existing_name": existing.name},
+            )
+
         # Duplicate slug check
         slug_res = await self.db.execute(
             select(Brand).where(Brand.slug == slug, Brand.deleted_at.is_(None))
@@ -269,21 +281,6 @@ class BrandService:
         if slug_res.scalar_one_or_none():
             raise ServiceOSException("BRAND_SLUG_ALREADY_EXISTS",
                                      f"A brand with slug '{slug}' already exists.", status_code=409)
-
-        # Duplicate name / normalized name check
-        norm_res = await self.db.execute(
-            select(Brand).where(Brand.normalized_name == norm, Brand.deleted_at.is_(None))
-        )
-        existing_similar = norm_res.scalars().all()
-        if existing_similar:
-            # Return warning + possible duplicates — admin must confirm by passing force=True
-            if not data.get("force"):
-                return {
-                    "warning": "BRAND_DUPLICATE_POSSIBLE",
-                    "message": f"A brand with similar name already exists.",
-                    "possible_duplicates": [self._brand_dict(b) for b in existing_similar],
-                    "created": False,
-                }
 
         # Code uniqueness
         code = (data.get("code") or "").strip().upper() or None
@@ -368,7 +365,11 @@ class BrandService:
                     and_(b.code is not None, Brand.code == b.code)),
             ))
             if duplicate:
-                raise ServiceOSException("BRAND_DUPLICATE", "A live brand already uses this name or code.", status_code=409)
+                raise ServiceOSException(
+                    "BRAND_DUPLICATE",
+                    "A brand already uses this name or code. Brand names are case-insensitive.",
+                    status_code=409,
+                )
         b.updated_by_user_id = self.actor_id
 
         await self.db.flush()
@@ -378,6 +379,15 @@ class BrandService:
 
     async def activate_brand(self, brand_id: uuid.UUID) -> dict:
         b = await self._load_brand(brand_id)
+        duplicate = await self.db.scalar(select(func.count(Brand.id)).where(
+            Brand.id != brand_id,
+            Brand.deleted_at.is_(None),
+            Brand.normalized_name == b.normalized_name,
+        ))
+        if duplicate:
+            raise ServiceOSException(
+                "BRAND_DUPLICATE", "Merge this duplicate into the existing brand before activation.", status_code=409,
+            )
         b.status = "active"
         b.is_active = True
         b.updated_by_user_id = self.actor_id
@@ -419,6 +429,15 @@ class BrandService:
         b = await self._load_brand_any(brand_id)
         if b.deleted_at is None:
             raise ServiceOSException("BRAND_NOT_RETIRED", "Only retired brands can be restored.", status_code=409)
+        duplicate = await self.db.scalar(select(func.count(Brand.id)).where(
+            Brand.id != brand_id,
+            Brand.deleted_at.is_(None),
+            Brand.normalized_name == b.normalized_name,
+        ))
+        if duplicate:
+            raise ServiceOSException(
+                "BRAND_DUPLICATE", "Merge this retired duplicate into the existing brand instead of restoring it.", status_code=409,
+            )
         b.deleted_at = None; b.status = "inactive"; b.is_active = False; b.updated_by_user_id = self.actor_id
         await self.db.flush()
         await self._audit("brand.restored", "brand", brand_id, new_value={"reason": reason})

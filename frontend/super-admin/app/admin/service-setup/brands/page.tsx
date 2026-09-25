@@ -3,7 +3,7 @@ import React, { useState, useCallback } from "react";
 import { Tag, Plus, Search, CheckCircle, XCircle, Archive, GitMerge, ChevronRight } from "lucide-react";
 import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Modal, Input, Select, DataTable, SectionHeader, Pagination } from "../../../../components/shared/ui";
-import { catalogApi, type Brand34D, type BrandDuplicateWarning } from "../../../../lib/api";
+import { catalogApi, type Brand34D } from "../../../../lib/api";
 import { useApi, useAction } from "../../../../hooks/useApi";
 
 const STATUS_OPTIONS = [
@@ -28,7 +28,6 @@ export default function AdminBrandsPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
-  const [duplicateWarning, setDuplicateWarning] = useState<BrandDuplicateWarning | null>(null);
   const [createForm, setCreateForm] = useState<{
     name: string; code: string; display_name: string; description: string;
     country_of_origin: string; website_url: string; is_global: boolean;
@@ -39,14 +38,9 @@ export default function AdminBrandsPage() {
     [filterStatus, search, page],
   );
 
-  const createAction = useAction(async (force: boolean = false) => {
-    const result = await catalogApi.createBrand({ ...createForm, force });
-    if ("warning" in result && result.warning === "BRAND_DUPLICATE_POSSIBLE") {
-      setDuplicateWarning(result as BrandDuplicateWarning);
-      return;
-    }
+  const createAction = useAction(async () => {
+    await catalogApi.createBrand(createForm);
     setShowCreate(false);
-    setDuplicateWarning(null);
     setCreateForm({ name: "", code: "", display_name: "", description: "", country_of_origin: "", website_url: "", is_global: true });
     refetch();
   });
@@ -171,25 +165,7 @@ export default function AdminBrandsPage() {
         <Pagination page={page} pageSize={50} total={total} onPage={setPage} itemLabel="brands" />
 
         {/* Create Brand Modal */}
-        <Modal open={showCreate} onClose={() => { setShowCreate(false); setDuplicateWarning(null); }} title="New Brand">
-          {duplicateWarning && (
-            <div style={{ background: "var(--warning-bg, #fff8e1)", border: "1px solid var(--warning, var(--warning))", borderRadius: 6, padding: 12, marginBottom: 16 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6, color: "var(--warning, #b45309)" }}>
-                Possible duplicate detected
-              </div>
-              <div style={{ fontSize: 13, marginBottom: 8 }}>{duplicateWarning.message}</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                {duplicateWarning.possible_duplicates.map(d => (
-                  <Badge key={d.brand_id} variant="warning">{d.name}</Badge>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Btn size="sm" variant="secondary" onClick={() => setDuplicateWarning(null)}>Cancel</Btn>
-                <Btn size="sm" onClick={() => createAction.execute(true)}>Create Anyway (force)</Btn>
-              </div>
-            </div>
-          )}
-          {!duplicateWarning && (
+        <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New Brand">
             <>
               <Input label="Brand Name *" value={createForm.name}
                 onChange={v => setCreateForm(f => ({ ...f, name: v }))} />
@@ -218,12 +194,11 @@ export default function AdminBrandsPage() {
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <Btn variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Btn>
                 <Btn disabled={!createForm.name || createAction.loading}
-                  onClick={() => createAction.execute(false)}>
+                  onClick={() => createAction.execute()}>
                   {createAction.loading ? "Creating…" : "Create Brand"}
                 </Btn>
               </div>
             </>
-          )}
         </Modal>
       </div>
     </AdminLayout>

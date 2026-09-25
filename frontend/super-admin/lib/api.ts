@@ -1432,8 +1432,8 @@ export const catalogApi = {
       `/v1/admin/brands?${qs.toString()}`);
   },
   getBrand: (brandId: string, includeRetired = false) => apiFetch<Brand34D>(`/v1/admin/brands/${brandId}?include_retired=${includeRetired}`),
-  createBrand: (data: Partial<Brand34D> & { name: string; force?: boolean }) =>
-    apiFetch<Brand34D | BrandDuplicateWarning>("/v1/admin/brands", { method:"POST", body:JSON.stringify(data) }),
+  createBrand: (data: Partial<Brand34D> & { name: string }) =>
+    apiFetch<Brand34D>("/v1/admin/brands", { method:"POST", body:JSON.stringify(data) }),
   updateBrand: (brandId: string, data: Partial<Brand34D>) =>
     apiFetch<Brand34D>(`/v1/admin/brands/${brandId}`, { method:"PUT", body:JSON.stringify(data) }),
   activateBrand: (brandId: string) =>

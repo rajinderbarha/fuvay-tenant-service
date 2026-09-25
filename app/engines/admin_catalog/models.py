@@ -520,6 +520,10 @@ class Brand(ServiceOSBase):
         Index("ix_b_active",                "is_active"),
         Index("ix_brands_status",           "status"),
         Index("ix_brands_norm_name",        "normalized_name"),
+        Index(
+            "uq_brands_live_normalized_name", "normalized_name", unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL AND normalized_name IS NOT NULL"),
+        ),
         Index("ix_brands_is_global",        "is_global"),
     )
 

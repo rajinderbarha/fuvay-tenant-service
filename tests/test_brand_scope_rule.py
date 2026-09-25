@@ -47,7 +47,8 @@ def test_scope_1_brand_unique_in_brands_table():
     src = _read(BRAND_SVC)
     # normalize_brand_name used for duplicate detection before INSERT
     assert "normalize_brand_name" in src
-    assert "BRAND_DUPLICATE_POSSIBLE" in src
+    assert "BRAND_DUPLICATE" in src
+    assert "Brand names are case-insensitive" in src
 
 
 def test_scope_2_map_brand_to_category():

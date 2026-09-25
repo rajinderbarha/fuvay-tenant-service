@@ -244,24 +244,25 @@ def test_offerings_page_uses_offering_category_id():
 # functionality.
 def test_catalog_types_brands_tab_imports_brand_duplicate_warning():
     src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "service-setup", "brands", "page.tsx"))
-    assert "BrandDuplicateWarning" in src
+    assert "BrandDuplicateWarning" not in src
 
 
 def test_catalog_types_brands_tab_handles_warning_response():
-    src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "service-setup", "brands", "page.tsx"))
-    assert "BRAND_DUPLICATE_POSSIBLE" in src
+    src = _read(os.path.join(ROOT, "frontend", "super-admin", "lib", "api.ts"))
+    create_contract = src[src.index("createBrand:"):src.index("updateBrand:")]
+    assert "force" not in create_contract
 
 
 def test_catalog_types_brands_tab_has_duplicate_warning_ui():
-    src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "service-setup", "brands", "page.tsx"))
-    assert "duplicateWarning" in src
-    assert "possible_duplicates" in src
+    src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "types-brands", "page.tsx"))
+    assert "createAction.error" in src
 
 
 def test_catalog_types_brands_tab_has_force_create():
     src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "brands", "page.tsx"))
-    assert "force" in src
-    assert "force=true" in src or "force: true" in src or "handleCreateBrand(true)" in src
+    setup_src = _read(os.path.join(ROOT, "frontend", "super-admin", "app", "admin", "service-setup", "brands", "page.tsx"))
+    assert "Create Anyway" not in src
+    assert "Create Anyway" not in setup_src
 
 
 def test_catalog_types_brands_tab_has_brand_master_link():

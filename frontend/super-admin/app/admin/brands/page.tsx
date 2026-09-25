@@ -6,7 +6,7 @@ import {
 } from "../../../components/shared/ui";
 import { IconPicker } from "../../../components/shared/IconPicker";
 import { ActionMenu } from "../../../components/shared/layout";
-import { catalogApi, type Brand34D, type BrandDuplicateWarning } from "../../../lib/api";
+import { catalogApi, type Brand34D } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { RefreshCw, Download, Merge } from "lucide-react";
 
@@ -18,17 +18,13 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "muted" | "danger">
 type FormState = {
   name: string; code: string; display_name: string; description: string;
   website_url: string; country_of_origin: string; logo_url: string;
-  is_global: boolean; display_order: number; force: boolean;
+  is_global: boolean; display_order: number;
 };
 const BLANK: FormState = {
   name: "", code: "", display_name: "", description: "",
   website_url: "", country_of_origin: "", logo_url: "",
-  is_global: true, display_order: 0, force: false,
+  is_global: true, display_order: 0,
 };
-
-function isDupWarning(r: unknown): r is BrandDuplicateWarning {
-  return (r as BrandDuplicateWarning)?.warning === "BRAND_DUPLICATE_POSSIBLE";
-}
 
 function BrandActions({ brand, onEdit, onActivate, onDeactivate, onArchive, onMerge }: {
   brand: Brand34D;
@@ -60,7 +56,6 @@ export default function BrandsPage() {
   const [mergeSource, setMergeSource] = useState<Brand34D | null>(null);
   const [mergeTarget, setMergeTarget] = useState("");
   const [mergeNote, setMergeNote]     = useState("");
-  const [dupWarning, setDupWarning]   = useState<BrandDuplicateWarning | null>(null);
   const [form, setForm]       = useState<FormState>({ ...BLANK });
   const [toast, setToast]     = useState<{ msg: string; ok: boolean } | null>(null);
 
@@ -75,17 +70,12 @@ export default function BrandsPage() {
   ));
 
   const createAction = useAction(async (data: FormState) => {
-    const result = await catalogApi.createBrand({
+    await catalogApi.createBrand({
       name: data.name, code: data.code || undefined, display_name: data.display_name || undefined,
       description: data.description || undefined, website_url: data.website_url || undefined,
       country_of_origin: data.country_of_origin || undefined, logo_url: data.logo_url || undefined,
-      is_global: data.is_global, display_order: data.display_order, force: data.force,
+      is_global: data.is_global, display_order: data.display_order,
     });
-    if (isDupWarning(result)) {
-      setDupWarning(result);
-      return;
-    }
-    setDupWarning(null);
     brands.refetch(); setModal("none"); notify("Brand created.");
   });
 
@@ -112,11 +102,11 @@ export default function BrandsPage() {
     brands.refetch(); setModal("none"); setMergeSource(null); setMergeTarget(""); setMergeNote(""); notify("Brands merged.");
   });
 
-  function openCreate() { setForm({ ...BLANK }); setEditing(null); setDupWarning(null); setModal("create"); }
+  function openCreate() { setForm({ ...BLANK }); setEditing(null); setModal("create"); }
   function openEdit(b: Brand34D) {
     setForm({ name: b.name, code: b.code ?? "", display_name: b.display_name, description: b.description ?? "",
       website_url: b.website_url ?? "", country_of_origin: b.country_of_origin ?? "",
-      logo_url: b.logo_url ?? "", is_global: b.is_global, display_order: b.display_order, force: false });
+      logo_url: b.logo_url ?? "", is_global: b.is_global, display_order: b.display_order });
     setEditing(b); setModal("edit");
   }
   function openMerge(b: Brand34D) { setMergeSource(b); setMergeTarget(""); setMergeNote(""); setModal("merge"); }
@@ -260,19 +250,6 @@ export default function BrandsPage() {
               <p style={{ fontSize: 13, color: "var(--danger-text)", margin: 0 }}>{activeAction.error}</p>
             </div>
           )}
-          {dupWarning && (
-            <div style={{ padding: "12px 14px", borderRadius:"var(--radius-md)", background: "var(--warning-bg, #fffbeb)", border: "1px solid var(--warning-border, #f6e05e)" }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--warning-text, #744210)", margin: "0 0 6px" }}>Possible Duplicate Detected</p>
-              <p style={{ fontSize: 12, color: "var(--warning-text, #744210)", margin: "0 0 10px" }}>{dupWarning.message}</p>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Btn variant="secondary" size="xs" onClick={() => setDupWarning(null)}>Cancel</Btn>
-                <Btn variant="primary" size="xs" onClick={() => { setF("force", true); createAction.execute({ ...form, force: true }); }}>
-                  Create Anyway
-                </Btn>
-              </div>
-            </div>
-          )}
-
           <Input label="Brand Name *" placeholder="e.g. Samsung" value={form.name}
             onChange={v => setF("name", v)} disabled={!!editing} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>

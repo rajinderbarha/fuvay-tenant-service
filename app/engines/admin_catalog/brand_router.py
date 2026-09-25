@@ -65,7 +65,7 @@ async def list_brands(
 
 @router.post("", response_model=ApiResponse[dict], status_code=status.HTTP_201_CREATED,
              summary="Create brand",
-             description="Create a new platform brand. Returns BRAND_DUPLICATE_POSSIBLE warning if similar name exists; pass force=true to override.")
+             description="Create a platform brand. Names are unique after case/punctuation normalization; use merge for aliases.")
 async def create_brand(
     r: Request,
     u: UserContext = Depends(require_super_admin),

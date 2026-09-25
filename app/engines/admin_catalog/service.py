@@ -2011,17 +2011,30 @@ class AdminCatalogService:
         return {"brands": [self._brand_dict(b) for b in brands]}
 
     async def create_brand(self, data: dict) -> dict:
+        from app.engines.admin_catalog.brand_service import normalize_brand_name
+
         name = (data.get("name") or "").strip()
         if not name:
             raise ServiceOSException("BRAND_NAME_REQUIRED", "Brand name is required.", status_code=422)
+        normalized_name = normalize_brand_name(name)
+        duplicate = await self.db.scalar(select(Brand).where(
+            Brand.normalized_name == normalized_name,
+            Brand.deleted_at.is_(None),
+        ))
+        if duplicate:
+            raise ServiceOSException(
+                "BRAND_DUPLICATE",
+                f"Brand '{duplicate.name}' already exists. Brand names are case-insensitive.",
+                status_code=409,
+            )
         slug = _slugify(name)
         existing = await self.db.execute(
             select(Brand).where(Brand.slug == slug, Brand.deleted_at.is_(None)))
         if existing.scalar_one_or_none():
-            slug = f"{slug}-{str(uuid.uuid4())[:8]}"
+            raise ServiceOSException("BRAND_DUPLICATE", "A brand with this name already exists.", status_code=409)
         cat_id = uuid.UUID(str(data["category_id"])) if data.get("category_id") else None
         brand = Brand(
-            category_id=cat_id, name=name, slug=slug,
+            category_id=cat_id, name=name, slug=slug, normalized_name=normalized_name,
             logo_url=cloudinary_catalog_url(data.get("logo_url"), "logo_url"),
             image_url=cloudinary_catalog_url(data.get("image_url"), "image_url"),
             description=data.get("description"),
