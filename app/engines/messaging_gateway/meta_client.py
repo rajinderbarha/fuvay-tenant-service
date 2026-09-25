@@ -722,7 +722,7 @@ async def send_options(
         # the same list picker that would have been sent with Flows disabled.
 
     if channel == CHANNEL_INSTAGRAM and presentation == "status_card" and card:
-        from app.engines.messaging_gateway.problem_cards import instagram_card_image_url
+        from app.engines.messaging_gateway.problem_cards import resolve_card_image_url
 
         # A single generic-template element gives tracking a visual identity
         # and keeps the actions attached to the booking they operate on.
@@ -739,9 +739,13 @@ async def send_options(
                 for row in rows[:MAX_WA_BUTTONS]
             ],
         }
-        element["image_url"] = instagram_card_image_url(
+        artwork = await resolve_card_image_url(
             card.get("image_url"), fallback_name=str(card.get("title") or ""),
         )
+        # None means nothing in the ladder was fetchable. Omit the field rather
+        # than send a URL Meta will render as an empty grey panel.
+        if artwork:
+            element["image_url"] = artwork
         return await _post(url, token, {
             "recipient": {"id": to},
             "message": {"attachment": {"type": "template", "payload": {
@@ -752,11 +756,19 @@ async def send_options(
         })
 
     if channel == CHANNEL_INSTAGRAM and presentation == "carousel":
-        from app.engines.messaging_gateway.problem_cards import instagram_card_image_url
+        from app.engines.messaging_gateway.problem_cards import resolve_card_image_urls
 
+        shown = rows[:MAX_IG_GENERIC_ELEMENTS]
+        titles = [_clip(str(row.get("title") or "Choose"), IG_GENERIC_TITLE_CHARS)
+                  for row in shown]
+        # One batch, so a carousel costs a single round of checks rather than
+        # one per card - and repeat cards are answered from the cache.
+        artwork = await resolve_card_image_urls([
+            (str(row.get("image_url") or "").strip(), title)
+            for row, title in zip(shown, titles)
+        ])
         elements = []
-        for row in rows[:MAX_IG_GENERIC_ELEMENTS]:
-            title = _clip(str(row.get("title") or "Choose"), IG_GENERIC_TITLE_CHARS)
+        for row, title, picture in zip(shown, titles, artwork):
             subtitle = _clip(
                 str(row.get("description") or "Tap below to choose this service."),
                 IG_GENERIC_SUBTITLE_CHARS,
@@ -771,10 +783,11 @@ async def send_options(
                     "payload": row["id"],
                 }],
             }
+            if picture:
+                # None means nothing in the ladder was fetchable; a card with no
+                # picture still reads, a card with a broken one does not.
+                element["image_url"] = picture
             image_url = str(row.get("image_url") or "").strip()
-            element["image_url"] = instagram_card_image_url(
-                image_url, fallback_name=title,
-            )
             if image_url and not image_url.startswith("https://"):
                 # Meta fetches card artwork from its own servers and accepts
                 # only public https. A local-disk upload served over plain http

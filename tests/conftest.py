@@ -45,3 +45,58 @@ def mock_redis(monkeypatch):
     mock_r.exists = AsyncMock(return_value=0)
     
     monkeypatch.setattr("app.redis_client._redis", mock_r)
+
+
+@pytest.fixture(autouse=True)
+def offline_card_artwork(monkeypatch):
+    """Instagram card artwork is verified by fetching it the way Meta would.
+
+    The suite must not reach the network, so the check is off by default and a
+    test that wants it asks for the `verify_card_artwork` fixture.
+    """
+    from app.config import get_settings
+    from app.engines.messaging_gateway import problem_cards
+
+    problem_cards.reset_artwork_cache()
+    monkeypatch.setattr(get_settings(), "INSTAGRAM_CARD_VERIFY_TIMEOUT_SECONDS", 0.0)
+
+
+@pytest.fixture
+def verify_card_artwork(monkeypatch):
+    """Turn card verification back on, with its HTTP client under the test's
+    control. Returns a dict of `url -> (status, content-type)` to answer with;
+    anything not listed answers 404, and `.fetched` records every URL asked
+    for, so a test can prove a verdict came from the cache."""
+    from app.config import get_settings
+    from app.engines.messaging_gateway import problem_cards
+
+    class Answers(dict):
+        fetched: list
+
+    answers = Answers()
+    answers.fetched = fetched = []
+
+    class Response:
+        def __init__(self, status_code, content_type):
+            self.status_code = status_code
+            self.headers = {"content-type": content_type} if content_type else {}
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url, **kwargs):
+            fetched.append(url)
+            status, content_type = answers.get(url, (404, "text/html"))
+            return Response(status, content_type)
+
+    problem_cards.reset_artwork_cache()
+    monkeypatch.setattr(get_settings(), "INSTAGRAM_CARD_VERIFY_TIMEOUT_SECONDS", 3.5)
+    monkeypatch.setattr(problem_cards, "_artwork_client", lambda timeout: Client())
+    return answers

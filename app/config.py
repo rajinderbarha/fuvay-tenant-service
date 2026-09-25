@@ -148,6 +148,11 @@ class Settings(BaseSettings):
     INSTAGRAM_CARD_PUBLIC_BASE_URL: str = (
         "https://res.cloudinary.com/dr1b4ezct/image/upload/serviceos/social-problem-cards"
     )
+    # Meta renders a card blank, with no error, when it cannot fetch the
+    # artwork, so every card URL is fetched once (verdict cached for hours)
+    # before it is sent and swapped for a working one if it fails. This is the
+    # per-URL budget for that check; 0 disables it and sends URLs unchecked.
+    INSTAGRAM_CARD_VERIFY_TIMEOUT_SECONDS: float = 3.5
     FILE_STORAGE_SIGNED_URL_EXPIRES_SECONDS: int = 900
     MAX_UPLOAD_SIZE_MB: int = 50
 
