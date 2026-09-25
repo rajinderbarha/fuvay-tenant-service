@@ -87,6 +87,10 @@ async def sweep(db, *, limit: int = 50) -> dict:
             ServiceJobExecutionEvent.created_at >= clock_started,
         ).limit(1))
         deadline = for_job(job, policy, now)
+        from app.engines.weather.slots import slot_has_ended
+        expired_slot = slot_has_ended(
+            job.scheduled_date, job.scheduled_time_window, now=now,
+        )
         first_escalation = event is None
         if first_escalation:
             event = ServiceJobExecutionEvent(
@@ -95,7 +99,10 @@ async def sweep(db, *, limit: int = 50) -> dict:
                 old_status=job.status, new_status=job.status,
                 notes=f"No technician was assigned within {deadline.minutes} minutes.",
                 event_metadata={
-                    "outcome": "awaiting_manual_assignment",
+                    "outcome": (
+                        "slot_recovery_required"
+                        if expired_slot else "awaiting_manual_assignment"
+                    ),
                     "assignment_deadline_at": deadline.deadline.isoformat() if deadline.deadline else None,
                     "urgent_window": deadline.urgent, "provider_retained": True,
                 },
@@ -104,6 +111,44 @@ async def sweep(db, *, limit: int = 50) -> dict:
             db.add(event)
             await db.flush()
             escalated += 1
+
+        if expired_slot:
+            event.event_metadata = {
+                **(event.event_metadata or {}),
+                "outcome": "slot_recovery_required",
+                "expired_scheduled_date": (
+                    job.scheduled_date.isoformat() if job.scheduled_date else None
+                ),
+                "expired_time_window": job.scheduled_time_window,
+                "required_action": "customer_approved_reschedule",
+            }
+            if first_escalation:
+                try:
+                    from sqlalchemy import text
+                    from app.engines.platform_notifications.models import InAppNotification
+                    owner = (await db.execute(text(
+                        "SELECT id FROM users WHERE tenant_id=:tenant_id "
+                        "AND role='tenant_owner' AND is_active=true LIMIT 1"
+                    ), {"tenant_id": str(job.tenant_id)})).scalar()
+                    if owner:
+                        db.add(InAppNotification(
+                            user_id=owner, tenant_id=job.tenant_id,
+                            notification_type="visit_slot_recovery_required",
+                            title="Visit slot expired",
+                            body=(f"Job {job.job_number} needs a new slot approved "
+                                  "by the customer before technician assignment."),
+                            action_url=f"/home-services/dispatch?job_id={job.id}",
+                            action_label="Choose recovery slot",
+                            source_record_type="service_jobs",
+                            source_record_id=job.id, severity="critical",
+                        ))
+                except Exception:
+                    pass
+                from app.engines.tenant_engine.health import refresh_provider_operational_health
+                await refresh_provider_operational_health(db, job.tenant_id)
+            # Do not auto-assign a field worker to an appointment that can no
+            # longer be met. SLA penalties continue independently.
+            continue
 
         if getattr(policy, "assignment_auto_assign_enabled", True):
             last_error = None

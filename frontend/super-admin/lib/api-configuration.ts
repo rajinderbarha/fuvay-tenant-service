@@ -200,6 +200,11 @@ export interface MonetizationPolicy {
   urgent_assignment_threshold_minutes?: number;
   assignment_auto_assign_enabled?: boolean;
   customer_reschedule_limit?: number;
+  customer_cancellation_enabled?: boolean;
+  customer_cancellation_cutoff_minutes?: number;
+  customer_cancellation_reasons?: Array<{
+    code: string; label: string; active: boolean; requires_detail: boolean;
+  }>;
   provider_reschedule_approval_hours?: number;
   provider_departure_warning_minutes?: number;
   provider_cancellation_confirmation_minutes?: number;

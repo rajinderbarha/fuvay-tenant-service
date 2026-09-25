@@ -82,6 +82,7 @@ ERR_SLOT_UNAVAILABLE             = "JOB_ASSIGNMENT_SLOT_UNAVAILABLE"
 ERR_INVALID_REASON               = "JOB_ASSIGNMENT_INVALID_REASON"
 ERR_PAST_DATE                    = "JOB_ASSIGNMENT_PAST_DATE"
 ERR_CUSTOMER_APPROVAL_REQUIRED   = "JOB_RESCHEDULE_CUSTOMER_APPROVAL_REQUIRED"
+ERR_VISIT_SLOT_EXPIRED           = "JOB_ASSIGNMENT_VISIT_SLOT_EXPIRED"
 
 # MODULE-L5-29: a customer may cancel/reschedule its own booking only before
 # real work has begun — once a quote is approved or an invoice is issued the
@@ -101,17 +102,19 @@ CUSTOMER_RESCHEDULABLE_JOB_STATUSES = {
     *CUSTOMER_CANCELLABLE_JOB_STATUSES, "reached_site", "customer_not_available",
 }
 
-# CANCEL-RESCHEDULE-FOUNDATION policy decisions (resolved 2026-08-02):
-#  - No cancellation fee, no cancellation cutoff window (kept as-is: allowed
-#    any time while job status is in CUSTOMER_CANCELLABLE_JOB_STATUSES).
+# CANCEL-RESCHEDULE-FOUNDATION policy decisions (updated 2026-09-25):
+#  - No cancellation fee. The cutoff and customer-visible reasons come from
+#    the published Home Services monetization policy.
+#  - Stage locks remain safety invariants: admin can tune the time window but
+#    cannot reopen self-service cancellation after travel or work begins.
 #  - Reschedule is capped at MAX_RESCHEDULE_COUNT per job (new).
 #  - Reschedule stays immediate (no provider-approval workflow invented),
 #    but is now re-validated against real technician/aggregate availability
 #    before being applied.
 MAX_RESCHEDULE_COUNT = 3
 
-# Allow-listed customer cancellation reasons — the eligibility endpoint
-# returns this list so the mobile app never has to hardcode/guess it.
+# Legacy constants retained for older imports. New channel UIs receive active
+# reasons from the published admin policy through the eligibility endpoint.
 CUSTOMER_CANCELLATION_REASONS = {
     "changed_mind", "found_another_provider", "price_concern",
     "schedule_conflict", "no_longer_needed",

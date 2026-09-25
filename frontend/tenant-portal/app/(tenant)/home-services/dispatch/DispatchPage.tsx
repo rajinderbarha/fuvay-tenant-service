@@ -1698,7 +1698,12 @@ function AssignmentPanel({
                   : " It is also available when the customer opens Track my booking."}
               </Alert>
             )}
-            {options.job_context.assignment_overdue && (
+            {options.job_context.slot_expired && (
+              <Alert tone="danger">
+                This booked visit window has ended. Choose a new open slot and send it for customer approval. Technician assignment unlocks only after approval; any SLA penalty already charged remains recorded.
+              </Alert>
+            )}
+            {options.job_context.assignment_overdue && !options.job_context.slot_expired && (
               <Alert tone="warning">
                 Technician assignment is overdue. Assign now; the provider and customer price remain unchanged.
               </Alert>
@@ -1763,10 +1768,15 @@ function AssignmentPanel({
                 size="sm"
                 variant="secondary"
                 onClick={onSchedule}
-                disabled={!options.current_assignment || Boolean(options.job_context.pending_reschedule)}
+                disabled={
+                  Boolean(options.job_context.pending_reschedule)
+                  || (!options.current_assignment && !options.job_context.slot_expired)
+                }
               >
                 <Clock3 size={12} />{" "}
-                {options.job_context.scheduled_date ? "Reschedule" : "Schedule"}
+                {options.job_context.slot_expired
+                  ? "Choose recovery slot"
+                  : options.job_context.scheduled_date ? "Reschedule" : "Schedule"}
               </Button>
             </div>
             {options.current_assignment && (

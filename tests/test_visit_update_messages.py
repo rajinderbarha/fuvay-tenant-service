@@ -85,6 +85,8 @@ def test_a_far_off_visit_names_its_date():
 
 @pytest.mark.asyncio
 async def test_the_assigned_message_names_the_technician_and_the_visit(monkeypatch):
+    from app.engines.weather import slots
+    monkeypatch.setattr(slots, "slot_has_ended", lambda *_args, **_kwargs: False)
     job = _job()
     db, send = _wire(monkeypatch, _booking(job))
 
@@ -133,6 +135,8 @@ async def test_an_undated_job_never_promises_a_time(monkeypatch):
 @pytest.mark.asyncio
 async def test_the_technician_is_announced_once_not_again_on_acceptance(monkeypatch):
     """Assignment and acceptance are seconds apart and say the same thing."""
+    from app.engines.weather import slots
+    monkeypatch.setattr(slots, "slot_has_ended", lambda *_args, **_kwargs: False)
     job = _job()
     db, send = _wire(monkeypatch, _booking(job))
 
@@ -146,6 +150,16 @@ async def test_the_technician_is_announced_once_not_again_on_acceptance(monkeypa
     db, send = _wire(monkeypatch, _booking(job), announced=uuid.uuid4())
     assert await booking_updates.send_technician_assigned(db, job) is False
     send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_expired_visit_is_never_announced_as_a_new_assignment(monkeypatch):
+    job = _job(scheduled_date=TODAY - timedelta(days=1))
+    db, send = _wire(monkeypatch, _booking(job))
+
+    assert await booking_updates.send_technician_assigned(db, job) is False
+    send.assert_not_awaited()
+    db.add.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from app.engines.home_service_assignment.constants import (
     ERR_JOB_NOT_FOUND, ERR_STAFF_JOB_NOT_ASSIGNED, ERR_STAFF_JOB_ALREADY_ACCEPTED,
     ERR_STAFF_JOB_ALREADY_REJECTED, ERR_REASON_REQUIRED, ERR_JOB_CANCELLED,
     ERR_ACCESS_DENIED, ERR_LOCATION_NOT_TRACKABLE, ERR_LOCATION_INVALID_COORDS,
+    ERR_VISIT_SLOT_EXPIRED,
 )
 
 
@@ -65,6 +66,7 @@ _MESSAGES = {
     ERR_ACCESS_DENIED:               "Job not found.",
     ERR_LOCATION_NOT_TRACKABLE:      "This job is not in a live-tracking state right now.",
     ERR_LOCATION_INVALID_COORDS:     "Invalid coordinates.",
+    ERR_VISIT_SLOT_EXPIRED:          "This visit window has ended. The provider must arrange a customer-approved new slot before you can accept it.",
 }
 
 
@@ -84,6 +86,7 @@ _ERR_STATUS = {
     "JOB_ASSIGNMENT_JOB_CANCELLED":        409,
     "JOB_ASSIGNMENT_JOB_COMPLETED":        409,
     "JOB_ASSIGNMENT_STALE_VERSION":        409,
+    "JOB_ASSIGNMENT_VISIT_SLOT_EXPIRED":   409,
 }
 
 

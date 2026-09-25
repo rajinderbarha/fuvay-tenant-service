@@ -2145,10 +2145,16 @@ async def _cancel_step(thread, identity, rest: str, channel: str) -> Turn:
     options = await identity.cancel_options(thread, booking_number)
     if not options.get("can_cancel"):
         return await _booked_menu_for(identity, thread, booking_number,
-                                      CANCEL_NOT_ALLOWED)
+                                      options.get("block_message") or CANCEL_NOT_ALLOWED)
+    labels = {
+        str(rule.get("code")): str(rule.get("label"))
+        for rule in options.get("reason_options", [])
+        if isinstance(rule, dict) and rule.get("code") and rule.get("label")
+    }
     rows = [
         {"id": PICKER_SEP.join((PICK_CANCEL, booking_number, code)),
-         "title": CANCEL_REASON_LABELS.get(code, code.replace("_", " ").title())}
+         "title": labels.get(code, CANCEL_REASON_LABELS.get(
+             code, code.replace("_", " ").title()))}
         for code in options["reasons"]
     ]
     picker = pickers._paginate(rows, ASK_CANCEL_REASON.format(number=booking_number),
@@ -2225,6 +2231,17 @@ async def _tracked_booking_turn(identity, thread, booking_number: str,
         status_text = view.get("text") or NO_BOOKINGS
     else:
         status_text = await identity.booking_status(thread, booking_number)
+    try:
+        cancellation = await identity.cancel_options(thread, booking_number)
+    except Exception as exc:  # eligibility advisory must not break tracking
+        logger.warning("messaging_gateway.flow.cancel_advisory_failed",
+                       booking_number=booking_number, error=str(exc))
+        cancellation = {}
+    if not cancellation.get("can_cancel") and cancellation.get("block_message"):
+        status_text = (
+            f"{status_text}\n\nCancellation unavailable: "
+            f"{cancellation['block_message']}"
+        )
     turn = await _booked_menu_for(identity, thread, booking_number, status_text)
     if channel == CHANNEL_INSTAGRAM and view and turn.picker:
         rows = [dict(row) for row in turn.picker.get("rows") or []]

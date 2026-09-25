@@ -33,7 +33,7 @@ from app.engines.home_service_assignment.assignment_deadlines import (
 from app.engines.platform_notifications.constants import (
     EVT_JOB_DELAYED, SEV_SUCCESS, SEV_WARNING,
 )
-from app.engines.weather.slots import slot_start
+from app.engines.weather.slots import slot_has_ended, slot_start
 
 TONE_CELEBRATE = SEV_SUCCESS
 TONE_URGENT = SEV_WARNING
@@ -176,6 +176,9 @@ async def build_alerts(
     delayed = []
     for job in jobs:
         penalty_notice = _penalty_notice(penalty_policy, penalty_overrides, job)
+        visit_slot_expired = slot_has_ended(
+            job.scheduled_date, job.scheduled_time_window, now=moment,
+        )
         offered = job.provider_offer_started_at or job.created_at
         if offered is not None:
             if offered.tzinfo is None:
@@ -185,6 +188,7 @@ async def build_alerts(
             window_open = timeout_enabled or offered > moment - dt.timedelta(hours=NEW_JOB_WINDOW_HOURS)
             if (job.assigned_staff_id is None
                     and job.status in TECHNICIAN_ASSIGNMENT_PENDING_STATUSES
+                    and not visit_slot_expired
                     and window_open):
                 overdue = bool(timeout_enabled and assignment.overdue)
                 new_jobs.append({

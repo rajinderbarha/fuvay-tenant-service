@@ -1453,7 +1453,10 @@ class MessagingGatewayService:
             "booking_id": booking.id,
             "can_cancel": bool(eligibility.get("can_cancel")),
             "block_reason": eligibility.get("cancel_block_reason"),
+            "block_message": eligibility.get("cancel_block_message"),
             "reasons": list(eligibility.get("allowed_cancellation_reasons") or []),
+            "reason_options": list(eligibility.get("cancellation_reason_options") or []),
+            "cancellation_deadline_at": eligibility.get("cancellation_deadline_at"),
             "version": eligibility.get("version"),
         }
 
@@ -1469,17 +1472,18 @@ class MessagingGatewayService:
         from app.engines.messaging_gateway.flow import CANCEL_NOT_ALLOWED, CANCELLED
 
         if not options.get("can_cancel"):
-            return CANCEL_NOT_ALLOWED
+            return options.get("block_message") or CANCEL_NOT_ALLOWED
         try:
-            from app.engines.home_service_assignment.constants import (
-                CANCELLATION_REASON_REQUIRES_DETAIL,
-            )
-            # "Another reason" needs a detail server-side. A chat tap carries
-            # no free text, so say where the reason came from rather than
-            # letting the cancellation fail on every attempt.
+            detail_required = {
+                str(rule.get("code")) for rule in options.get("reason_options", [])
+                if isinstance(rule, dict) and rule.get("requires_detail", False)
+            }
+            # A reason may require detail server-side. A picker tap carries no
+            # free text, so preserve where the selection came from rather than
+            # failing every governed chat cancellation.
             detail = (
-                "Customer chose 'Another reason' in Instagram chat."
-                if reason in CANCELLATION_REASON_REQUIRES_DETAIL else None
+                "Customer selected this cancellation reason in Instagram chat."
+                if reason in detail_required else None
             )
             await HomeServiceJobAssignmentService(self.db).customer_cancel_booking(
                 booking_id=options["booking_id"], customer_id=thread.customer_id,
@@ -1490,7 +1494,9 @@ class MessagingGatewayService:
             logger.warning("messaging_gateway.cancel_failed",
                            booking=booking_number, error=str(exc))
             from app.engines.messaging_gateway.flow import CANCEL_FAILED
-
+            if str(exc) == "JOB_ASSIGNMENT_CANCEL_NOT_ALLOWED":
+                refreshed = await self.cancel_options(thread, booking_number)
+                return refreshed.get("block_message") or CANCEL_NOT_ALLOWED
             return CANCEL_FAILED
         return CANCELLED.format(number=booking_number)
 

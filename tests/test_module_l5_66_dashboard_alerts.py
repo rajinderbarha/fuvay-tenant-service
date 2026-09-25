@@ -88,6 +88,20 @@ class TestNewJobs:
         assert overdue["tone"] == TONE_URGENT
 
     @pytest.mark.asyncio
+    async def test_expired_unassigned_visit_requires_recovery_not_assignment(self):
+        expired = job(
+            status="pending_assignment",
+            created_at=NOW - dt.timedelta(hours=2),
+            scheduled_date=NOW.astimezone(IST).date(),
+            scheduled_time_window="10:00-11:00",
+        )
+        result = await alerts_for([expired])
+
+        assert result["new_job_total"] == 0
+        assert result["delayed_total"] == 1
+        assert result["delayed_jobs"][0]["alert_kind"] == "delayed"
+
+    @pytest.mark.asyncio
     async def test_polling_keeps_an_actionable_offer_visible(self):
         arrived = job(status="pending_assignment", created_at=NOW - dt.timedelta(minutes=5))
         seen_already = await alerts_for([arrived], since=NOW - dt.timedelta(minutes=30))

@@ -251,7 +251,7 @@ function JobPreview({ jobId, detail, error, onRetry, onClose, onChanged }: { job
   const reviewUrl = detail ? completedJobReviewUrl(detail.job.status ?? detail.stage.stage, detail.job.job_number) : null;
   function actionButton() {
     if (!detail || !canDispatch || detail.offer_expired || !nextAction || !providerOwnsAction) return null;
-    if (nextAction.action_key === "assign_technician") return <Button variant="primary" size="sm" leftIcon={<Truck size={14} />} onClick={() => router.push(dispatchUrl)}>Assign in dispatch</Button>;
+    if (nextAction.action_key === "assign_technician") return <Button variant="primary" size="sm" leftIcon={<Truck size={14} />} onClick={() => router.push(dispatchUrl)}>{detail.slot_expired ? "Recover slot in dispatch" : "Assign in dispatch"}</Button>;
     if (["create_estimate", "send_estimate"].includes(nextAction.action_key)) return <Button variant="primary" size="sm" rightIcon={<ExternalLink size={13} />} onClick={() => router.push(`/service-jobs/${resolvedId}/quotes`)}>Open estimate</Button>;
     if (nextAction.action_key === "confirm_payment") return detail.invoice ? <Button variant="primary" size="sm" onClick={() => setConfirmOpen(true)}>Confirm direct payment</Button> : <Alert tone="warning">The technician must submit the completion amount before payment can be confirmed.</Alert>;
     return <Button variant="primary" size="sm" rightIcon={<ChevronRight size={13} />} onClick={() => router.push(dispatchUrl)}>Open job workspace</Button>;
@@ -268,7 +268,9 @@ function JobPreview({ jobId, detail, error, onRetry, onClose, onChanged }: { job
       <div style={{ fontSize: 11, lineHeight: 1.55, color: "var(--text-tertiary)" }}>{detail.direct_payment_notice}</div>
       {canDispatch && <Button variant="secondary" size="sm" rightIcon={<ChevronRight size={13} />} onClick={() => router.push(dispatchUrl)} style={{ width: "100%" }}>Manage in dispatch</Button>}
       {reviewUrl && <Button variant="secondary" size="sm" rightIcon={<ChevronRight size={13} />} onClick={() => router.push(reviewUrl)} style={{ width: "100%" }}>Check customer rating</Button>}
-      {canDispatch && detail.assignment_overdue && <Alert tone="warning">Technician assignment is overdue. Assign now; the job and customer price remain with your business.</Alert>}
+      {canDispatch && detail.slot_expired
+        ? <Alert tone="danger">The booked visit window has ended. Open dispatch to choose a new slot and request customer approval before assigning a technician.</Alert>
+        : canDispatch && detail.assignment_overdue && <Alert tone="warning">Technician assignment is overdue. Assign now; the job and customer price remain with your business.</Alert>}
       {canDispatch && <Button variant="destructive" size="sm" leftIcon={<AlertTriangle size={13} />} onClick={() => setCancelOpen(true)} style={{ width: "100%" }}>Cancel job</Button>}
       {confirmOpen && <ConfirmPaymentModal jobId={jobId} invoiceAmount={detail.invoice?.customer_payable_amount} onClose={() => setConfirmOpen(false)} onSaved={() => { setConfirmOpen(false); onChanged(); }} />}
       {cancelOpen && <CancelJobModal jobId={jobId} onClose={() => setCancelOpen(false)} onSaved={() => { setCancelOpen(false); onChanged(); }} />}

@@ -648,6 +648,9 @@ export interface BJDetail {
   available_actions: BJAction[];
   offer_expired?: boolean;
   assignment_overdue?: boolean;
+  slot_expired?: boolean;
+  recovery_required?: boolean;
+  assignment_block_reason?: string | null;
   assignment_deadline_at?: string | null;
   invoice: (Record<string, unknown> & { customer_payable_amount?: number | string; total_amount?: number | string; payment_status?: string }) | null;
   quote: (Record<string, unknown> & { customer_payable_amount?: number | string; total_amount?: number | string; status?: string }) | null;
@@ -728,6 +731,9 @@ export interface HsDispatchJobSummary {
   is_overdue?: boolean;
   offer_expired?: boolean;
   assignment_overdue?: boolean;
+  slot_expired?: boolean;
+  recovery_required?: boolean;
+  assignment_block_reason?: string | null;
   assignment_deadline_at?: string | null;
   pending_reschedule?: {
     request_id: string;

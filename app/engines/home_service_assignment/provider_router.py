@@ -22,6 +22,7 @@ from app.engines.home_service_assignment.constants import (
     ERR_INVALID_STATUS, ERR_REASON_REQUIRED, ERR_JOB_CANCELLED, ERR_JOB_COMPLETED,
     ERR_ASSIGNMENT_NOT_FOUND, ERR_SLOT_UNAVAILABLE,
     ERR_CUSTOMER_APPROVAL_REQUIRED, ERR_PROVIDER_OFFER_EXPIRED,
+    ERR_VISIT_SLOT_EXPIRED,
 )
 
 router = APIRouter(
@@ -50,6 +51,7 @@ _MESSAGES = {
     ERR_SLOT_UNAVAILABLE:      "That slot is no longer available. Choose another open slot.",
     ERR_CUSTOMER_APPROVAL_REQUIRED: "The customer must approve any change to an existing visit slot.",
     ERR_PROVIDER_OFFER_EXPIRED: "The assignment window has expired. This job is no longer available for assignment.",
+    ERR_VISIT_SLOT_EXPIRED: "The booked visit window has ended. Request a new slot and wait for customer approval before assigning a technician.",
 }
 
 
@@ -72,6 +74,7 @@ _ERR_STATUS = {
     ERR_SLOT_UNAVAILABLE:     409,
     ERR_CUSTOMER_APPROVAL_REQUIRED: 409,
     ERR_PROVIDER_OFFER_EXPIRED: 409,
+    ERR_VISIT_SLOT_EXPIRED: 409,
 }
 
 

@@ -30,8 +30,8 @@ from app.engines.home_service_assignment.constants import (
     ERR_BOOKING_NOT_FOUND, ERR_RESCHEDULE_NOT_ALLOWED,
     ERR_RESCHEDULE_LIMIT_REACHED, ERR_STALE_VERSION, ERR_SLOT_UNAVAILABLE,
     ERR_INVALID_REASON, ERR_PAST_DATE,
+    ERR_CUSTOMER_APPROVAL_REQUIRED, ERR_VISIT_SLOT_EXPIRED,
     CUSTOMER_CANCELLABLE_JOB_STATUSES,
-    CUSTOMER_CANCELLATION_REASONS, CANCELLATION_REASON_REQUIRES_DETAIL,
     TRACKING_ACTIVE_JOB_STATUSES, LOCATION_STALE_SECONDS,
     ERR_LOCATION_NOT_TRACKABLE, ERR_LOCATION_INVALID_COORDS,
 )
@@ -47,6 +47,14 @@ _utcnow = lambda: datetime.now(timezone.utc)
 
 # Statuses that block new assignments
 _TERMINAL_JOB_STATUSES = {JOB_STATUS_CANCELLED, "failed", "completed"}
+
+
+class CustomerCancellationBlocked(ValueError):
+    """A safe customer-facing explanation for a rejected cancellation."""
+
+    def __init__(self, public_message: str) -> None:
+        super().__init__(ERR_CANCEL_NOT_ALLOWED)
+        self.public_message = public_message
 
 
 def _normalise_designation(value: str | None) -> str:
@@ -133,6 +141,8 @@ class HomeServiceJobAssignmentService:
     async def staff_assignment_conflict_reason(
         self, job, staff_member_id: uuid.UUID,
         *, exclude_job_id: uuid.UUID | None = None,
+        scheduled_date_override: date | None = None,
+        scheduled_window_override: str | None = None,
     ) -> str | None:
         """Return the real scheduling conflict for a proposed assignment.
 
@@ -152,8 +162,16 @@ class HomeServiceJobAssignmentService:
         from app.engines.vertical_catalog.seat_enforcement import OCCUPYING_JOB_STATUSES
         from app.engines.weather.slots import slot_end, slot_start
 
-        scheduled_date = getattr(job, "scheduled_date", None)
-        scheduled_window = getattr(job, "scheduled_time_window", None)
+        scheduled_date = (
+            scheduled_date_override
+            if scheduled_date_override is not None
+            else getattr(job, "scheduled_date", None)
+        )
+        scheduled_window = (
+            scheduled_window_override
+            if scheduled_window_override is not None
+            else getattr(job, "scheduled_time_window", None)
+        )
         target_start = slot_start(scheduled_date, scheduled_window) if scheduled_date else None
         target_end = slot_end(scheduled_date, scheduled_window) if scheduled_date else None
         if not target_start or not target_end:
@@ -617,17 +635,37 @@ class HomeServiceJobAssignmentService:
             raise ValueError(ERR_ACCESS_DENIED)
         self._validate_job_assignable(job)
 
+        effective_date = scheduled_date if scheduled_date is not None else job.scheduled_date
+        effective_window = (
+            scheduled_time_window
+            if scheduled_time_window is not None
+            else job.scheduled_time_window
+        )
+        # Assignment is not a scheduling back door. Once a customer has a
+        # committed visit, only the durable provider-reschedule approval flow
+        # may change it.
+        if (
+            (job.scheduled_date is not None or job.scheduled_time_window)
+            and (
+                effective_date != job.scheduled_date
+                or effective_window != job.scheduled_time_window
+            )
+        ):
+            raise ValueError(ERR_CUSTOMER_APPROVAL_REQUIRED)
+        from app.engines.weather.slots import slot_end, slot_has_ended, slot_start
+        if slot_has_ended(effective_date, effective_window):
+            raise ValueError(ERR_VISIT_SLOT_EXPIRED)
+
         # The legacy WIP gate counts every open job across every future date.
         # It remains the safe fallback for an unscheduled job, but must not
         # reject a real booked visit merely because the same technician has a
         # different non-overlapping visit. Timed work is protected by the
         # per-technician interval check below.
         old_assignment = await self._current_assignment(job_id)
-        from app.engines.weather.slots import slot_end, slot_start
         has_timed_slot = bool(
-            getattr(job, "scheduled_date", None)
-            and slot_start(job.scheduled_date, job.scheduled_time_window)
-            and slot_end(job.scheduled_date, job.scheduled_time_window)
+            effective_date
+            and slot_start(effective_date, effective_window)
+            and slot_end(effective_date, effective_window)
         )
         if (
             old_assignment is None
@@ -641,6 +679,8 @@ class HomeServiceJobAssignmentService:
         # free of every earlier/later booking on the calendar.
         if await self.staff_assignment_conflict_reason(
             job, staff_member_id, exclude_job_id=job_id,
+            scheduled_date_override=effective_date,
+            scheduled_window_override=effective_window,
         ):
             from app.engines.home_service_assignment.constants import ERR_STAFF_SCHEDULE_CONFLICT
             raise ValueError(ERR_STAFF_SCHEDULE_CONFLICT)
@@ -668,8 +708,6 @@ class HomeServiceJobAssignmentService:
             await self.db.flush()
 
         # Create new assignment
-        effective_date = scheduled_date or job.scheduled_date
-        effective_window = scheduled_time_window or job.scheduled_time_window
         assignment = ServiceJobAssignment(
             job_id=job_id, booking_id=job.booking_id, tenant_id=tenant_id,
             assigned_staff_member_id=staff_member_id,
@@ -864,7 +902,9 @@ class HomeServiceJobAssignmentService:
     # A customer whose plans changed had no path except contacting support to
     # get an admin to force-void the job.
 
-    async def _load_booking_and_job(self, booking_id: uuid.UUID, customer_id: uuid.UUID):
+    async def _load_booking_and_job(
+        self, booking_id: uuid.UUID, customer_id: uuid.UUID, *, for_update: bool = False,
+    ):
         from app.engines.final_records.models import ServiceBooking, ServiceJob
         booking = (await self.db.execute(
             select(ServiceBooking).where(ServiceBooking.id == booking_id)
@@ -873,9 +913,10 @@ class HomeServiceJobAssignmentService:
             raise ValueError(ERR_BOOKING_NOT_FOUND)
         if str(booking.customer_id) != str(customer_id):
             raise ValueError(ERR_ACCESS_DENIED)
-        job = (await self.db.execute(
-            select(ServiceJob).where(ServiceJob.booking_id == booking_id)
-        )).scalars().first()
+        job_query = select(ServiceJob).where(ServiceJob.booking_id == booking_id)
+        if for_update:
+            job_query = job_query.with_for_update()
+        job = (await self.db.execute(job_query)).scalars().first()
         return booking, job
 
     @staticmethod
@@ -889,6 +930,62 @@ class HomeServiceJobAssignmentService:
     def _check_version(self, job, expected_version: str | None) -> None:
         if expected_version and expected_version != self._version_of(job):
             raise ValueError(ERR_STALE_VERSION)
+
+    @staticmethod
+    def _customer_cancellation_decision(job, workflow, policy) -> dict:
+        """Return the one cancellation decision used by every customer channel."""
+        from app.engines.weather.slots import slot_start
+
+        start = slot_start(job.scheduled_date, job.scheduled_time_window)
+        cutoff_minutes = max(0, int(policy.customer_cancellation_cutoff_minutes))
+        deadline = start - timedelta(minutes=cutoff_minutes) if start else None
+        code = None
+        message = None
+        if not policy.customer_cancellation_enabled:
+            code = "customer_cancellation_disabled"
+            message = (
+                "Online cancellation is currently unavailable. Please contact the "
+                "service provider from this booking for help."
+            )
+        elif workflow is not None and not workflow.allows_cancellation:
+            code = "service_policy_disallows_cancellation"
+            message = "This service cannot be cancelled after it has been confirmed."
+        elif job.status not in CUSTOMER_CANCELLABLE_JOB_STATUSES:
+            code = "booking_not_in_cancellable_state"
+            if job.status == JOB_STATUS_CANCELLED:
+                message = "This booking is already cancelled."
+            elif job.status == "completed":
+                message = "This job is already complete, so it cannot be cancelled."
+            elif job.status in {"on_the_way", "reached_site", "inspection_started"}:
+                message = (
+                    "Cancellation is closed because the technician has already started "
+                    "the visit. Please contact the service provider if you need help."
+                )
+            else:
+                message = (
+                    "Cancellation is closed because work or payment processing has already "
+                    "started. Please use service support if there is a problem."
+                )
+        elif deadline is not None and _utcnow() >= deadline:
+            code = "customer_cancellation_cutoff_passed"
+            deadline_text = deadline.strftime("%d %b %Y, %I:%M %p IST")
+            message = (
+                f"Cancellation closed at {deadline_text}, {cutoff_minutes} minutes before "
+                "the visit. Please contact the service provider if you need help."
+            )
+
+        rules = [
+            dict(rule) for rule in (policy.customer_cancellation_reasons or [])
+            if isinstance(rule, dict) and rule.get("active", True)
+        ]
+        return {
+            "can_cancel": code is None,
+            "cancel_block_reason": code,
+            "cancel_block_message": message,
+            "cancellation_deadline_at": deadline.isoformat() if deadline else None,
+            "cancellation_cutoff_minutes": cutoff_minutes,
+            "cancellation_reason_options": rules,
+        }
 
     async def get_customer_eligibility(
         self, booking_id: uuid.UUID, customer_id: uuid.UUID,
@@ -905,22 +1002,14 @@ class HomeServiceJobAssignmentService:
         # read endpoint so the app can explain why an action is unavailable.
         from app.engines.execution.home_service_service import HomeServiceJobExecutionService
         workflow = await HomeServiceJobExecutionService()._resolve_job_type_workflow(self.db, job)
-        workflow_allows_cancel = workflow is None or workflow.allows_cancellation
         workflow_allows_reschedule = workflow is None or workflow.allows_reschedule
-
-        state_eligible = job.status in CUSTOMER_CANCELLABLE_JOB_STATUSES
-        eligible = state_eligible and workflow_allows_cancel
-        if not workflow_allows_cancel:
-            cancel_block_reason = "service_policy_disallows_cancellation"
-        else:
-            cancel_block_reason = None if state_eligible else "booking_not_in_cancellable_state"
 
         from app.engines.vertical_monetization.runtime_operations import (
             get_home_services_operations_policy,
         )
-        max_reschedule_count = (
-            await get_home_services_operations_policy(self.db)
-        ).customer_reschedule_limit
+        policy = await get_home_services_operations_policy(self.db)
+        cancellation = self._customer_cancellation_decision(job, workflow, policy)
+        max_reschedule_count = policy.customer_reschedule_limit
         remaining_reschedules = max(0, max_reschedule_count - (job.reschedule_count or 0))
         from app.engines.home_service_assignment.constants import CUSTOMER_RESCHEDULABLE_JOB_STATUSES
         reschedule_state_eligible = job.status in CUSTOMER_RESCHEDULABLE_JOB_STATUSES
@@ -938,17 +1027,21 @@ class HomeServiceJobAssignmentService:
             "booking_id": str(booking_id), "job_id": str(job.id),
             "status": job.status,
             "version": self._version_of(job),
-            "can_cancel": eligible,
-            "cancel_block_reason": cancel_block_reason,
-            "allowed_cancellation_reasons": sorted(CUSTOMER_CANCELLATION_REASONS),
-            "cancellation_reasons_requiring_detail": sorted(CANCELLATION_REASON_REQUIRES_DETAIL),
+            **cancellation,
+            "allowed_cancellation_reasons": [
+                rule["code"] for rule in cancellation["cancellation_reason_options"]
+            ],
+            "cancellation_reasons_requiring_detail": [
+                rule["code"] for rule in cancellation["cancellation_reason_options"]
+                if rule.get("requires_detail", False)
+            ],
             "can_reschedule": can_reschedule,
             "reschedule_block_reason": reschedule_block_reason,
             "remaining_reschedule_allowance": remaining_reschedules,
             "max_reschedule_allowance": max_reschedule_count,
             "requires_provider_approval": False,
             "cancellation_fee": None,
-            "cancellation_cutoff": None,
+            "cancellation_cutoff": cancellation["cancellation_deadline_at"],
         }
 
     async def get_reschedule_available_dates(
@@ -991,27 +1084,23 @@ class HomeServiceJobAssignmentService:
         reason: str, detail: str | None = None,
         expected_version: str | None = None, request_id: str | None = None,
     ) -> dict:
-        # `reason` stays free text for backward compatibility with the
-        # existing live contract (tests/test_module_l5_29_*.py already POST
-        # arbitrary strings like "changed my mind"). CUSTOMER_CANCELLATION_REASONS
-        # is exposed via get_customer_eligibility() as a suggested allow-list
-        # for the mobile app's UI, not enforced server-side — no policy
-        # decision was made to reject free-text reasons outright, and
-        # breaking the live contract without that decision would be a
-        # regression, not a fix. If a canonical code is recognized and it
-        # requires detail (e.g. "other"), detail must be non-empty.
+        # Only active reasons from the published admin policy are accepted.
+        # Configured labels remain accepted for older clients, while events
+        # are normalized to the policy's stable reason code.
         if not reason or not reason.strip():
             raise ValueError(ERR_REASON_REQUIRED)
-        if reason in CANCELLATION_REASON_REQUIRES_DETAIL and not (detail or "").strip():
-            raise ValueError(ERR_REASON_REQUIRED)
-        booking, job = await self._load_booking_and_job(booking_id, customer_id)
+        booking, job = await self._load_booking_and_job(
+            booking_id, customer_id, for_update=True,
+        )
         if not job:
             raise ValueError(ERR_JOB_NOT_FOUND)
 
         from app.engines.execution.home_service_service import HomeServiceJobExecutionService
         workflow = await HomeServiceJobExecutionService()._resolve_job_type_workflow(self.db, job)
         if workflow is not None and not workflow.allows_cancellation:
-            raise ValueError(ERR_CANCEL_NOT_ALLOWED)
+            raise CustomerCancellationBlocked(
+                "This service cannot be cancelled after it has been confirmed."
+            )
 
         # Idempotent retry: ONLY a replay of the same request (matched by
         # request_id against the event that performed the original cancel)
@@ -1033,13 +1122,38 @@ class HomeServiceJobAssignmentService:
                             "version": self._version_of(job)}
             raise ValueError(ERR_CANCEL_NOT_ALLOWED)
 
-        if job.status not in CUSTOMER_CANCELLABLE_JOB_STATUSES:
+        from app.engines.vertical_monetization.runtime_operations import (
+            get_home_services_operations_policy,
+        )
+        policy = await get_home_services_operations_policy(self.db)
+        cancellation = self._customer_cancellation_decision(job, workflow, policy)
+        if not cancellation["can_cancel"]:
             # Work has progressed far enough (quote approved / invoiced /
             # completed / already terminal) that a bare cancel is unsafe —
             # the customer must raise a complaint instead so a human resolves
             # any money already owed.
-            raise ValueError(ERR_CANCEL_NOT_ALLOWED)
+            raise CustomerCancellationBlocked(
+                cancellation["cancel_block_message"]
+                or "This booking can no longer be cancelled."
+            )
         self._check_version(job, expected_version)
+
+        reason_rules = {
+            str(rule.get("code")): rule
+            for rule in cancellation["cancellation_reason_options"]
+        }
+        rule = reason_rules.get(reason)
+        if rule is None:
+            normalised_reason = reason.strip().casefold()
+            rule = next((
+                candidate for candidate in reason_rules.values()
+                if str(candidate.get("label") or "").strip().casefold() == normalised_reason
+            ), None)
+        if rule is None:
+            raise ValueError(ERR_INVALID_REASON)
+        reason = str(rule["code"])
+        if rule.get("requires_detail", False) and not (detail or "").strip():
+            raise ValueError(ERR_REASON_REQUIRED)
 
         old_job_status = job.status
         job.status = JOB_STATUS_CANCELLED
@@ -1063,7 +1177,14 @@ class HomeServiceJobAssignmentService:
             job_id=job.id, booking_id=booking.id, tenant_id=job.tenant_id,
             event_type=EVENT_CUSTOMER_CANCELLED,
             actor_user_id=customer_id, actor_role="customer",
-            old_value={"status": old_job_status}, new_value={"status": JOB_STATUS_CANCELLED},
+            old_value={"status": old_job_status},
+            new_value={
+                "status": JOB_STATUS_CANCELLED,
+                "cancellation_reason_code": reason,
+                "cancellation_reason_detail": (detail or "").strip() or None,
+                "cancellation_cutoff_minutes": cancellation["cancellation_cutoff_minutes"],
+                "cancellation_deadline_at": cancellation["cancellation_deadline_at"],
+            },
             reason=reason, request_id=request_id,
         )
         if reason == "provider_asked_to_cancel_or_pay_direct":
@@ -1431,6 +1552,9 @@ class HomeServiceJobAssignmentService:
             raise ValueError(ERR_STAFF_JOB_ALREADY_ACCEPTED)
         if assignment.assignment_status == ASSIGN_STATUS_REJECTED:
             raise ValueError(ERR_STAFF_JOB_ALREADY_REJECTED)
+        from app.engines.weather.slots import slot_has_ended
+        if slot_has_ended(job.scheduled_date, job.scheduled_time_window):
+            raise ValueError(ERR_VISIT_SLOT_EXPIRED)
 
         accepted_at = _utcnow()
         assignment.assignment_status = ASSIGN_STATUS_ACCEPTED
@@ -1541,7 +1665,7 @@ class HomeServiceJobAssignmentService:
             raise ValueError(ERR_ACCESS_DENIED)
         if job.status not in {
             JOB_STATUS_ASSIGNED, JOB_STATUS_ACCEPTED, JOB_STATUS_SCHEDULED,
-            "customer_not_available",
+            JOB_STATUS_PENDING_ASSIGNMENT, "customer_not_available",
         }:
             raise ValueError(ERR_INVALID_STATUS)
 

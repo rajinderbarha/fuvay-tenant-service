@@ -431,7 +431,8 @@ def _cancel_reschedule_error(exc: ValueError):
         "JOB_ASSIGNMENT_STALE_VERSION": 409,
         "JOB_ASSIGNMENT_SLOT_UNAVAILABLE": 409,
     }
-    raise ServiceOSException(code, code.replace("_", " ").title(),
+    public_message = getattr(exc, "public_message", None)
+    raise ServiceOSException(code, public_message or code.replace("_", " ").title(),
                              status_code=status_map.get(code, 422))
 
 

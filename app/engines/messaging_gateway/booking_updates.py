@@ -195,6 +195,19 @@ async def send_technician_assigned(db, job) -> bool:
     technician is announced, the same one is not announced twice. A send that
     never reached the customer records nothing, so the next state still can.
     """
+    # Never announce an impossible visit. Assignment mutation blocks this too,
+    # but the notifier is deliberately defensive because legacy/admin callers
+    # may invoke it directly.
+    from app.engines.weather.slots import slot_has_ended
+    if slot_has_ended(
+        getattr(job, "scheduled_date", None),
+        getattr(job, "scheduled_time_window", None),
+    ):
+        logger.warning(
+            "booking_updates.expired_assignment_suppressed",
+            job_id=str(getattr(job, "id", "-")),
+        )
+        return False
     booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
     if booking is None:
         return False

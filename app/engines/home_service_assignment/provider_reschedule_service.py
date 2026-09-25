@@ -76,12 +76,21 @@ async def create_request(
             "JOB_ASSIGNMENT_PAST_DATE", "The requested date cannot be in the past.",
             status_code=422,
         )
+    from app.engines.weather.slots import slot_has_ended
+    if slot_has_ended(requested_date, requested_time_window):
+        raise ServiceOSException(
+            "JOB_ASSIGNMENT_VISIT_SLOT_EXPIRED",
+            "Choose a visit window that has not ended.", status_code=422,
+        )
     job = (await db.execute(select(ServiceJob).where(
         ServiceJob.id == job_id,
     ).with_for_update())).scalars().first()
     if not job or str(job.tenant_id) != str(tenant_id):
         raise ServiceOSException("JOB_ASSIGNMENT_JOB_NOT_FOUND", "Job not found.", status_code=404)
-    if job.status not in {"assigned", "accepted", "scheduled", "customer_not_available"}:
+    if job.status not in {
+        "pending_assignment", "assigned", "accepted", "scheduled",
+        "customer_not_available",
+    }:
         raise ServiceOSException(
             "JOB_ASSIGNMENT_INVALID_STATUS",
             "This job cannot be rescheduled in its current stage.", status_code=409,
@@ -354,6 +363,8 @@ async def decide_request(
         reason=row.reason,
     ))
     await _notify_provider_decision(db, job, row, approved=True)
+    if assignment:
+        await _notify_assigned_technician_rescheduled(db, job, assignment, row)
     await db.flush()
     return _result(row)
 
@@ -385,6 +396,39 @@ async def _notify_provider_decision(db, job, row, *, approved: bool) -> None:
                 action_url=f"/home-services/dispatch?job_id={job.id}",
                 action_label="Open dispatch", source_record_type="booking_reschedule_requests",
                 source_record_id=row.id, severity="info" if approved else "warning",
+            ))
+    except Exception:
+        pass
+
+
+async def _notify_assigned_technician_rescheduled(db, job, assignment, row) -> None:
+    """Tell the field user when an approved customer decision moves a visit."""
+    try:
+        from app.engines.auth.models import User
+        from app.engines.home_service_assignment.staff_model import ProviderTeamMember
+        from app.engines.platform_notifications.models import InAppNotification
+
+        staff_id = assignment.assigned_staff_member_id
+        recipient = (await db.execute(select(ProviderTeamMember.user_id).where(
+            ProviderTeamMember.id == staff_id,
+            ProviderTeamMember.tenant_id == job.tenant_id,
+            ProviderTeamMember.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        if recipient is None:
+            recipient = (await db.execute(select(User.id).where(
+                User.id == staff_id,
+                User.tenant_id == job.tenant_id,
+            ))).scalar_one_or_none()
+        if recipient:
+            db.add(InAppNotification(
+                user_id=recipient, tenant_id=job.tenant_id,
+                notification_type="assigned_visit_rescheduled",
+                title="Visit time updated",
+                body=(f"Customer approved {row.requested_date} "
+                      f"({row.requested_slot}) for job {job.job_number}."),
+                action_url=f"/staff/jobs/{job.id}", action_label="Open job",
+                source_record_type="booking_reschedule_requests",
+                source_record_id=row.id, severity="warning",
             ))
     except Exception:
         pass

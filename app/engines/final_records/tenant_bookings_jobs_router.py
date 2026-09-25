@@ -301,6 +301,10 @@ async def list_bookings_jobs(
             and job.status in TECHNICIAN_ASSIGNMENT_PENDING_STATUSES
             and assignment_deadline.overdue
         )
+        from app.engines.weather.slots import slot_has_ended
+        slot_expired = slot_has_ended(
+            job.scheduled_date, job.scheduled_time_window, now=now,
+        )
         offer_expired = _offer_expired(
             job, enabled=operations_policy.assignment_timeout_enabled,
             minutes=operations_policy.assignment_timeout_minutes, now=now,
@@ -355,6 +359,7 @@ async def list_bookings_jobs(
             "available_actions": available_actions,
             "offer_expired":    offer_expired,
             "assignment_overdue": assignment_overdue,
+            "slot_expired":       slot_expired,
             "assignment_deadline_at": (
                 assignment_deadline.deadline.isoformat()
                 if assignment_deadline.deadline else None
@@ -448,6 +453,11 @@ async def get_bookings_jobs_detail(
         operations_policy.assignment_timeout_enabled and not has_assignee
         and job.status in TECHNICIAN_ASSIGNMENT_PENDING_STATUSES
         and assignment_deadline.overdue
+    )
+    from app.engines.weather.slots import slot_has_ended
+    slot_expired = slot_has_ended(
+        job.scheduled_date, job.scheduled_time_window,
+        now=datetime.now(timezone.utc),
     )
     stage_info = map_job_status(job.status, job.assignment_status, has_assignee=has_assignee)
 
@@ -574,6 +584,7 @@ async def get_bookings_jobs_detail(
         ),
         "offer_expired": offer_expired,
         "assignment_overdue": assignment_overdue,
+        "slot_expired": slot_expired,
         "assignment_deadline_at": (
             assignment_deadline.deadline.isoformat()
             if assignment_deadline.deadline else None

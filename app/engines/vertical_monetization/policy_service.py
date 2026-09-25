@@ -44,7 +44,9 @@ _DRAFT_FIELDS = {
     "assignment_timeout_enabled", "assignment_timeout_minutes",
     "urgent_assignment_timeout_minutes", "urgent_assignment_threshold_minutes",
     "assignment_auto_assign_enabled",
-    "customer_reschedule_limit", "provider_reschedule_approval_hours",
+    "customer_reschedule_limit", "customer_cancellation_enabled",
+    "customer_cancellation_cutoff_minutes", "customer_cancellation_reasons",
+    "provider_reschedule_approval_hours",
     "provider_departure_warning_minutes",
     "provider_cancellation_confirmation_minutes",
     "provider_cancellation_min_note_length", "provider_cancellation_reasons",
@@ -328,6 +330,7 @@ class VerticalMonetizationPolicyService:
                 errors.append("sla_penalty_max_days must be an integer")
 
         for field, low, high in (
+            ("customer_cancellation_cutoff_minutes", 0, 10080),
             ("provider_cancellation_confirmation_minutes", 1, 1440),
             ("provider_cancellation_min_note_length", 0, 500),
         ):
@@ -341,6 +344,42 @@ class VerticalMonetizationPolicyService:
                         errors.append(f"{field} must be between {low} and {high}")
                 except (TypeError, ValueError, ArithmeticError):
                     errors.append(f"{field} must be a whole number")
+
+        if "customer_cancellation_enabled" in payload and not isinstance(
+            payload.get("customer_cancellation_enabled"), bool
+        ):
+            errors.append("customer_cancellation_enabled must be true or false")
+
+        if "customer_cancellation_reasons" in payload:
+            rules = payload.get("customer_cancellation_reasons")
+            if not isinstance(rules, list) or not rules:
+                errors.append("customer_cancellation_reasons must contain at least one reason")
+            else:
+                seen: set[str] = set()
+                active = 0
+                for index, rule in enumerate(rules):
+                    prefix = f"customer_cancellation_reasons[{index}]"
+                    if not isinstance(rule, dict):
+                        errors.append(f"{prefix} must be an object")
+                        continue
+                    code = str(rule.get("code") or "").strip().lower()
+                    label = str(rule.get("label") or "").strip()
+                    if not code or len(code) > 64 or any(
+                        char not in "abcdefghijklmnopqrstuvwxyz0123456789_" for char in code
+                    ):
+                        errors.append(f"{prefix}.code must use lowercase letters, numbers and underscores")
+                    elif code in seen:
+                        errors.append(f"Duplicate customer cancellation reason code: {code}")
+                    seen.add(code)
+                    if len(label) < 3 or len(label) > 100:
+                        errors.append(f"{prefix}.label must be 3 to 100 characters")
+                    for boolean_field in ("active", "requires_detail"):
+                        if boolean_field in rule and not isinstance(rule[boolean_field], bool):
+                            errors.append(f"{prefix}.{boolean_field} must be true or false")
+                    if rule.get("active", True):
+                        active += 1
+                if active == 0:
+                    errors.append("At least one customer cancellation reason must be active")
 
         if "provider_cancellation_reasons" in payload:
             rules = payload.get("provider_cancellation_reasons")

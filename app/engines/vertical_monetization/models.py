@@ -111,6 +111,25 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     urgent_assignment_threshold_minutes: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
     assignment_auto_assign_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     customer_reschedule_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    customer_cancellation_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False,
+    )
+    customer_cancellation_cutoff_minutes: Mapped[int] = mapped_column(
+        Integer, default=120, nullable=False,
+    )
+    customer_cancellation_reasons: Mapped[list] = mapped_column(
+        JSONB,
+        default=lambda: [
+            {"code": "changed_mind", "label": "Changed my mind", "active": True, "requires_detail": False},
+            {"code": "found_another_provider", "label": "Found another provider", "active": True, "requires_detail": False},
+            {"code": "price_concern", "label": "Price concern", "active": True, "requires_detail": False},
+            {"code": "schedule_conflict", "label": "Schedule conflict", "active": True, "requires_detail": False},
+            {"code": "no_longer_needed", "label": "Service no longer needed", "active": True, "requires_detail": False},
+            {"code": "provider_asked_to_cancel_or_pay_direct", "label": "Provider asked me to cancel or pay directly", "active": True, "requires_detail": True},
+            {"code": "other", "label": "Another reason", "active": True, "requires_detail": True},
+        ],
+        nullable=False,
+    )
     provider_reschedule_approval_hours: Mapped[int] = mapped_column(
         Integer, default=24, nullable=False,
     )
@@ -260,6 +279,9 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "urgent_assignment_threshold_minutes": self.urgent_assignment_threshold_minutes,
             "assignment_auto_assign_enabled": self.assignment_auto_assign_enabled,
             "customer_reschedule_limit": self.customer_reschedule_limit,
+            "customer_cancellation_enabled": self.customer_cancellation_enabled,
+            "customer_cancellation_cutoff_minutes": self.customer_cancellation_cutoff_minutes,
+            "customer_cancellation_reasons": self.customer_cancellation_reasons,
             "provider_reschedule_approval_hours": self.provider_reschedule_approval_hours,
             "provider_departure_warning_minutes": self.provider_departure_warning_minutes,
             "provider_cancellation_confirmation_minutes": self.provider_cancellation_confirmation_minutes,

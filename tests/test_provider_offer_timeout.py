@@ -142,6 +142,45 @@ async def test_timeout_auto_assigns_inside_same_provider(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_timeout_never_auto_assigns_after_visit_window_ended(monkeypatch):
+    from app.engines.tenant_engine import health
+    from app.engines.vertical_monetization import runtime_operations
+
+    local_today = datetime.now(timezone.utc).astimezone(
+        timezone(timedelta(hours=5, minutes=30))
+    ).date()
+    target = job(
+        scheduled_date=local_today - timedelta(days=1),
+        scheduled_time_window="10:00-12:00",
+    )
+    target.job_number = "JOB-EXPIRED"
+    candidate_result = MagicMock()
+    candidate_result.scalars.return_value.all.return_value = [target]
+    owner_result = MagicMock()
+    owner_result.scalar.return_value = None
+    db = _sweep_db()
+    db.execute.side_effect = [candidate_result, owner_result]
+    db.scalar.return_value = None
+    db.add = MagicMock()
+    service = AsyncMock()
+    monkeypatch.setattr(timeout, "HomeServiceJobAssignmentService", lambda _db: service)
+    monkeypatch.setattr(
+        runtime_operations, "get_home_services_operations_policy",
+        AsyncMock(return_value=policy()),
+    )
+    refresh = AsyncMock()
+    monkeypatch.setattr(health, "refresh_provider_operational_health", refresh)
+
+    result = await timeout.sweep(db)
+
+    assert result["auto_assigned"] == 0
+    assert result["escalated"] == 1
+    service.list_eligible_staff_for_job.assert_not_awaited()
+    service.assign_job.assert_not_awaited()
+    refresh.assert_awaited_once_with(db, target.tenant_id)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("legacy_status", ["assigned", "scheduled"])
 async def test_timeout_recovers_legacy_unassigned_statuses(monkeypatch, legacy_status):
     """A stale projection must not remain breached forever with no technician."""

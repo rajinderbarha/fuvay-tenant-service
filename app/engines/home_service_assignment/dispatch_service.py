@@ -447,6 +447,10 @@ class HomeServiceDispatchProjectionService:
             and job.status in TECHNICIAN_ASSIGNMENT_PENDING_STATUSES
             and assignment_deadline.overdue
         )
+        from app.engines.weather.slots import slot_has_ended
+        slot_expired = slot_has_ended(
+            job.scheduled_date, job.scheduled_time_window, now=_utcnow(),
+        )
         booking = await self._load_booking_row(job.booking_id)
         service_name = await self._master_service_name(job.offering_id) if job.offering_id else None
 
@@ -501,15 +505,6 @@ class HomeServiceDispatchProjectionService:
                 None,
             )
 
-        actions: list[str] = []
-        if job.status not in TERMINAL_STATUSES:
-            if current_assignment:
-                actions.append("unassign")
-                if eligible_out:
-                    actions.append("reassign")
-            elif eligible_out:
-                actions.append("assign")
-
         customer_health = None
         if job.customer_id:
             try:
@@ -548,6 +543,19 @@ class HomeServiceDispatchProjectionService:
                 "notification_sent": bool(pending.notification_sent_at),
             }
 
+        actions: list[str] = []
+        if job.status not in TERMINAL_STATUSES:
+            if current_assignment:
+                actions.append("unassign")
+            if slot_expired:
+                if pending_reschedule is None:
+                    actions.append("reschedule")
+            elif pending_reschedule is None:
+                if current_assignment and eligible_out:
+                    actions.append("reassign")
+                elif eligible_out:
+                    actions.append("assign")
+
         return {
             "job_context": {
                 **self._job_summary(job, booking),
@@ -555,6 +563,11 @@ class HomeServiceDispatchProjectionService:
                 "customer_health": customer_health,
                 "offer_expired": False,
                 "assignment_overdue": assignment_overdue,
+                "slot_expired": slot_expired,
+                "recovery_required": slot_expired,
+                "assignment_block_reason": (
+                    "visit_slot_expired" if slot_expired else None
+                ),
                 "assignment_deadline_at": (
                     assignment_deadline.deadline.isoformat()
                     if assignment_deadline.deadline else None

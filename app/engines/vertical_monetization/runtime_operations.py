@@ -25,6 +25,16 @@ DEFAULT_PROVIDER_CANCELLATION_REASONS = [
     {"code": "other", "label": "Other provider reason", "outcome": "provider_cancel", "responsibility": "provider", "active": True, "requires_note": True, "minimum_call_attempts": 0, "health_impact": True},
 ]
 
+DEFAULT_CUSTOMER_CANCELLATION_REASONS = [
+    {"code": "changed_mind", "label": "Changed my mind", "active": True, "requires_detail": False},
+    {"code": "found_another_provider", "label": "Found another provider", "active": True, "requires_detail": False},
+    {"code": "price_concern", "label": "Price concern", "active": True, "requires_detail": False},
+    {"code": "schedule_conflict", "label": "Schedule conflict", "active": True, "requires_detail": False},
+    {"code": "no_longer_needed", "label": "Service no longer needed", "active": True, "requires_detail": False},
+    {"code": "provider_asked_to_cancel_or_pay_direct", "label": "Provider asked me to cancel or pay directly", "active": True, "requires_detail": True},
+    {"code": "other", "label": "Another reason", "active": True, "requires_detail": True},
+]
+
 
 @dataclass(frozen=True)
 class HomeServicesOperationsPolicy:
@@ -34,6 +44,11 @@ class HomeServicesOperationsPolicy:
     urgent_assignment_threshold_minutes: int = 120
     assignment_auto_assign_enabled: bool = True
     customer_reschedule_limit: int = 3
+    customer_cancellation_enabled: bool = True
+    customer_cancellation_cutoff_minutes: int = 120
+    customer_cancellation_reasons: list[dict] = field(
+        default_factory=lambda: [dict(reason) for reason in DEFAULT_CUSTOMER_CANCELLATION_REASONS]
+    )
     provider_reschedule_approval_hours: int = 24
     provider_departure_warning_minutes: int = 15
     provider_cancellation_confirmation_minutes: int = 15
@@ -69,7 +84,9 @@ async def get_home_services_operations_policy(
         "SELECT p.assignment_timeout_enabled, p.assignment_timeout_minutes, "
         "p.urgent_assignment_timeout_minutes, p.urgent_assignment_threshold_minutes, "
         "p.assignment_auto_assign_enabled, "
-        "p.customer_reschedule_limit, p.provider_reschedule_approval_hours, "
+        "p.customer_reschedule_limit, p.customer_cancellation_enabled, "
+        "p.customer_cancellation_cutoff_minutes, p.customer_cancellation_reasons, "
+        "p.provider_reschedule_approval_hours, "
         "p.provider_departure_warning_minutes, "
         "p.provider_cancellation_confirmation_minutes, "
         "p.provider_cancellation_min_note_length, p.provider_cancellation_reasons, "
@@ -110,6 +127,20 @@ async def get_home_services_operations_policy(
             row["customer_reschedule_limit"]
             if row["customer_reschedule_limit"] is not None
             else defaults.customer_reschedule_limit
+        ),
+        customer_cancellation_enabled=(
+            bool(row["customer_cancellation_enabled"])
+            if row.get("customer_cancellation_enabled") is not None else
+            defaults.customer_cancellation_enabled
+        ),
+        customer_cancellation_cutoff_minutes=int(
+            row["customer_cancellation_cutoff_minutes"]
+            if row.get("customer_cancellation_cutoff_minutes") is not None
+            else defaults.customer_cancellation_cutoff_minutes
+        ),
+        customer_cancellation_reasons=list(
+            row.get("customer_cancellation_reasons")
+            or defaults.customer_cancellation_reasons
         ),
         arrival_verification_enabled=bool(row["arrival_verification_enabled"]),
         arrival_radius_meters=int(row["arrival_radius_meters"] or defaults.arrival_radius_meters),

@@ -18,6 +18,17 @@ _IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
 _DEFAULT_START = dt.time(9, 0)
 
 
+def _parse_wall_time(value: str) -> dt.time | None:
+    """Read provider windows in either 24-hour or customer-friendly AM/PM form."""
+    raw = " ".join(str(value or "").strip().upper().split())
+    for pattern in ("%H:%M", "%H", "%I:%M %p", "%I %p"):
+        try:
+            return dt.datetime.strptime(raw, pattern).time()
+        except ValueError:
+            continue
+    return None
+
+
 def slot_start(scheduled_date: dt.date | None, window: str | None) -> dt.datetime | None:
     """Start of the slot in IST, or None if it cannot be read.
 
@@ -29,11 +40,10 @@ def slot_start(scheduled_date: dt.date | None, window: str | None) -> dt.datetim
     start = _DEFAULT_START
     if window:
         head = str(window).split("-")[0].strip()
-        try:
-            hour, _, minute = head.partition(":")
-            start = dt.time(int(hour), int(minute or 0))
-        except (TypeError, ValueError):
+        parsed = _parse_wall_time(head)
+        if parsed is None:
             return None
+        start = parsed
     return dt.datetime.combine(scheduled_date, start, tzinfo=_IST)
 
 
@@ -56,12 +66,33 @@ def slot_end(scheduled_date: dt.date | None, window: str | None) -> dt.datetime 
         return None
     if window and "-" in str(window):
         tail = str(window).split("-", 1)[1].strip()
-        try:
-            hour, _, minute = tail.partition(":")
-            end_time = dt.time(int(hour), int(minute or 0))
-        except (TypeError, ValueError):
+        end_time = _parse_wall_time(tail)
+        if end_time is None:
             return start + _ASSUMED_DURATION
         end = dt.datetime.combine(start.date(), end_time, tzinfo=_IST)
         # A window that ends before it starts crosses midnight.
         return end + dt.timedelta(days=1) if end <= start else end
     return start + _ASSUMED_DURATION
+
+
+def slot_has_ended(
+    scheduled_date: dt.date | None,
+    window: str | None,
+    *,
+    now: dt.datetime | None = None,
+) -> bool:
+    """Whether the committed visit window is irreversibly in the past.
+
+    Assignment, auto-assignment and dispatch must answer this identically.
+    A missing or malformed slot is *not* called expired; those jobs remain
+    unscheduled and are handled by the scheduling workflow instead.
+    """
+    if scheduled_date is None or not str(window or "").strip():
+        return False
+    end = slot_end(scheduled_date, window)
+    if end is None:
+        return False
+    current = now or dt.datetime.now(dt.timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=dt.timezone.utc)
+    return current.astimezone(_IST) >= end

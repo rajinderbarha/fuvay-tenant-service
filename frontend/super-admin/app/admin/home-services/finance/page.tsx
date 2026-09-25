@@ -70,6 +70,15 @@ const DEFAULT_CANCELLATION_REASONS: NonNullable<MonetizationPolicy["provider_can
   { code: "safety_concern", label: "Safety concern at the location", outcome: "provider_cancel", responsibility: "neutral", active: true, requires_note: true, minimum_call_attempts: 0, health_impact: false },
   { code: "other", label: "Other provider reason", outcome: "provider_cancel", responsibility: "provider", active: true, requires_note: true, minimum_call_attempts: 0, health_impact: true },
 ];
+const DEFAULT_CUSTOMER_CANCELLATION_REASONS: NonNullable<MonetizationPolicy["customer_cancellation_reasons"]> = [
+  { code: "changed_mind", label: "Changed my mind", active: true, requires_detail: false },
+  { code: "found_another_provider", label: "Found another provider", active: true, requires_detail: false },
+  { code: "price_concern", label: "Price concern", active: true, requires_detail: false },
+  { code: "schedule_conflict", label: "Schedule conflict", active: true, requires_detail: false },
+  { code: "no_longer_needed", label: "Service no longer needed", active: true, requires_detail: false },
+  { code: "provider_asked_to_cancel_or_pay_direct", label: "Provider asked me to cancel or pay directly", active: true, requires_detail: true },
+  { code: "other", label: "Another reason", active: true, requires_detail: true },
+];
 
 function money(v?: string | number | null) {
   const n = Number(v ?? 0);
@@ -509,6 +518,9 @@ function MonetizationTab() {
       urgent_assignment_threshold_minutes: 120,
       assignment_auto_assign_enabled: true,
       customer_reschedule_limit: 3,
+      customer_cancellation_enabled: true,
+      customer_cancellation_cutoff_minutes: 120,
+      customer_cancellation_reasons: DEFAULT_CUSTOMER_CANCELLATION_REASONS,
       provider_reschedule_approval_hours: 24,
       provider_departure_warning_minutes: 15,
       provider_cancellation_confirmation_minutes: 15,
@@ -1285,6 +1297,57 @@ function MonetizationTab() {
               <div><label style={{ fontSize: 11 }}>Maximum customer reschedules</label><Input value={String(form.customer_reschedule_limit ?? 3)} onChange={v => setForm({ ...form, customer_reschedule_limit: v === "" ? 3 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Provider slot-change approval expiry (hours)</label><Input type="number" value={String(form.provider_reschedule_approval_hours ?? 24)} onChange={v => setForm({ ...form, provider_reschedule_approval_hours: v === "" ? 24 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Technician departure warning (minutes before slot)</label><Input type="number" value={String(form.provider_departure_warning_minutes ?? 15)} onChange={v => setForm({ ...form, provider_departure_warning_minutes: v === "" ? 15 : Number(v) })} /></div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
+                  Customer self-service cancellation
+                </label>
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
+                  Applies to the customer app and Instagram. Cancellation closes before the committed slot and always locks once the technician departs or work/payment begins.
+                </p>
+              </div>
+              <Btn size="xs" variant="secondary" icon={<Plus size={13} />} onClick={() => {
+                const reasons = form.customer_cancellation_reasons ?? DEFAULT_CUSTOMER_CANCELLATION_REASONS;
+                setForm({ ...form, customer_cancellation_reasons: [...reasons, {
+                  code: `custom_reason_${reasons.length + 1}`, label: "New cancellation reason",
+                  active: true, requires_detail: true,
+                }] });
+              }}>Add reason</Btn>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginBottom: 12 }}>
+              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" checked={form.customer_cancellation_enabled !== false}
+                  onChange={e => setForm({ ...form, customer_cancellation_enabled: e.target.checked })} />
+                Allow customer self-service cancellation
+              </label>
+              <div>
+                <label style={{ fontSize: 11 }}>Close cancellation this many minutes before slot</label>
+                <Input type="number" value={String(form.customer_cancellation_cutoff_minutes ?? 120)}
+                  onChange={v => setForm({ ...form, customer_cancellation_cutoff_minutes: v === "" ? 120 : Number(v) })} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {(form.customer_cancellation_reasons ?? DEFAULT_CUSTOMER_CANCELLATION_REASONS).map((reason, index, reasons) => {
+                const updateReason = (patch: Partial<typeof reason>) => setForm({
+                  ...form,
+                  customer_cancellation_reasons: reasons.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item),
+                });
+                return <div key={`${reason.code}-${index}`} style={{ padding: 10, border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface-sunken)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(130px,.8fr) minmax(180px,1.4fr) auto", gap: 8, alignItems: "end" }}>
+                    <div><label style={{ fontSize: 10 }}>Stable code</label><Input value={reason.code} onChange={v => updateReason({ code: v.toLowerCase().replace(/[^a-z0-9_]/g, "_") })} /></div>
+                    <div><label style={{ fontSize: 10 }}>Customer-facing label</label><Input value={reason.label} onChange={v => updateReason({ label: v })} /></div>
+                    <Btn size="xs" variant="ghost" icon={<Trash2 size={13} />} disabled={reasons.length <= 1} onClick={() => setForm({ ...form, customer_cancellation_reasons: reasons.filter((_, itemIndex) => itemIndex !== index) })}>Remove</Btn>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 9, fontSize: 11 }}>
+                    <label><input type="checkbox" checked={reason.active !== false} onChange={e => updateReason({ active: e.target.checked })} /> Active</label>
+                    <label><input type="checkbox" checked={!!reason.requires_detail} onChange={e => updateReason({ requires_detail: e.target.checked })} /> Require explanation</label>
+                  </div>
+                </div>;
+              })}
             </div>
           </div>
 
