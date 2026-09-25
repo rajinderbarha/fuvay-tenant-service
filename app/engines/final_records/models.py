@@ -177,9 +177,9 @@ class ServiceJob(ServiceOSBase):
     warranty_certificate_number: Mapped[str | None] = mapped_column(String(80), nullable=True, unique=True)
     warranty_certificate_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     warranty_certificate_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # CANCEL-RESCHEDULE-FOUNDATION (migration 224) -- count of customer-
-    # initiated reschedules against this job, capped by MAX_RESCHEDULE_COUNT
-    # in home_service_assignment.constants. Never decremented.
+    # CANCEL-RESCHEDULE-FOUNDATION (migration 224) -- count of approved
+    # reschedules against this job (customer- or provider-initiated). Never
+    # decremented; runtime policy supplies the current cap.
     reschedule_count:       Mapped[int]              = mapped_column(Integer, nullable=False, default=0)
     reminder_24h_sent_at:   Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
     reminder_1h_sent_at:    Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)

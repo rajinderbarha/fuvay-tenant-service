@@ -1539,7 +1539,10 @@ class HomeServiceJobAssignmentService:
             raise ValueError(ERR_JOB_NOT_FOUND)
         if str(job.tenant_id) != str(tenant_id):
             raise ValueError(ERR_ACCESS_DENIED)
-        if job.status not in {JOB_STATUS_ASSIGNED, JOB_STATUS_ACCEPTED}:
+        if job.status not in {
+            JOB_STATUS_ASSIGNED, JOB_STATUS_ACCEPTED, JOB_STATUS_SCHEDULED,
+            "customer_not_available",
+        }:
             raise ValueError(ERR_INVALID_STATUS)
 
         moving_slot = (
@@ -1548,11 +1551,19 @@ class HomeServiceJobAssignmentService:
         )
         if moving_slot:
             # A provider/technician cannot move a customer-promised visit on
-            # their own. The customer can apply the change from the existing
-            # customer reschedule flow, which is the approval record.
+            # their own. Create a durable proposal instead; the original slot
+            # remains authoritative until the owning customer approves it.
             if job.scheduled_date is not None or job.scheduled_time_window:
-                from app.engines.home_service_assignment.constants import ERR_CUSTOMER_APPROVAL_REQUIRED
-                raise ValueError(ERR_CUSTOMER_APPROVAL_REQUIRED)
+                from app.engines.home_service_assignment.provider_reschedule_service import (
+                    create_request,
+                )
+                return await create_request(
+                    self.db, job_id=job.id, tenant_id=tenant_id,
+                    requested_date=scheduled_date,
+                    requested_time_window=scheduled_time_window,
+                    reason=reason or "Provider requested a different visit slot.",
+                    actor_user_id=actor_user_id, request_id=request_id,
+                )
             from sqlalchemy import text as capacity_sql
             await self.db.execute(
                 capacity_sql("SELECT pg_advisory_xact_lock(hashtextextended(:capacity_key, 0))"),

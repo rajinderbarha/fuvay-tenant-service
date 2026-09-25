@@ -714,6 +714,14 @@ export interface HsDispatchJobSummary {
   offer_expired?: boolean;
   assignment_overdue?: boolean;
   assignment_deadline_at?: string | null;
+  pending_reschedule?: {
+    request_id: string;
+    requested_date: string;
+    requested_time_window: string;
+    reason?: string | null;
+    expires_at?: string | null;
+    notification_sent: boolean;
+  } | null;
   has_conflict?: boolean;
   customer_health?: { score: number; band: string; can_book: boolean } | null;
 }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +27,30 @@ _ASSIGNMENT_DISPLAY = {
     "cancelled":  "Provider is assigning a technician.",
     "reassigned": "Provider updated the technician assignment.",
 }
+
+
+class RescheduleDecisionBody(BaseModel):
+    decision: str
+
+
+@router.post("/reschedule-requests/{request_id}/decision", response_model=ApiResponse,
+             summary="Approve or reject a provider-proposed visit slot")
+async def decide_provider_reschedule(
+    request_id: uuid.UUID,
+    body: RescheduleDecisionBody,
+    r: Request = ...,
+    user: UserContext = Depends(require_customer),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.engines.home_service_assignment.provider_reschedule_service import (
+        decide_request,
+    )
+    result = await decide_request(
+        db, request_id=request_id, customer_id=uuid.UUID(user.user_id),
+        decision=body.decision, actor_user_id=uuid.UUID(user.user_id),
+    )
+    await db.commit()
+    return ok(result, _RID(r), "assignment")
 
 
 # HS7 — customer-safe fields lifted from a provider snapshot; never leaks
@@ -124,6 +149,13 @@ async def get_booking(
         data["job_status"]            = job.status
         data["scheduled_date"]        = job.scheduled_date.isoformat() if job.scheduled_date else None
         data["scheduled_time_window"] = job.scheduled_time_window
+        from app.engines.home_service_assignment.provider_reschedule_service import (
+            pending_for_customer,
+        )
+        pending = await pending_for_customer(
+            db, customer_id, booking_number=booking.booking_number,
+        )
+        data["pending_provider_reschedule"] = pending[0] if pending else None
 
         # No weather advisory here, by product decision: the weather API is called
         # only when a provider or staff member picks weather as a reschedule reason.
@@ -248,6 +280,9 @@ def _safe_event_label(event_type: str) -> str | None:
         "technician_accepted":    "Technician accepted your booking.",
         "technician_rejected":    "Provider is finding another technician.",
         "job_scheduled":          "Visit scheduled.",
+        "provider_reschedule_requested": "Provider requested a new visit slot.",
+        "provider_reschedule_approved": "You approved the new visit slot.",
+        "provider_reschedule_rejected": "You kept the original visit slot.",
     }
     return _map.get(event_type)
 

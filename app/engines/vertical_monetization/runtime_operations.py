@@ -21,6 +21,7 @@ class HomeServicesOperationsPolicy:
     urgent_assignment_threshold_minutes: int = 120
     assignment_auto_assign_enabled: bool = True
     customer_reschedule_limit: int = 3
+    provider_reschedule_approval_hours: int = 24
     arrival_verification_enabled: bool = False
     arrival_radius_meters: int = 250
     arrival_location_max_age_seconds: int = 120
@@ -49,7 +50,8 @@ async def get_home_services_operations_policy(
         "SELECT p.assignment_timeout_enabled, p.assignment_timeout_minutes, "
         "p.urgent_assignment_timeout_minutes, p.urgent_assignment_threshold_minutes, "
         "p.assignment_auto_assign_enabled, "
-        "p.customer_reschedule_limit, p.arrival_verification_enabled, "
+        "p.customer_reschedule_limit, p.provider_reschedule_approval_hours, "
+        "p.arrival_verification_enabled, "
         "p.arrival_radius_meters, p.arrival_location_max_age_seconds, "
         "p.arrival_max_accuracy_meters, "
         "p.arrival_customer_confirmation_enabled, "
@@ -95,6 +97,10 @@ async def get_home_services_operations_policy(
         ),
         arrival_max_accuracy_meters=int(
             row["arrival_max_accuracy_meters"] or defaults.arrival_max_accuracy_meters
+        ),
+        provider_reschedule_approval_hours=int(
+            row.get("provider_reschedule_approval_hours")
+            or defaults.provider_reschedule_approval_hours
         ),
         arrival_customer_confirmation_enabled=(
             bool(row["arrival_customer_confirmation_enabled"])

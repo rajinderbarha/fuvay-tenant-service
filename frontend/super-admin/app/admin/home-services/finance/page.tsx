@@ -497,6 +497,7 @@ function MonetizationTab() {
       urgent_assignment_threshold_minutes: 120,
       assignment_auto_assign_enabled: true,
       customer_reschedule_limit: 3,
+      provider_reschedule_approval_hours: 24,
       arrival_verification_enabled: false,
       arrival_radius_meters: 250,
       arrival_location_max_age_seconds: 120,
@@ -1266,6 +1267,7 @@ function MonetizationTab() {
               <div><label style={{ fontSize: 11 }}>Urgent assignment window (minutes)</label><Input value={String(form.urgent_assignment_timeout_minutes ?? 10)} onChange={v => setForm({ ...form, urgent_assignment_timeout_minutes: v === "" ? 10 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Also urgent when visit starts within (minutes)</label><Input value={String(form.urgent_assignment_threshold_minutes ?? 120)} onChange={v => setForm({ ...form, urgent_assignment_threshold_minutes: v === "" ? 120 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Maximum customer reschedules</label><Input value={String(form.customer_reschedule_limit ?? 3)} onChange={v => setForm({ ...form, customer_reschedule_limit: v === "" ? 3 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Provider slot-change approval expiry (hours)</label><Input type="number" value={String(form.provider_reschedule_approval_hours ?? 24)} onChange={v => setForm({ ...form, provider_reschedule_approval_hours: v === "" ? 24 : Number(v) })} /></div>
             </div>
           </div>
 

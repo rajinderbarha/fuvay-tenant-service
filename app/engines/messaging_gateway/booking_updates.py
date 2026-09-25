@@ -282,6 +282,37 @@ async def send_arrival_confirmed(db, job) -> bool:
     )
 
 
+async def send_reschedule_approval_request(db, job, request) -> bool:
+    """Send the provider's proposed slot to the exact booking Instagram chat."""
+    from app.engines.messaging_gateway.constants import (
+        PICKER_SEP, PICK_RESCHEDULE,
+    )
+
+    booking = await db.get(ServiceBooking, job.booking_id)
+    if booking is None:
+        return False
+    original = " · ".join(filter(None, (
+        str(request.original_date or ""), str(request.original_slot or ""),
+    )))
+    proposed = " · ".join(filter(None, (
+        str(request.requested_date or ""), str(request.requested_slot or ""),
+    )))
+    expiry = request.expires_at.astimezone(LOCAL_TZ).strftime("%d %b, %I:%M %p")
+    return await notify_booking_customer(
+        db, booking,
+        f"Your provider requested a new visit slot for {booking.booking_number}.\n\n"
+        f"Current: {original}\nRequested: {proposed}\nReason: {request.reason}\n\n"
+        f"Your current slot stays confirmed unless you approve. Request expires {expiry}.",
+        rows=[
+            {"id": PICKER_SEP.join((PICK_RESCHEDULE, str(request.id), "approve")),
+             "title": "Approve new slot"},
+            {"id": PICKER_SEP.join((PICK_RESCHEDULE, str(request.id), "reject")),
+             "title": "Keep current slot"},
+        ],
+        section_title="Visit slot approval",
+    )
+
+
 _STAGE_MESSAGES = {
     "scheduled": ("Your visit schedule has been updated.", "Visit scheduled"),
     "inspection_started": (

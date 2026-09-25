@@ -526,6 +526,28 @@ class HomeServiceDispatchProjectionService:
                 # A stale/missing trust projection must never block dispatch.
                 customer_health = None
 
+        from app.engines.booking.models import BookingRescheduleRequest
+        pending = (await self.db.execute(
+            select(BookingRescheduleRequest).where(
+                BookingRescheduleRequest.job_id == job.id,
+                BookingRescheduleRequest.request_source == "provider",
+                BookingRescheduleRequest.status == "pending",
+                BookingRescheduleRequest.expires_at > _utcnow(),
+            ).order_by(BookingRescheduleRequest.created_at.desc()).limit(1)
+        )).scalars().first()
+        pending_reschedule = None
+        if pending:
+            pending_reschedule = {
+                "request_id": str(pending.id),
+                "requested_date": pending.requested_date,
+                "requested_time_window": pending.requested_slot,
+                "reason": pending.reason,
+                "expires_at": (
+                    pending.expires_at.isoformat() if pending.expires_at else None
+                ),
+                "notification_sent": bool(pending.notification_sent_at),
+            }
+
         return {
             "job_context": {
                 **self._job_summary(job, booking),
@@ -537,6 +559,7 @@ class HomeServiceDispatchProjectionService:
                     assignment_deadline.deadline.isoformat()
                     if assignment_deadline.deadline else None
                 ),
+                "pending_reschedule": pending_reschedule,
             },
             "eligible_technicians":  eligible_out,
             "excluded_technicians":  excluded_out,

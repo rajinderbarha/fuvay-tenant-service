@@ -1703,6 +1703,71 @@ class MessagingGatewayService:
             source_actor_id=thread.channel_user_id,
         )
 
+    async def pending_provider_reschedules(
+        self, thread: MessagingThread, booking_number: str | None = None,
+    ) -> list[dict]:
+        """Provider slot proposals belonging to this exact booking identity."""
+        if not thread.customer_id:
+            return []
+        from app.engines.home_service_assignment.provider_reschedule_service import (
+            pending_for_customer,
+        )
+        return await pending_for_customer(
+            self.db, thread.customer_id, source_channel=thread.channel,
+            source_actor_id=thread.channel_user_id,
+            booking_number=booking_number,
+        )
+
+    async def decide_provider_reschedule(
+        self, thread: MessagingThread, request_id: str, decision: str,
+    ) -> str:
+        """Approve/reject through the canonical, capacity-checked mutation."""
+        if not thread.customer_id:
+            return "Please verify your booking identity before deciding this request."
+        from app.engines.booking.models import BookingRescheduleRequest
+        from app.engines.final_records.models import ServiceBooking
+        from app.engines.home_service_assignment.provider_reschedule_service import (
+            decide_request,
+        )
+        try:
+            request = await self.db.get(
+                BookingRescheduleRequest, uuid.UUID(str(request_id)),
+            )
+            booking = (
+                await self.db.get(ServiceBooking, request.booking_id)
+                if request is not None else None
+            )
+            if (request is None or booking is None
+                    or str(booking.customer_id) != str(thread.customer_id)
+                    or booking.source_channel != thread.channel
+                    or booking.source_actor_id != thread.channel_user_id):
+                return "This slot-change request is not available in this Instagram chat."
+            result = await decide_request(
+                self.db, request_id=uuid.UUID(str(request_id)),
+                customer_id=thread.customer_id, decision=decision,
+                actor_user_id=thread.customer_id,
+            )
+            if result["status"] == "approved":
+                return (
+                    f"New visit slot approved: {result['requested_date']} "
+                    f"({result['requested_time_window']})."
+                )
+            if result["status"] == "rejected":
+                return "Change declined. Your original visit slot remains confirmed."
+            if result["status"] == "slot_unavailable":
+                return (
+                    "That proposed slot is no longer available. Your original visit "
+                    "slot remains confirmed; the provider has been asked to choose another."
+                )
+            if result["status"] in {"expired", "reschedule_limit_reached"}:
+                return "This request expired. Your original visit slot remains confirmed."
+        except Exception as exc:  # stale/repeated taps are ordinary chat behavior
+            logger.info("messaging_gateway.reschedule_decision_rejected",
+                        request_id=request_id, decision=decision, error=str(exc))
+            return str(getattr(exc, "detail", None) or
+                       "This slot-change request is no longer waiting for a decision.")
+        return "Please approve the new slot or keep your current slot."
+
     async def decide_arrival(
         self, thread: MessagingThread, challenge_id: str, decision: str,
     ) -> str:

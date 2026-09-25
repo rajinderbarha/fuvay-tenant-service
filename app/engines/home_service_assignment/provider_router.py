@@ -433,6 +433,15 @@ async def schedule_job(
             actor_user_id=uuid.UUID(user.user_id), request_id=_RID(r),
         )
         await db.commit()
+        if result.get("status") == "pending_customer_approval":
+            # Deliver only after the request is durable. A Meta timeout can be
+            # retried safely without ever sending a button for a rolled-back row.
+            from app.engines.home_service_assignment.provider_reschedule_service import (
+                deliver_request,
+            )
+            sent = await deliver_request(db, uuid.UUID(result["request_id"]))
+            await db.commit()
+            result["notification_sent"] = sent
     except ValueError as exc:
         code = str(exc)
         raise _fail(code)

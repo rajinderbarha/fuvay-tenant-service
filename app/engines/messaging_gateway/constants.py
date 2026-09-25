@@ -184,6 +184,7 @@ PICK_RATING = "rt"        # rt|<booking_id>|<1-5> — see rating_request.py
 PICK_COMPLAINT = "cmp"    # cmp|<action>|... — complaint intake and resolution
 PICK_WARRANTY = "wty"     # wty|<action>|... — post-completion warranty support
 PICK_ARRIVAL = "arr"      # arr|<challenge_id>|confirm/deny — doorstep proof
+PICK_RESCHEDULE = "rsc"   # rsc|<request_id>|approve/reject — provider slot proposal
 PICKER_PREFIXES = (
     PICK_QUESTION, PICK_SLOT, PICK_MORE,
     PICK_CATEGORY, PICK_OFFERING, PICK_PROBLEM, PICK_CONFIRM, PICK_DUPLICATE,
@@ -191,6 +192,7 @@ PICKER_PREFIXES = (
     PICK_RESTART, PICK_TRACK, PICK_AREA, PICK_AREA_CITY, PICK_CANCEL,
     PICK_SKIP, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_PHONE, PICK_ADDON,
     PICK_DIMENSION, PICK_RATING, PICK_COMPLAINT, PICK_WARRANTY, PICK_ARRIVAL,
+    PICK_RESCHEDULE,
 )
 
 #: The Job-Type Blueprint dimensions the chat can ask for, mapped to the draft
@@ -209,7 +211,7 @@ DIMENSION_DRAFT_FIELD = {
 #: after an hour those genuinely are a new conversation.
 DURABLE_ACTION_PICKS = {
     PICK_TRACK, PICK_CANCEL, PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT,
-    PICK_RATING, PICK_COMPLAINT, PICK_WARRANTY, PICK_ARRIVAL,
+    PICK_RATING, PICK_COMPLAINT, PICK_WARRANTY, PICK_ARRIVAL, PICK_RESCHEDULE,
 }
 
 #: Where a finished job's "how would you rate it?" is asked. Instagram only for

@@ -236,6 +236,7 @@ function DispatchWorkspace() {
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState("");
   const [scheduleReason, setScheduleReason] = useState("");
+  const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
   useEffect(() => setSearchDraft(search), [search]);
 
   const updateParams = useCallback(
@@ -388,6 +389,7 @@ function DispatchWorkspace() {
     setScheduleOpen(true);
     setSelectedSlot("");
     setScheduleReason("");
+    setScheduleNotice(null);
     setSlotsLoading(true);
     setOptionsError(null);
     try {
@@ -426,6 +428,15 @@ function DispatchWorkspace() {
           result.error_code || "SCHEDULE_FAILED",
           result.message || "The schedule could not be saved.",
         );
+      if (result.data?.status === "pending_customer_approval") {
+        setScheduleNotice(
+          result.data.notification_sent
+            ? "Approval request sent to the customer. The existing visit slot remains unchanged until they approve."
+            : "Approval request saved. Instagram could not deliver it immediately; it will appear when the customer opens or tracks this booking.",
+        );
+      } else {
+        setScheduleNotice("Visit schedule saved.");
+      }
       setScheduleOpen(false);
       await Promise.all([board.refetch(), loadOptions(selectedJobId)]);
     } catch (error) {
@@ -458,6 +469,11 @@ function DispatchWorkspace() {
           />}
         />
         {board.error && <Alert tone="danger">{board.error}</Alert>}
+        {scheduleNotice && (
+          <Alert tone="success" title="Schedule update" onDismiss={() => setScheduleNotice(null)}>
+            {scheduleNotice}
+          </Alert>
+        )}
         {board.data?.schedule_truncated && <Alert tone="warning">This day contains more than 5,000 scheduled visits. Choose another date or narrow the work from Bookings &amp; jobs.</Alert>}
         {board.loading && !board.data
           ? <div style={{ display: "grid", gap: 18 }}><div className="tenant-dispatch-kpis">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} height={109} />)}</div><Skeleton height={190} /><Skeleton height={390} /></div>
@@ -990,7 +1006,9 @@ function DispatchWorkspace() {
                   }
                   onClick={saveSchedule}
                 >
-                  Save schedule
+                  {options?.job_context.scheduled_date
+                    ? "Send approval request"
+                    : "Save schedule"}
                 </Button>
               </div>
             </div>
@@ -1672,6 +1690,14 @@ function AssignmentPanel({
         {error && <Alert tone="danger">{error}</Alert>}
         {options && (
           <>
+            {options.job_context.pending_reschedule && (
+              <Alert tone="warning">
+                Waiting for customer approval: {formatDate(options.job_context.pending_reschedule.requested_date)} · {options.job_context.pending_reschedule.requested_time_window}.
+                {options.job_context.pending_reschedule.notification_sent
+                  ? " The approval was sent in the customer's booking chat."
+                  : " It is also available when the customer opens Track my booking."}
+              </Alert>
+            )}
             {options.job_context.assignment_overdue && (
               <Alert tone="warning">
                 Technician assignment is overdue. Assign now; the provider and customer price remain unchanged.
@@ -1737,7 +1763,7 @@ function AssignmentPanel({
                 size="sm"
                 variant="secondary"
                 onClick={onSchedule}
-                disabled={!options.current_assignment}
+                disabled={!options.current_assignment || Boolean(options.job_context.pending_reschedule)}
               >
                 <Clock3 size={12} />{" "}
                 {options.job_context.scheduled_date ? "Reschedule" : "Schedule"}

@@ -45,7 +45,7 @@ from app.engines.messaging_gateway.constants import (
     PICK_PROBLEM,
     PICK_HANDOVER, PICK_PARTS, PICK_PAYMENT, PICK_QUESTION, PICK_QUOTE,
     PICK_RATING, PICK_RESTART, PICK_SKIP, PICK_SLOT, PICK_PHONE, PICK_COMPLAINT,
-    PICK_WARRANTY, PICK_ARRIVAL,
+    PICK_WARRANTY, PICK_ARRIVAL, PICK_RESCHEDULE,
     PICK_TRACK, PICK_ADDON,
     PICKER_SEP, SLOT_EMERGENCY_FLAG,
 )
@@ -411,7 +411,7 @@ async def advance(
         if not thread.zipcode and kind not in {
             PICK_RESTART, PICK_AREA, PICK_AREA_CITY, PICK_TRACK, PICK_CANCEL,
             PICK_PARTS, PICK_QUOTE, PICK_HANDOVER, PICK_PAYMENT, PICK_RATING,
-            PICK_COMPLAINT, PICK_WARRANTY, PICK_ARRIVAL,
+            PICK_COMPLAINT, PICK_WARRANTY, PICK_ARRIVAL, PICK_RESCHEDULE,
         }:
             # Instagram quick replies and buttons on old messages remain
             # tappable. Once a new booking has cleared its area, an old
@@ -420,7 +420,7 @@ async def advance(
         if _is_finished(draft) and kind not in {
             PICK_RESTART, PICK_TRACK, PICK_CANCEL, PICK_PARTS, PICK_QUOTE,
             PICK_HANDOVER, PICK_PAYMENT, PICK_RATING, PICK_COMPLAINT,
-            PICK_WARRANTY, PICK_ARRIVAL,
+            PICK_WARRANTY, PICK_ARRIVAL, PICK_RESCHEDULE,
         }:
             # Old service cards remain tappable after confirmation. Treat a
             # category/service choice as the start of another booking, which
@@ -600,6 +600,19 @@ async def _navigate(db, executor, reply_id: str, draft, thread, channel: str,
         challenge_id, _, decision = rest.partition(PICKER_SEP)
         note = await identity.decide_arrival(thread, challenge_id, decision)
         following = await _arrival_step(identity, thread, channel)
+        if following:
+            following.text = f"{note}\n\n{following.text}"
+            return following
+        return await _booked_menu_for(identity, thread, "", note)
+
+    if kind == PICK_RESCHEDULE:
+        if identity is None:
+            return None
+        request_id, _, decision = rest.partition(PICKER_SEP)
+        note = await identity.decide_provider_reschedule(
+            thread, request_id, decision,
+        )
+        following = await _reschedule_step(identity, thread, channel)
         if following:
             following.text = f"{note}\n\n{following.text}"
             return following
@@ -1828,6 +1841,47 @@ async def _arrival_step(
     })
 
 
+async def _reschedule_step(
+    identity, thread, channel: str, booking_number: str = "",
+) -> Turn | None:
+    """Show the oldest provider slot proposal owned by this exact chat."""
+    if identity is None:
+        return None
+    try:
+        pending = await identity.pending_provider_reschedules(
+            thread, booking_number or None,
+        )
+    except Exception as exc:
+        logger.warning("messaging_gateway.flow.pending_reschedules_failed", error=str(exc))
+        return None
+    if not pending:
+        return None
+    item = pending[0]
+    current = " · ".join(filter(None, (
+        item.get("original_date"), item.get("original_time_window"),
+    )))
+    proposed = " · ".join(filter(None, (
+        item.get("requested_date"), item.get("requested_time_window"),
+    )))
+    text = (
+        f"Provider wants to change booking {item.get('booking_number')} visit slot.\n\n"
+        f"Current: {current}\nRequested: {proposed}\nReason: {item.get('reason')}\n\n"
+        "Your current slot remains confirmed unless you approve."
+    )
+    request_id = item["request_id"]
+    return Turn(text, {
+        "body": "Approve visit slot change",
+        "rows": [
+            {"id": PICKER_SEP.join((PICK_RESCHEDULE, request_id, "approve")),
+             "title": "Approve new slot"},
+            {"id": PICKER_SEP.join((PICK_RESCHEDULE, request_id, "reject")),
+             "title": "Keep current slot"},
+        ],
+        "list_button": "Choose", "section_title": "Visit slot approval",
+        "presentation": "buttons",
+    })
+
+
 async def _quote_step(
     identity, thread, channel: str, booking_number: str = "",
 ) -> Turn | None:
@@ -2086,7 +2140,9 @@ async def _track_step(thread, identity, booking_number: str, channel: str) -> Tu
     if not booking_number and len(bookings) == 1:
         booking_number = bookings[0]["number"]
 
-    action = await _arrival_step(identity, thread, channel, booking_number)
+    action = await _reschedule_step(identity, thread, channel, booking_number)
+    if action is None:
+        action = await _arrival_step(identity, thread, channel, booking_number)
     if action is None:
         action = await _parts_step(identity, thread, channel, booking_number)
     if action is None:
@@ -2160,6 +2216,9 @@ async def _next_step(db, thread, executor, draft: dict | None, channel: str,
     # a booking flow started underneath an unanswered parts request would bury
     # the one message the customer needs to act on.
     if not draft or _is_finished(draft):
+        reschedule = await _reschedule_step(identity, thread, channel)
+        if reschedule:
+            return reschedule
         arrival = await _arrival_step(identity, thread, channel)
         if arrival:
             return arrival

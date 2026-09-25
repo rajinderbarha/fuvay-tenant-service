@@ -200,6 +200,7 @@ export interface MonetizationPolicy {
   urgent_assignment_threshold_minutes?: number;
   assignment_auto_assign_enabled?: boolean;
   customer_reschedule_limit?: number;
+  provider_reschedule_approval_hours?: number;
   arrival_verification_enabled?: boolean;
   arrival_radius_meters?: number;
   arrival_location_max_age_seconds?: number;

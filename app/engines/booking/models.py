@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import (
     Boolean, DateTime, Index, Integer, Numeric,
-    String, Text, UniqueConstraint,
+    String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -128,17 +128,37 @@ class BookingNote(ServiceOSBase):
 
 
 class BookingRescheduleRequest(ServiceOSBase):
-    """One row per reschedule attempt. Tenant accepts or rejects."""
+    """One auditable request to change a committed booking slot.
+
+    Legacy rows are customer-originated and resolved by the tenant. Home
+    Services provider-originated rows carry ``job_id`` and are resolved by the
+    customer; the original visit stays untouched until approval succeeds.
+    """
     __tablename__ = "booking_reschedule_requests"
-    __table_args__ = (Index("ix_brr_booking_id", "booking_id"),)
+    __table_args__ = (
+        Index("ix_brr_booking_id", "booking_id"),
+        Index("ix_brr_job_status", "job_id", "status"),
+        Index(
+            "uq_brr_provider_pending_job", "job_id", unique=True,
+            postgresql_where=text(
+                "status = 'pending' AND request_source = 'provider'"
+            ),
+        ),
+    )
 
     booking_id:       Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
+    job_id:           Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
     tenant_id:        Mapped[uuid.UUID]      = mapped_column(UUID(as_uuid=True), nullable=False)
     requested_by:     Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    request_source:   Mapped[str]            = mapped_column(String(20), default="customer", nullable=False)
+    original_date:    Mapped[str|None]       = mapped_column(String(10), nullable=True)
     original_slot:    Mapped[str|None]       = mapped_column(String(50), nullable=True)
     requested_slot:   Mapped[str|None]       = mapped_column(String(50), nullable=True)
     requested_date:   Mapped[str|None]       = mapped_column(String(10), nullable=True)
     reason:           Mapped[str|None]       = mapped_column(String(500), nullable=True)
     status:           Mapped[str]            = mapped_column(String(20), default="pending", nullable=False)
+    expires_at:       Mapped[datetime|None]  = mapped_column(DateTime(timezone=True), nullable=True)
+    notification_sent_at: Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by:      Mapped[uuid.UUID|None] = mapped_column(UUID(as_uuid=True), nullable=True)
     resolved_at:      Mapped[datetime|None]  = mapped_column(DateTime(timezone=True), nullable=True)
     rejection_reason: Mapped[str|None]       = mapped_column(String(500), nullable=True)

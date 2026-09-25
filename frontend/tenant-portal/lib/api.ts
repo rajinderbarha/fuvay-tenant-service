@@ -3460,7 +3460,10 @@ export const serviceJobAssignmentApi = {
       { method: "POST", body: JSON.stringify({ reason }) }
     ),
   schedule: (jobId: string, payload: { scheduled_date: string; scheduled_time_window: string; reason?: string }) =>
-    apiFetch<{ success: boolean; data: Record<string, unknown>; error_code?: string; message?: string }>(
+    apiFetch<{ success: boolean; data: {
+      status?: string; request_id?: string; notification_sent?: boolean;
+      expires_at?: string; [key: string]: unknown;
+    }; error_code?: string; message?: string }>(
       `/v1/provider/service-jobs/${jobId}/schedule`,
       { method: "POST", body: JSON.stringify(payload) }
     ),
