@@ -12,4 +12,10 @@ describe("global provider job alerts", () => {
     expect(layout.indexOf("<GlobalJobAlerts />")).toBeGreaterThan(layout.indexOf("<RequireSession>"));
     expect(dashboard).not.toContain("<JobAlertPopup");
   });
+
+  it("does not cover the provider's active bookings or dispatch workspace", () => {
+    const host = readFileSync(resolve(root, "components/dashboard/GlobalJobAlerts.tsx"), "utf8");
+    expect(host).toContain('pathname.startsWith("/home-services/bookings-jobs")');
+    expect(host).toContain('pathname.startsWith("/home-services/dispatch")');
+  });
 });

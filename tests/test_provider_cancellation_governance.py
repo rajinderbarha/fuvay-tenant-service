@@ -77,6 +77,7 @@ async def test_provider_owned_reason_cancels_immediately_with_audit_metadata(mon
 
     assert outcome["status"] == "cancelled"
     assert cancel.await_args.kwargs["actor_role"] == "provider"
+    assert cancel.await_args.kwargs["notify_customer"] is False
     assert cancel.await_args.kwargs["metadata"]["reason_code"] == "no_technician"
     assert cancel.await_args.kwargs["metadata"]["health_impact"] is True
 

@@ -90,9 +90,19 @@ class SettingsService:
             pass
 
     def _unwrap(self, setting_obj) -> Any:
-        if setting_obj and setting_obj.value:
-            return setting_obj.value.get("v")
-        return None
+        """Read both current wrapped values and values from older releases.
+
+        Settings are currently stored as ``{"v": value}``, but production can
+        also contain legacy JSON scalars and arrays. Explicit ``None`` checks
+        preserve valid falsey values instead of silently converting them to
+        null.
+        """
+        if setting_obj is None:
+            return None
+        stored_value = setting_obj.value
+        if isinstance(stored_value, dict) and "v" in stored_value:
+            return stored_value["v"]
+        return stored_value
 
     # ── Core resolve method ────────────────────────────────────────────────────
     async def resolve(self, key: str, tenant_id: uuid.UUID | None = None,

@@ -2,40 +2,48 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { serviceJobAssignmentApi, type DashboardAlert } from "../lib/api";
 
-/** How often the provider portal asks. A new job should surface while the provider is still
- * looking at the screen, not on their next visit. */
-const POLL_MS = 10_000;
-const OFFER_SNOOZE_MS = 30_000;
+/** Polling keeps the queue current without making the alert surface feel unstable. */
+const POLL_MS = 30_000;
+const REMINDER_SNOOZE_MS = 15 * 60_000;
+const MAX_REMINDER_AGE_MS = 24 * 60 * 60_000;
 
-/** Delayed-job alerts are remembered for this session; unassigned offers are
- * only snoozed for 30 seconds and must reappear until action is taken. */
-const SEEN_KEY = "fuvay.dashboard.alerts.seen";
+/** Dismissals survive route changes and reloads, but expire so unresolved work
+ * can be escalated again. A different alert phase always receives a new key. */
+const SNOOZE_KEY = "fuvay.provider.job-alerts.snoozed.v2";
 
-function readSeen(): Set<string> {
-  if (typeof window === "undefined") return new Set();
+function readSnoozes(): Map<string, number> {
+  if (typeof window === "undefined") return new Map();
   try {
-    const raw = window.sessionStorage.getItem(SEEN_KEY);
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    const raw = window.localStorage.getItem(SNOOZE_KEY);
+    const parsed = raw ? JSON.parse(raw) as Record<string, number> : {};
+    const now = Date.now();
+    return new Map(Object.entries(parsed).filter(([, until]) =>
+      Number.isFinite(until) && until > now && until <= now + MAX_REMINDER_AGE_MS,
+    ));
   } catch {
-    // A corrupt or unavailable store must not stop the dashboard loading. Worst case
-    // the provider sees an alert twice, which is better than the page failing.
-    return new Set();
+    return new Map();
   }
 }
 
-function writeSeen(seen: Set<string>): void {
+function writeSnoozes(snoozes: Map<string, number>): void {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(SEEN_KEY, JSON.stringify([...seen]));
+    window.localStorage.setItem(SNOOZE_KEY, JSON.stringify(Object.fromEntries(snoozes)));
   } catch {
-    /* Ignored for the same reason as above. */
+    /* Storage failure must never block the provider workspace. */
   }
 }
 
-/** One alert is one job in one state, so a job going from late to later re-alerts, but a
- * refresh with nothing changed does not. */
-function alertKey(alert: DashboardAlert): string {
-  return `${alert.job_id}:${alert.tone}:${alert.lateness_label ?? "new"}`;
+/** Stable within one operational phase. Poll-generated wording and minute counts
+ * must not create a brand-new modal every refresh. Meaningful escalations do. */
+export function alertKey(alert: DashboardAlert): string {
+  const kind = alert.alert_kind
+    ?? (alert.assignment_required ? "assignment" : alert.departure_required ? "departure" : "delayed");
+  if (kind === "assignment") return `${alert.job_id}:assignment:${alert.assignment_overdue ? "overdue" : "new"}`;
+  if (kind === "departure") return `${alert.job_id}:departure:${alert.scheduled_date ?? "date"}:${alert.scheduled_time_window ?? "slot"}`;
+  const late = Math.max(0, alert.minutes_late ?? 0);
+  const milestone = late < 60 ? "under-1h" : late < 240 ? "1h" : late < 1440 ? "4h" : `${Math.floor(late / 1440)}d`;
+  return `${alert.job_id}:delayed:${milestone}`;
 }
 
 export interface JobAlertsState {
@@ -44,7 +52,7 @@ export interface JobAlertsState {
   newTotal: number;
   departureTotal: number;
   delayedTotal: number;
-  /** Snoozes offers briefly and marks delayed alerts seen this session. */
+  /** Snoozes the current alert phases without hiding their queue counts. */
   dismiss: () => void;
 }
 
@@ -61,16 +69,18 @@ export function useJobAlerts(): JobAlertsState {
   const [newTotal, setNewTotal] = useState(0);
   const [departureTotal, setDepartureTotal] = useState(0);
   const [delayedTotal, setDelayedTotal] = useState(0);
-  const seenRef = useRef<Set<string>>(new Set());
-  const snoozedOffersRef = useRef<Map<string, number>>(new Map());
+  const snoozesRef = useRef<Map<string, number>>(new Map());
   const sinceRef = useRef<string | null>(null);
   const firstLoadRef = useRef(true);
+  const requestInFlightRef = useRef(false);
 
   useEffect(() => {
-    seenRef.current = readSeen();
+    snoozesRef.current = readSnoozes();
   }, []);
 
   const load = useCallback(async () => {
+    if (requestInFlightRef.current || (typeof document !== "undefined" && document.visibilityState !== "visible")) return;
+    requestInFlightRef.current = true;
     try {
       const res = await serviceJobAssignmentApi.dashboardAlerts({
         since: sinceRef.current,
@@ -83,40 +93,51 @@ export function useJobAlerts(): JobAlertsState {
       setDepartureTotal(res.departure_total ?? 0);
       setDelayedTotal(res.delayed_total ?? 0);
 
-      const assignmentIds = new Set((res.new_jobs ?? []).map(alert => alert.job_id));
-      const departureIds = new Set((res.departure_jobs ?? []).map(alert => alert.job_id));
       const all = [
         ...(res.departure_jobs ?? []),
         ...(res.delayed_jobs ?? []),
         ...(res.new_jobs ?? []),
       ];
-      setPending(all.filter(alert => assignmentIds.has(alert.job_id) || departureIds.has(alert.job_id)
-        ? (snoozedOffersRef.current.get(alert.job_id) ?? 0) <= Date.now()
-        : !seenRef.current.has(alertKey(alert))));
+      const now = Date.now();
+      const currentKeys = new Set(all.map(alertKey));
+      for (const [key, until] of snoozesRef.current) {
+        if (until <= now || !currentKeys.has(key)) snoozesRef.current.delete(key);
+      }
+      writeSnoozes(snoozesRef.current);
+      const next = all.filter(alert => (snoozesRef.current.get(alertKey(alert)) ?? 0) <= now);
+      setPending(current => {
+        const currentSignature = current.map(alertKey).join("|");
+        const nextSignature = next.map(alertKey).join("|");
+        return currentSignature === nextSignature ? current : next;
+      });
     } catch {
       // Silent: alerts are an addition to the dashboard, and a failed poll must not
       // replace a working page with an error. The counts simply stay as they were.
+    } finally {
+      requestInFlightRef.current = false;
     }
   }, []);
 
   useEffect(() => {
     void load();
     const timer = setInterval(() => { void load(); }, POLL_MS);
-    return () => clearInterval(timer);
+    const resume = () => { if (document.visibilityState === "visible") void load(); };
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("online", resume);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("online", resume);
+    };
   }, [load]);
 
   const dismiss = useCallback(() => {
     setPending(current => {
-      const seen = new Set(seenRef.current);
+      const until = Date.now() + REMINDER_SNOOZE_MS;
       for (const alert of current) {
-        if (alert.assignment_required || alert.departure_required) {
-          snoozedOffersRef.current.set(alert.job_id, Date.now() + OFFER_SNOOZE_MS);
-        } else {
-          seen.add(alertKey(alert));
-        }
+        snoozesRef.current.set(alertKey(alert), until);
       }
-      seenRef.current = seen;
-      writeSeen(seen);
+      writeSnoozes(snoozesRef.current);
       return [];
     });
   }, []);

@@ -26,6 +26,7 @@ EVENT_TYPE = "customer_assignment_cancelled_notified"
 ASSIGNED_EVENT_TYPE = "customer_technician_assigned_notified"
 TECHNICIAN_UNAVAILABLE_EVENT_TYPE = "customer_technician_unavailable_notified"
 SLA_CANCELLED_EVENT_TYPE = "customer_sla_cancelled_notified"
+PROVIDER_CANCELLED_EVENT_TYPE = "customer_provider_cancelled_notified"
 LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 
 
@@ -475,6 +476,61 @@ async def send_provider_cancelled(db, job, reason: str | None) -> bool:
         rows=[{"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Book again"}],
         section_title="Booking cancelled",
     )
+
+
+async def send_provider_cancelled_once(job_id: str | uuid.UUID) -> bool:
+    """Deliver a committed provider cancellation exactly once.
+
+    The provider endpoint calls this only after its business transaction has
+    committed. The advisory lock and durable execution-event marker make an
+    endpoint retry and the background recovery worker safe to run together.
+    """
+    from app.database import get_session_factory
+
+    try:
+        async with get_session_factory()() as db:
+            locked = await db.scalar(text(
+                "SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"
+            ), {"key": f"ig:provider_cancelled:{job_id}"})
+            if not locked:
+                return False
+            job = await db.get(ServiceJob, uuid.UUID(str(job_id)))
+            if not job or job.status != "cancelled":
+                return False
+            already = await db.scalar(select(ServiceJobExecutionEvent.id).where(
+                ServiceJobExecutionEvent.job_id == job.id,
+                ServiceJobExecutionEvent.event_type == PROVIDER_CANCELLED_EVENT_TYPE,
+            ).limit(1))
+            if already:
+                return True
+            cancellation = await db.scalar(select(ServiceJobExecutionEvent).where(
+                ServiceJobExecutionEvent.job_id == job.id,
+                ServiceJobExecutionEvent.event_type == "job_cancelled",
+                ServiceJobExecutionEvent.actor_role == "provider",
+            ).order_by(ServiceJobExecutionEvent.created_at.desc()).limit(1))
+            if cancellation is None:
+                return False
+            booking = await db.get(ServiceBooking, job.booking_id) if job.booking_id else None
+            if booking is None:
+                return False
+            reason = cancellation.notes or job.failure_reason
+            if not await send_provider_cancelled(db, job, reason):
+                return False
+            db.add(ServiceJobExecutionEvent(
+                booking_id=booking.id, job_id=job.id, tenant_id=job.tenant_id,
+                staff_member_id=job.assigned_staff_id, actor_role="platform",
+                event_type=PROVIDER_CANCELLED_EVENT_TYPE,
+                old_status="cancelled", new_status="cancelled",
+                notes=f"Provider cancellation sent to the booking's {booking.source_channel} chat.",
+                event_metadata={"channel": booking.source_channel},
+                request_id="job:instagram_cancellation_followup",
+            ))
+            await db.commit()
+            return True
+    except Exception as exc:  # noqa: BLE001 - delivery must not roll back cancellation
+        logger.warning("booking_updates.provider_cancelled_failed",
+                       job_id=str(job_id), error=str(exc))
+        return False
 
 
 async def send_technician_unavailable_cancelled(job_id: str | uuid.UUID) -> bool:

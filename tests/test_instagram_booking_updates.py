@@ -66,3 +66,65 @@ async def test_unrelated_cancellation_never_sends_timeout_reason(monkeypatch):
 
     assert await booking_updates.send_assignment_cancelled(uuid.uuid4()) is False
     send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_provider_cancellation_is_delivered_once_after_commit(monkeypatch):
+    import app.database
+
+    job_id = uuid.uuid4()
+    booking_id = uuid.uuid4()
+    job = NS(
+        id=job_id, booking_id=booking_id, tenant_id=uuid.uuid4(),
+        assigned_staff_id=None, status="cancelled",
+        failure_reason="No technician available",
+    )
+    booking = NS(
+        id=booking_id, booking_number="BK-200", source_channel="instagram",
+        source_actor_id="igsid-booker",
+    )
+    cancellation = NS(notes="No technician available")
+    db = AsyncMock()
+    db.scalar.side_effect = [True, None, cancellation]
+    db.get.side_effect = [job, booking]
+    db.add = MagicMock()
+    context = AsyncMock()
+    context.__aenter__.return_value = db
+    monkeypatch.setattr(app.database, "get_session_factory", lambda: lambda: context)
+    send = AsyncMock(return_value=True)
+    monkeypatch.setattr(booking_updates, "send_provider_cancelled", send)
+
+    assert await booking_updates.send_provider_cancelled_once(job_id) is True
+    send.assert_awaited_once_with(db, job, "No technician available")
+    marker = db.add.call_args.args[0]
+    assert marker.event_type == booking_updates.PROVIDER_CANCELLED_EVENT_TYPE
+    assert marker.job_id == job_id
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_provider_cancellation_delivery_marker_prevents_duplicate(monkeypatch):
+    import app.database
+
+    job_id = uuid.uuid4()
+    job = NS(id=job_id, status="cancelled")
+    db = AsyncMock()
+    db.scalar.side_effect = [True, uuid.uuid4()]
+    db.get.return_value = job
+    context = AsyncMock()
+    context.__aenter__.return_value = db
+    monkeypatch.setattr(app.database, "get_session_factory", lambda: lambda: context)
+    send = AsyncMock()
+    monkeypatch.setattr(booking_updates, "send_provider_cancelled", send)
+
+    assert await booking_updates.send_provider_cancelled_once(job_id) is True
+    send.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+def test_provider_cancellation_recovery_worker_is_registered():
+    from pathlib import Path
+
+    main = Path("app/main.py").read_text(encoding="utf-8")
+    assert "instagram_cancellation_followups_loop" in main
+    assert '("instagram_cancellation_followups", instagram_cancellation_followups_loop)' in main

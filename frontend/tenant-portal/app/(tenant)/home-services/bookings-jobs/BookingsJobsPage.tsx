@@ -121,7 +121,10 @@ function BookingsJobsWorkspace() {
     const refreshVisibleData = () => {
       if (document.visibilityState !== "visible") return;
       list.refetch();
-      if (selectedJobId) detail.refetch();
+      // Do not turn a failed deep link into an endless loading loop. Once a
+      // detail request has succeeded it may refresh quietly in the background;
+      // initial failures remain stable until the provider explicitly retries.
+      if (selectedJobId && detail.data) detail.refetch();
     };
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") refreshVisibleData();
@@ -134,7 +137,7 @@ function BookingsJobsWorkspace() {
       window.removeEventListener("focus", refreshVisibleData);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [detail.refetch, list.refetch, selectedJobId]);
+  }, [detail.data, detail.refetch, list.refetch, selectedJobId]);
 
   function submitSearch(event: React.FormEvent) { event.preventDefault(); updateFilter("search", searchDraft.trim()); }
   function exportCurrentPage() {
@@ -191,7 +194,7 @@ function BookingsJobsWorkspace() {
         pageSizes={PAGE_SIZES} onPageSize={size => updateParams({ page_size: String(size), page: null, job_id: null })}
         onPage={p => updateParams({ page: String(p), job_id: null })} itemLabel="jobs" />
     </Card>
-  </PageShell>{selectedJobId && <JobPreview jobId={selectedJobId} detail={detail.data} loading={detail.loading} error={detail.error} onClose={() => updateParams({ job_id: null })} onChanged={() => { detail.refetch(); list.refetch(); }} />}</>;
+  </PageShell>{selectedJobId && <JobPreview jobId={selectedJobId} detail={detail.data && String(detail.data.job.id) === selectedJobId ? detail.data : null} error={detail.error} onRetry={detail.refetch} onClose={() => updateParams({ job_id: null })} onChanged={() => { detail.refetch(); list.refetch(); }} />}</>;
 }
 
 function KpiSkeleton() { return <KpiGrid minCardWidth={155}>{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} height={112} />)}</KpiGrid>; }
@@ -231,7 +234,7 @@ function JobCard({ row, selected, onOpen }: { row: BJItem; selected: boolean; on
 function SlaLabel({ status, remaining, overdue }: { status: string; remaining?: number | null; overdue?: number | null }) { if (status === "NOT_APPLICABLE") return <span style={secondaryCellStyle}>—</span>; const danger = status === "BREACHED", warning = status === "AT_RISK"; return <span style={{ fontSize: 12, fontWeight: 700, color: danger ? "var(--danger-text)" : warning ? "var(--warning-text)" : "var(--success-text)" }}>{danger ? `${overdue ?? 0}m overdue` : warning ? `${remaining ?? 0}m left` : "On track"}</span>; }
 function EmptyResults({ filtered, onClear }: { filtered: boolean; onClear: () => void }) { return <div style={{ padding: "58px 24px", textAlign: "center" }}><div style={{ width: 48, height: 48, borderRadius: 14, background: "var(--accent-muted)", color: "var(--accent)", display: "grid", placeItems: "center", margin: "0 auto 14px" }}><Filter size={21} /></div><h3 style={{ margin: 0, color: "var(--text-primary)", fontSize: 16 }}>{filtered ? "No jobs match these filters" : "No bookings or jobs yet"}</h3><p style={{ margin: "6px auto 16px", color: "var(--text-secondary)", fontSize: 13, maxWidth: 430 }}>{filtered ? "Clear or broaden the filters to return to the full operational queue." : "Confirmed customer bookings will appear here automatically with their job workflow."}</p>{filtered && <Button variant="secondary" size="sm" onClick={onClear}>Clear filters</Button>}</div>; }
 
-function JobPreview({ jobId, detail, loading, error, onClose, onChanged }: { jobId: string; detail: BJDetail | null; loading: boolean; error: string | null; onClose: () => void; onChanged: () => void }) {
+function JobPreview({ jobId, detail, error, onRetry, onClose, onChanged }: { jobId: string; detail: BJDetail | null; error: string | null; onRetry: () => void; onClose: () => void; onChanged: () => void }) {
   const router = useRouter(); const [confirmOpen, setConfirmOpen] = useState(false); const [cancelOpen, setCancelOpen] = useState(false); const [address, setAddress] = useState<BJAddress | null>(null); const [addressLoading, setAddressLoading] = useState(false); const [addressError, setAddressError] = useState<string | null>(null);
   const contact = useApi(useCallback(
     () => serviceJobAssignmentApi.getContact(jobId), [jobId],
@@ -255,7 +258,7 @@ function JobPreview({ jobId, detail, loading, error, onClose, onChanged }: { job
   }
   return <><div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1090, background: "rgba(0,0,0,.46)", backdropFilter: "blur(2px)" }} /><aside className="bj-drawer" aria-label="Job preview" style={{ position: "fixed", right: 0, top: 0, bottom: 0, zIndex: 1100, overflowY: "auto", background: "var(--surface)", borderLeft: "1px solid var(--border)", boxShadow: "-18px 0 55px rgba(0,0,0,.28)" }}>
     <div style={{ position: "sticky", top: 0, zIndex: 2, padding: "18px 20px", background: "var(--surface)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 12 }}><div><div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-tertiary)", textTransform: "uppercase" }}>{detail?.job.job_number ?? "Job preview"}</div><h2 style={{ margin: "3px 0 0", fontSize: 20, color: "var(--text-primary)" }}>{detail?.service_name ?? "Loading job"}</h2></div><button type="button" onClick={onClose} aria-label="Close job preview" style={{ ...toolbarButtonStyle, width: 36, height: 36, padding: 0, justifyContent: "center" }}><X size={17} /></button></div>
-    <div style={{ padding: 20, display: "grid", gap: 14 }}>{loading || !detail ? error ? <Alert tone="danger">{error}</Alert> : <><Skeleton height={70} /><Skeleton height={180} /><Skeleton height={240} /></> : <>
+    <div style={{ padding: 20, display: "grid", gap: 14 }}>{!detail ? error ? <div style={{ display: "grid", gap: 10 }}><Alert tone="danger">{error}</Alert><Button variant="secondary" size="sm" leftIcon={<RefreshCw size={14} />} onClick={onRetry}>Try loading again</Button></div> : <><Skeleton height={70} /><Skeleton height={180} /><Skeleton height={240} /></> : <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}><StatusBadge status={detail.stage.stage} /><SlaLabel status={detail.sla.sla_status} remaining={detail.sla.minutes_remaining} overdue={detail.sla.minutes_overdue} /></div>
       <Card padding="sm"><PanelTitle title="Customer & visit" /><Field label="Customer" value={String(detail.booking.customer_alias ?? "Private customer")} />{detail.customer_health && <Field label="Customer health" value={`${Math.round(detail.customer_health.score)}/100 · ${detail.customer_health.band.replace(/_/g, " ")}`} />}<Field label="Locality" value={String(detail.booking.locality ?? "Unavailable")} />{contact.data?.contact_window_open && <><Button variant="secondary" size="sm" leftIcon={<PhoneCall size={13} />} onClick={() => callCustomer.execute()} loading={callCustomer.loading} disabled={!contact.data.can_call} style={{ marginTop: 10, width: "100%" }}>Call customer securely</Button>{callCustomer.error && <div style={{ marginTop: 8 }}><Alert tone="danger">{callCustomer.error}</Alert></div>}{contact.data.connected_before && !callCustomer.error && <div style={{ marginTop: 7, color: "var(--text-tertiary)", fontSize: 11 }}>A connected call is recorded for this job.</div>}{!contact.data.can_call && contact.data.cannot_call_reason && <div style={{ marginTop: 7, color: "var(--text-tertiary)", fontSize: 11 }}>Secure calling is unavailable for this job.</div>}</>}{address ? <AddressView address={address} /> : <Button variant="secondary" size="sm" leftIcon={<MapPin size={13} />} onClick={revealAddress} loading={addressLoading} style={{ marginTop: 10 }}>View service address</Button>}{addressError && <div style={{ marginTop: 8 }}><Alert tone="danger">{addressError}</Alert></div>}</Card>
       <Card padding="sm"><PanelTitle title="Service context" /><Field label="Job type" value={detail.job_type_label ?? "Unresolved"} /><Field label="Schedule" value={detail.job.scheduled_date ? `${formatDate(detail.job.scheduled_date)} · ${detail.job.scheduled_time_window ?? "Time pending"}` : "Not scheduled"} /><Field label="Visit fee" value={detail.visit_fee ? formatMoney(detail.visit_fee) : "—"} /><Field label="Estimate" value={detail.quote ? `${formatMoney(detail.quote.customer_payable_amount)} · ${String(detail.quote.status ?? "created").replace(/_/g, " ")}` : "No estimate yet"} /><Field label="Payment" value={detail.invoice ? String(detail.invoice.payment_status ?? "Pending").replace(/_/g, " ") : "No invoice yet"} /></Card>

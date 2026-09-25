@@ -150,6 +150,10 @@ async def initiate(
         result = await HomeServiceJobExecutionService().cancel_job(
             db, job.id, tenant_id, actor_user_id, reason=display_reason,
             actor_role="provider", request_id=request_id, metadata=metadata,
+            # Instagram delivery happens after the router commits. Sending
+            # external messages inside this transaction can tell a customer a
+            # job was cancelled even if the database commit later fails.
+            notify_customer=False,
         )
         return {"status": "cancelled", "job": result, **metadata}
 

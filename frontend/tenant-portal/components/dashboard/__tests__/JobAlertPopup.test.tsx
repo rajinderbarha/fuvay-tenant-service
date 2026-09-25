@@ -40,6 +40,7 @@ describe("JobAlertPopup", () => {
     expect(screen.getByText("Newest booking")).toBeInTheDocument();
     expect(screen.getByText("5 more on the bookings board")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Assign technician" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remind in 15 min" })).toBeInTheDocument();
     expect(playAlertTone).toHaveBeenCalledWith("success");
   });
 

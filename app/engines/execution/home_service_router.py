@@ -531,6 +531,11 @@ async def provider_cancel_job(job_id: uuid.UUID, body: CancelBody, r: Request, u
         sent = await deliver_request(db, uuid.UUID(result["request_id"]))
         await db.commit()
         result["notification_sent"] = sent
+    elif result.get("status") == "cancelled":
+        # Commit is authoritative; customer messaging is an idempotent,
+        # separately committed side effect with a background retry worker.
+        from app.engines.messaging_gateway.booking_updates import send_provider_cancelled_once
+        result["notification_sent"] = await send_provider_cancelled_once(job_id)
     return ok(result, rid, "provider-exec-cancel")
 
 
