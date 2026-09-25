@@ -127,6 +127,18 @@ def _limit_minutes(status: str, policy, job=None) -> int:
         return default
 
 
+def _critical_multiplier(policy, job=None) -> int:
+    """Snapshot the escalation rule for in-flight stages; use live policy for legacy jobs."""
+    snapshot = (getattr(job, "stage_metadata", None) or {}).get("stage_timer", {}) if job else {}
+    raw = snapshot.get(
+        "critical_multiplier", getattr(policy, "job_stall_critical_multiplier", 2),
+    )
+    try:
+        return min(10, max(1, int(raw)))
+    except (TypeError, ValueError):
+        return 2
+
+
 async def _notify_provider(db, *, job, minutes: int,
                            waiting_on: str | None = None) -> None:
     """Tell the provider's owner, in the words of whoever has to act.
@@ -205,6 +217,7 @@ async def sweep(db, *, limit: int = 100) -> dict:
     closed = 0
     for job in rows:
         minutes = _limit_minutes(job.status, policy, job)
+        critical_multiplier = _critical_multiplier(policy, job)
         entered_at = job.entered_at
         if entered_at is None:
             continue
@@ -255,13 +268,17 @@ async def sweep(db, *, limit: int = 100) -> dict:
             closed += 1
             continue
 
-        if already_warned and (now - entered_at) < timedelta(minutes=minutes * 2):
+        if already_warned and (now - entered_at) < timedelta(
+            minutes=minutes * critical_multiplier,
+        ):
             continue
         if already_warned and already_critical:
             continue
 
         stalled_for = int((now - entered_at).total_seconds() // 60)
-        is_critical = already_warned and (now - entered_at) >= timedelta(minutes=minutes * 2)
+        is_critical = already_warned and (now - entered_at) >= timedelta(
+            minutes=minutes * critical_multiplier,
+        )
         event_type = CRITICAL_EVENT_TYPE if is_critical else EVENT_TYPE
         db.add(ServiceJobExecutionEvent(
             booking_id=job.booking_id, job_id=job.id, tenant_id=job.tenant_id,
@@ -275,6 +292,7 @@ async def sweep(db, *, limit: int = 100) -> dict:
                 "status": job.status,
                 "stalled_minutes": stalled_for,
                 "limit_minutes": minutes,
+                "critical_multiplier": critical_multiplier,
                 "waiting_on": waiting_on,
                 "entered_at": entered_at.isoformat(),
                 "outcome": "critical_provider_intervention_required" if is_critical else "escalated_no_status_change",

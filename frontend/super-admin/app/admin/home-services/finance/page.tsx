@@ -501,10 +501,15 @@ function MonetizationTab() {
       arrival_radius_meters: 250,
       arrival_location_max_age_seconds: 120,
       arrival_max_accuracy_meters: 100,
+      arrival_customer_confirmation_enabled: true,
+      arrival_challenge_ttl_minutes: 10,
+      arrival_code_max_attempts: 5,
+      arrival_denial_limit: 2,
       false_arrival_auto_close: true,
       false_arrival_penalty_amount: 150,
       false_arrival_health_weight: 3,
       job_stall_watchdog_enabled: true,
+      job_stall_critical_multiplier: 2,
       job_stall_limit_minutes: {
         reached_site: 45, inspection_started: 120, inspection_done: 120,
         quote_required: 2880, service_started: 480, work_done: 1440,
@@ -757,7 +762,9 @@ function MonetizationTab() {
               <KV label="Assignment timeout" value={current?.assignment_timeout_enabled === false ? "Disabled" : `${current?.assignment_timeout_minutes ?? 30} min (urgent ${current?.urgent_assignment_timeout_minutes ?? 10} min)`} />
               <KV label="Customer reschedules" value={String(current?.customer_reschedule_limit ?? 3)} />
               <KV label="Arrival GPS radius" value={current?.arrival_verification_enabled !== true ? "Disabled" : `${current?.arrival_radius_meters ?? 250} m`} />
+              <KV label="Instagram arrival confirmation" value={current?.arrival_customer_confirmation_enabled === false ? "Disabled" : `${current?.arrival_challenge_ttl_minutes ?? 10} min · ${current?.arrival_denial_limit ?? 2} denials`} />
               <KV label="False-arrival penalty" value={current?.false_arrival_auto_close === false ? "Close disabled" : money(current?.false_arrival_penalty_amount ?? 150)} />
+              <KV label="Critical escalation" value={`${current?.job_stall_critical_multiplier ?? 2}× stage deadline`} />
             </div>
           </Card>
           <Card padding={16}>
@@ -1274,17 +1281,25 @@ function MonetizationTab() {
                 onChange={e => setForm({ ...form, arrival_verification_enabled: e.target.checked })} />
               Require verified GPS arrival
             </label>
+            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <input type="checkbox" checked={form.arrival_customer_confirmation_enabled !== false}
+                onChange={e => setForm({ ...form, arrival_customer_confirmation_enabled: e.target.checked })} />
+              Require Instagram customer confirmation or doorstep code
+            </label>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
               <div><label style={{ fontSize: 11 }}>Allowed radius (metres)</label><Input value={String(form.arrival_radius_meters ?? 250)} onChange={v => setForm({ ...form, arrival_radius_meters: v === "" ? 250 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Maximum GPS age (seconds)</label><Input value={String(form.arrival_location_max_age_seconds ?? 120)} onChange={v => setForm({ ...form, arrival_location_max_age_seconds: v === "" ? 120 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Maximum GPS error (metres)</label><Input value={String(form.arrival_max_accuracy_meters ?? 100)} onChange={v => setForm({ ...form, arrival_max_accuracy_meters: v === "" ? 100 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Confirmation/code expiry (minutes)</label><Input type="number" value={String(form.arrival_challenge_ttl_minutes ?? 10)} onChange={v => setForm({ ...form, arrival_challenge_ttl_minutes: v === "" ? 10 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Maximum incorrect code attempts</label><Input type="number" value={String(form.arrival_code_max_attempts ?? 5)} onChange={v => setForm({ ...form, arrival_code_max_attempts: v === "" ? 5 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Customer denials before closure</label><Input type="number" value={String(form.arrival_denial_limit ?? 2)} onChange={v => setForm({ ...form, arrival_denial_limit: v === "" ? 2 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>False-arrival penalty (₹)</label><Input value={String(form.false_arrival_penalty_amount ?? 150)} onChange={v => setForm({ ...form, false_arrival_penalty_amount: v === "" ? 150 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>False-arrival health weight</label><Input value={String(form.false_arrival_health_weight ?? 3)} onChange={v => setForm({ ...form, false_arrival_health_weight: v === "" ? 3 : Number(v) })} /></div>
             </div>
             <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
               <input type="checkbox" checked={form.false_arrival_auto_close !== false}
                 onChange={e => setForm({ ...form, false_arrival_auto_close: e.target.checked })} />
-              Close the job and charge the penalty when verified location is outside the radius
+              Close the job and charge the penalty after the configured customer-denial limit
             </label>
           </div>
 
@@ -1300,6 +1315,11 @@ function MonetizationTab() {
                 onChange={e => setForm({ ...form, job_stall_watchdog_enabled: e.target.checked })} />
               Enable stage deadlines and escalations
             </label>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 11 }}>Critical escalation at × stage deadline</label>
+              <Input type="number" value={String(form.job_stall_critical_multiplier ?? 2)}
+                onChange={v => setForm({ ...form, job_stall_critical_multiplier: v === "" ? 2 : Number(v) })} />
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
               {[
                 ["reached_site", "Reached site → start inspection"],
@@ -1379,7 +1399,7 @@ function MonetizationTab() {
                 { step: "provider" as PolicyStep, label: "Provider charge", value: form.provider_model === "PERCENTAGE_COMMISSION" ? `${form.provider_percentage ?? "—"}% commission` : form.provider_model === "COMPLETION_CREDITS" ? `${form.provider_credit_units ?? "—"} credits/job` : form.provider_model === "FIXED_COMPLETION_CHARGE" ? `₹${Number(form.provider_fixed_amount_minor ?? 0) / 100}/job` : "None" },
                 { step: "customer" as PolicyStep, label: "Platform charge", value: form.customer_fee_model === "FIXED" ? `₹${Number(form.customer_fee_fixed_amount_minor ?? 0) / 100}` : form.customer_fee_model?.startsWith("PERCENTAGE") ? `${form.customer_fee_percentage ?? "—"}%` : "None" },
                 { step: "sla" as PolicyStep, label: "SLA penalty", value: form.sla_breach_hours == null ? "Disabled" : `${form.sla_penalty_type === "percentage" ? `${form.sla_penalty_percentage ?? "—"}%` : `₹${form.sla_penalty_amount ?? "—"}`} now · ₹${form.sla_total_penalty_amount ?? 150} total after ${form.sla_close_after_hours ?? 24}h` },
-                { step: "operations" as PolicyStep, label: "Assignment window", value: form.assignment_timeout_enabled === false ? "Disabled" : `${form.assignment_timeout_minutes ?? 30} min / urgent ${form.urgent_assignment_timeout_minutes ?? 10} min` },
+                { step: "operations" as PolicyStep, label: "Operations", value: `${form.assignment_timeout_enabled === false ? "Assignment disabled" : `${form.assignment_timeout_minutes ?? 30} min / urgent ${form.urgent_assignment_timeout_minutes ?? 10} min`} · arrival ${form.arrival_customer_confirmation_enabled === false ? "confirmation off" : `${form.arrival_challenge_ttl_minutes ?? 10} min`}` },
                 { step: "operations" as PolicyStep, label: "Verified arrival", value: form.arrival_verification_enabled !== true ? "Disabled" : `${form.arrival_radius_meters ?? 250} m radius` },
                 { step: "trust" as PolicyStep, label: "Health suspension", value: form.health_suspension_threshold == null ? "Disabled" : `Below ${form.health_suspension_threshold}` },
               ].map(item => <button key={`${item.step}-${item.label}`} type="button" onClick={() => goToPolicyStep(item.step)}

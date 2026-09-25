@@ -23,10 +23,6 @@ from app.engines.execution.models import ServiceJobArrivalChallenge, ServiceJobE
 from app.engines.final_records.models import ServiceBooking, ServiceJob
 from app.exceptions import ServiceOSException
 
-CHALLENGE_TTL_MINUTES = 10
-MAX_CODE_ATTEMPTS = 5
-
-
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -105,6 +101,11 @@ async def request_arrival_confirmation(
             status_code=409,
         )
 
+    from app.engines.vertical_monetization.runtime_operations import (
+        get_home_services_operations_policy,
+    )
+    policy = await get_home_services_operations_policy(db)
+
     existing = (await db.execute(select(ServiceJobArrivalChallenge).where(
         ServiceJobArrivalChallenge.job_id == job.id,
         ServiceJobArrivalChallenge.status == "pending",
@@ -134,7 +135,7 @@ async def request_arrival_confirmation(
         requested_by_user_id=requested_by_user_id,
         status="pending", otp_hash=_code_hash(challenge_id, code),
         failed_code_attempts=0, requested_at=now,
-        expires_at=now + timedelta(minutes=CHALLENGE_TTL_MINUTES),
+        expires_at=now + timedelta(minutes=policy.arrival_challenge_ttl_minutes),
         technician_latitude=float(location.latitude),
         technician_longitude=float(location.longitude),
         technician_accuracy_meters=accuracy, location_recorded_at=recorded_at,
@@ -214,7 +215,11 @@ async def confirm_arrival(
         )
         if not valid:
             challenge.failed_code_attempts += 1
-            if challenge.failed_code_attempts >= MAX_CODE_ATTEMPTS:
+            from app.engines.vertical_monetization.runtime_operations import (
+                get_home_services_operations_policy,
+            )
+            policy = await get_home_services_operations_policy(db)
+            if challenge.failed_code_attempts >= policy.arrival_code_max_attempts:
                 challenge.status = "expired"
                 challenge.responded_at = _now()
             # Preserve brute-force accounting even though the API response is
@@ -358,19 +363,19 @@ async def deny_arrival(
 async def _close_repeated_denied_arrival(
     db: AsyncSession, *, job: ServiceJob, denial_count: int,
 ) -> bool:
-    """Close only after two independent customer denials.
+    """Close only after the configured number of independent customer denials.
 
-    One denial may be a misunderstanding at a gate or a mistap.  A second
-    denial requires a new challenge and a new fresh GPS fix, so continuing to
-    claim arrival is no longer a safe state.  The admin-published false-arrival
-    policy still controls whether automatic closure is enabled and its amount.
+    A denial may be a misunderstanding at a gate or a mistap. Every retry
+    requires a new challenge and a fresh GPS fix, so the published threshold
+    decides when continued arrival claims are no longer safe. The same policy
+    controls automatic closure and its amount.
     """
-    if denial_count < 2:
-        return False
     from app.engines.vertical_monetization.runtime_operations import (
         get_home_services_operations_policy,
     )
     policy = await get_home_services_operations_policy(db)
+    if denial_count < policy.arrival_denial_limit:
+        return False
     if not policy.false_arrival_auto_close:
         return False
     from app.engines.execution.sla_breach_service import (
@@ -387,7 +392,10 @@ async def _close_repeated_denied_arrival(
         "sla_stopped_at=now(), sla_next_penalty_at=NULL, updated_at=now() "
         "WHERE id=:job_id"
     ), {"job_id": str(job.id), "taken": taken})
-    reason = "Visit closed after the customer denied two technician arrival claims"
+    reason = (
+        "Visit closed after the customer denied "
+        f"{policy.arrival_denial_limit} technician arrival claims"
+    )
     await _close_breached_job(
         db, job_id=job.id, booking_id=job.booking_id, reason=reason,
     )

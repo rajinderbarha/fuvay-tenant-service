@@ -46,9 +46,12 @@ _DRAFT_FIELDS = {
     "assignment_auto_assign_enabled",
     "customer_reschedule_limit", "arrival_verification_enabled",
     "arrival_radius_meters", "arrival_location_max_age_seconds",
-    "arrival_max_accuracy_meters", "false_arrival_auto_close",
+    "arrival_max_accuracy_meters", "arrival_customer_confirmation_enabled",
+    "arrival_challenge_ttl_minutes", "arrival_code_max_attempts",
+    "arrival_denial_limit", "false_arrival_auto_close",
     "false_arrival_penalty_amount", "false_arrival_health_weight",
-    "job_stall_watchdog_enabled", "job_stall_limit_minutes",
+    "job_stall_watchdog_enabled", "job_stall_critical_multiplier",
+    "job_stall_limit_minutes",
     # Health: when a provider is stopped, for how long, and what they come back at.
     "health_suspension_threshold", "health_suspension_days", "health_reinstatement_score",
     # Media retention: how long each kind of job photo is kept.
@@ -327,6 +330,10 @@ class VerticalMonetizationPolicyService:
             "arrival_radius_meters": (25, 5000),
             "arrival_location_max_age_seconds": (15, 3600),
             "arrival_max_accuracy_meters": (5, 1000),
+            "arrival_challenge_ttl_minutes": (1, 60),
+            "arrival_code_max_attempts": (1, 20),
+            "arrival_denial_limit": (1, 10),
+            "job_stall_critical_multiplier": (1, 10),
             "customer_photo_retention_days": (1, 3650),
             "completion_proof_retention_days": (1, 3650),
             "credit_reminder_hours_low": (1, 720),
@@ -371,6 +378,7 @@ class VerticalMonetizationPolicyService:
         for name in (
             "assignment_timeout_enabled", "assignment_auto_assign_enabled",
             "arrival_verification_enabled",
+            "arrival_customer_confirmation_enabled",
             "false_arrival_auto_close", "sla_auto_cancel",
             "sla_notify_provider", "sla_penalty_to_customer",
             "job_stall_watchdog_enabled",

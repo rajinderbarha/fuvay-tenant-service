@@ -37,6 +37,7 @@ async def test_second_customer_denial_closes_and_penalises(monkeypatch):
     policy = SimpleNamespace(
         false_arrival_auto_close=True,
         false_arrival_penalty_amount=Decimal("150.00"),
+        arrival_denial_limit=2,
     )
     monkeypatch.setattr(
         "app.engines.vertical_monetization.runtime_operations."
@@ -79,13 +80,31 @@ async def test_second_customer_denial_closes_and_penalises(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_first_customer_denial_is_an_escalation_not_an_auto_penalty():
+async def test_first_customer_denial_is_an_escalation_not_an_auto_penalty(monkeypatch):
     from app.engines.execution import arrival_confirmation_service as arrival
 
     db = SimpleNamespace(execute=AsyncMock(), add=MagicMock())
     job = SimpleNamespace(id=uuid.uuid4())
+    monkeypatch.setattr(
+        "app.engines.vertical_monetization.runtime_operations."
+        "get_home_services_operations_policy",
+        AsyncMock(return_value=SimpleNamespace(arrival_denial_limit=2)),
+    )
     assert await arrival._close_repeated_denied_arrival(
         db, job=job, denial_count=1,
     ) is False
     db.execute.assert_not_awaited()
     db.add.assert_not_called()
+
+
+def test_arrival_controls_have_safe_runtime_defaults():
+    from app.engines.vertical_monetization.runtime_operations import (
+        HomeServicesOperationsPolicy,
+    )
+
+    policy = HomeServicesOperationsPolicy()
+    assert policy.arrival_customer_confirmation_enabled is True
+    assert policy.arrival_challenge_ttl_minutes == 10
+    assert policy.arrival_code_max_attempts == 5
+    assert policy.arrival_denial_limit == 2
+    assert policy.job_stall_critical_multiplier == 2

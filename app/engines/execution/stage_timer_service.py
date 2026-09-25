@@ -68,9 +68,14 @@ async def build_stage_timer_snapshot(
         return None
     entered = _aware(entered_at or datetime.now(timezone.utc))
     limit, source = await _stage_rule(db, job, status)
+    from app.engines.vertical_monetization.runtime_operations import (
+        get_home_services_operations_policy,
+    )
+    policy = await get_home_services_operations_policy(db)
+    critical_multiplier = max(1, int(policy.job_stall_critical_multiplier))
     deadline = entered + timedelta(minutes=limit)
     warning = entered + timedelta(minutes=max(1, round(limit * 0.75)))
-    critical = deadline + timedelta(minutes=limit)
+    critical = entered + timedelta(minutes=limit * critical_multiplier)
     return {
         "status": status,
         "entered_at": entered.isoformat(),
@@ -78,6 +83,7 @@ async def build_stage_timer_snapshot(
         "deadline_at": deadline.isoformat(),
         "critical_at": critical.isoformat(),
         "limit_minutes": limit,
+        "critical_multiplier": critical_multiplier,
         "waiting_on": WAITING_ON.get(status, "provider"),
         "source": source,
     }
@@ -121,7 +127,10 @@ async def describe_stage_timer(db, job, *, now: datetime | None = None) -> dict:
     limit = _bounded_minutes(stored.get("limit_minutes"), limit)
     deadline = _parse_datetime(stored.get("deadline_at")) or entered + timedelta(minutes=limit)
     warning = _parse_datetime(stored.get("warning_at")) or entered + timedelta(minutes=max(1, round(limit * .75)))
-    critical = _parse_datetime(stored.get("critical_at")) or deadline + timedelta(minutes=limit)
+    critical_multiplier = max(1, int(stored.get("critical_multiplier") or 2))
+    critical = _parse_datetime(stored.get("critical_at")) or (
+        entered + timedelta(minutes=limit * critical_multiplier)
+    )
     if server_now >= critical:
         state = "critical"
     elif server_now >= deadline:
@@ -141,6 +150,7 @@ async def describe_stage_timer(db, job, *, now: datetime | None = None) -> dict:
         "deadline_at": deadline.isoformat(),
         "critical_at": critical.isoformat(),
         "limit_minutes": limit,
+        "critical_multiplier": critical_multiplier,
         "remaining_seconds": remaining,
         "overdue_seconds": overdue,
         "waiting_on": stored.get("waiting_on") or WAITING_ON.get(job.status, "provider"),

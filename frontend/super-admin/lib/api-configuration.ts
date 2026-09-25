@@ -204,10 +204,15 @@ export interface MonetizationPolicy {
   arrival_radius_meters?: number;
   arrival_location_max_age_seconds?: number;
   arrival_max_accuracy_meters?: number;
+  arrival_customer_confirmation_enabled?: boolean;
+  arrival_challenge_ttl_minutes?: number;
+  arrival_code_max_attempts?: number;
+  arrival_denial_limit?: number;
   false_arrival_auto_close?: boolean;
   false_arrival_penalty_amount?: number;
   false_arrival_health_weight?: number;
   job_stall_watchdog_enabled?: boolean;
+  job_stall_critical_multiplier?: number;
   job_stall_limit_minutes?: Record<string, number>;
   health_suspension_threshold?: number | null;
   health_suspension_days?: number | null;

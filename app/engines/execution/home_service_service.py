@@ -723,13 +723,18 @@ class HomeServiceJobExecutionService:
         from app.engines.final_records.models import ServiceBooking
         booking = await db.get(ServiceBooking, job.booking_id)
         if booking and booking.source_channel == "instagram":
-            from app.engines.execution.arrival_confirmation_service import (
-                request_arrival_confirmation,
+            from app.engines.vertical_monetization.runtime_operations import (
+                get_home_services_operations_policy,
             )
-            return await request_arrival_confirmation(
-                db, job=job, staff_member_id=staff_member_id,
-                requested_by_user_id=user_id,
-            )
+            policy = await get_home_services_operations_policy(db)
+            if policy.arrival_customer_confirmation_enabled:
+                from app.engines.execution.arrival_confirmation_service import (
+                    request_arrival_confirmation,
+                )
+                return await request_arrival_confirmation(
+                    db, job=job, staff_member_id=staff_member_id,
+                    requested_by_user_id=user_id,
+                )
         from app.engines.execution.arrival_verification import verify_arrival
         arrival = await verify_arrival(db, job=job, staff_member_id=staff_member_id)
         await self._set_status(db, job, JS_REACHED_SITE, EV_REACHED_SITE, user_id, "staff", request_id=request_id)

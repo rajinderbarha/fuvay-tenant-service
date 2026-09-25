@@ -115,6 +115,21 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     arrival_radius_meters: Mapped[int] = mapped_column(Integer, default=250, nullable=False)
     arrival_location_max_age_seconds: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
     arrival_max_accuracy_meters: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    # Instagram doorstep verification. These values are deliberately separate
+    # from GPS quality: the device fix is evidence, while the customer button
+    # or OTP is the authority that lets an Instagram visit progress.
+    arrival_customer_confirmation_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False,
+    )
+    arrival_challenge_ttl_minutes: Mapped[int] = mapped_column(
+        Integer, default=10, nullable=False,
+    )
+    arrival_code_max_attempts: Mapped[int] = mapped_column(
+        Integer, default=5, nullable=False,
+    )
+    arrival_denial_limit: Mapped[int] = mapped_column(
+        Integer, default=2, nullable=False,
+    )
     false_arrival_auto_close: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     false_arrival_penalty_amount: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), default=Decimal("150"), nullable=False,
@@ -124,6 +139,9 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     )
     job_stall_watchdog_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False,
+    )
+    job_stall_critical_multiplier: Mapped[int] = mapped_column(
+        Integer, default=2, nullable=False,
     )
     job_stall_limit_minutes: Mapped[dict] = mapped_column(
         JSONB,
@@ -219,10 +237,15 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "arrival_radius_meters": self.arrival_radius_meters,
             "arrival_location_max_age_seconds": self.arrival_location_max_age_seconds,
             "arrival_max_accuracy_meters": self.arrival_max_accuracy_meters,
+            "arrival_customer_confirmation_enabled": self.arrival_customer_confirmation_enabled,
+            "arrival_challenge_ttl_minutes": self.arrival_challenge_ttl_minutes,
+            "arrival_code_max_attempts": self.arrival_code_max_attempts,
+            "arrival_denial_limit": self.arrival_denial_limit,
             "false_arrival_auto_close": self.false_arrival_auto_close,
             "false_arrival_penalty_amount": float(self.false_arrival_penalty_amount),
             "false_arrival_health_weight": float(self.false_arrival_health_weight),
             "job_stall_watchdog_enabled": self.job_stall_watchdog_enabled,
+            "job_stall_critical_multiplier": self.job_stall_critical_multiplier,
             "job_stall_limit_minutes": self.job_stall_limit_minutes,
             "health_suspension_threshold": float(self.health_suspension_threshold) if self.health_suspension_threshold is not None else None,
             "health_suspension_days": self.health_suspension_days,

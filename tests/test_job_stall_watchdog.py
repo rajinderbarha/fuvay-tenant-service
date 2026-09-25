@@ -100,6 +100,15 @@ def test_travel_delay_is_warned_but_cancellation_stays_with_travel_timeout():
     assert "on_the_way" not in PROVIDER_PROGRESS_STATUSES
 
 
+def test_critical_escalation_multiplier_is_admin_configurable():
+    policy = SimpleNamespace(job_stall_critical_multiplier=4)
+    job = SimpleNamespace(stage_metadata={})
+    assert watchdog._critical_multiplier(policy, job) == 4
+
+    job.stage_metadata = {"stage_timer": {"critical_multiplier": 3}}
+    assert watchdog._critical_multiplier(policy, job) == 3
+
+
 @pytest.mark.asyncio
 async def test_travel_delay_warns_before_the_slot_bound_cancellation(policy):
     now = datetime.now(timezone.utc)

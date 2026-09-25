@@ -255,11 +255,13 @@ async def send_arrival_confirmation_request(db, job, challenge, code: str) -> bo
     from app.engines.messaging_gateway.constants import PICK_ARRIVAL, PICKER_SEP
 
     name = await _technician_name(db, job)
+    ttl_seconds = max(60, int((challenge.expires_at - challenge.requested_at).total_seconds()))
+    ttl_minutes = max(1, round(ttl_seconds / 60))
     return await notify_job_customer(
         db, job,
         f"{name} says they are at your service location.\n\n"
         "ਕੀ technician ਤੁਹਾਡੇ ਸਾਹਮਣੇ ਪਹੁੰਚ ਗਿਆ ਹੈ? Confirm only after you can "
-        f"see them. Your one-time arrival code is {code}. It expires in 10 minutes. "
+        f"see them. Your one-time arrival code is {code}. It expires in {ttl_minutes} minutes. "
         "Do not share this code over a phone call.",
         rows=[
             {"id": PICKER_SEP.join((PICK_ARRIVAL, str(challenge.id), "confirm")),
