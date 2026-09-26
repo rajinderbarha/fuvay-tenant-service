@@ -520,6 +520,7 @@ function MonetizationTab() {
       urgent_assignment_threshold_minutes: 120,
       assignment_auto_assign_enabled: true,
       customer_reschedule_limit: 3,
+      provider_reschedule_limit: 3,
       customer_cancellation_enabled: true,
       customer_cancellation_cutoff_minutes: 120,
       customer_cancellation_reasons: DEFAULT_CUSTOMER_CANCELLATION_REASONS,
@@ -792,6 +793,7 @@ function MonetizationTab() {
               <KV label="Auto-close" value={current?.sla_breach_hours != null ? `${current.sla_close_after_hours ?? 24}h · ${money(current.sla_total_penalty_amount ?? 150)} total` : "—"} />
               <KV label="Assignment timeout" value={current?.assignment_timeout_enabled === false ? "Disabled" : `${current?.assignment_timeout_minutes ?? 30} min (urgent ${current?.urgent_assignment_timeout_minutes ?? 10} min)`} />
               <KV label="Customer reschedules" value={String(current?.customer_reschedule_limit ?? 3)} />
+              <KV label="Provider reschedules" value={String(current?.provider_reschedule_limit ?? 3)} />
               <KV label="Arrival GPS radius" value={current?.arrival_verification_enabled !== true ? "Disabled" : `${current?.arrival_radius_meters ?? 250} m`} />
               <KV label="Instagram arrival confirmation" value={current?.arrival_customer_confirmation_enabled === false ? "Disabled" : `${current?.arrival_challenge_ttl_minutes ?? 10} min · ${current?.arrival_denial_limit ?? 2} denials`} />
               <KV label="False-arrival penalty" value={current?.false_arrival_auto_close === false ? "Close disabled" : money(current?.false_arrival_penalty_amount ?? 150)} />
@@ -1292,7 +1294,7 @@ function MonetizationTab() {
           <section role="tabpanel" id="policy-panel-operations" aria-labelledby="policy-tab-operations" hidden={policyStep !== "operations"}>
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
             <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 2 }}>
-              Assignment &amp; customer rescheduling
+              Assignment &amp; rescheduling governance
             </label>
             <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 10px" }}>
               Keep the confirmed provider and price fixed. After the deadline, assign the least-loaded eligible technician from that provider. Emergency and same-day bookings use the urgent window.
@@ -1311,7 +1313,8 @@ function MonetizationTab() {
               <div><label style={{ fontSize: 11 }}>Assignment timeout (minutes) — normal</label><Input value={String(form.assignment_timeout_minutes ?? 30)} onChange={v => setForm({ ...form, assignment_timeout_minutes: v === "" ? 30 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Urgent assignment window (minutes)</label><Input value={String(form.urgent_assignment_timeout_minutes ?? 10)} onChange={v => setForm({ ...form, urgent_assignment_timeout_minutes: v === "" ? 10 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Also urgent when visit starts within (minutes)</label><Input value={String(form.urgent_assignment_threshold_minutes ?? 120)} onChange={v => setForm({ ...form, urgent_assignment_threshold_minutes: v === "" ? 120 : Number(v) })} /></div>
-              <div><label style={{ fontSize: 11 }}>Maximum customer reschedules</label><Input value={String(form.customer_reschedule_limit ?? 3)} onChange={v => setForm({ ...form, customer_reschedule_limit: v === "" ? 3 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Maximum customer reschedules per job</label><Input type="number" value={String(form.customer_reschedule_limit ?? 3)} onChange={v => setForm({ ...form, customer_reschedule_limit: v === "" ? 3 : Number(v) })} /></div>
+              <div><label style={{ fontSize: 11 }}>Maximum provider reschedules per job</label><Input type="number" value={String(form.provider_reschedule_limit ?? 3)} onChange={v => setForm({ ...form, provider_reschedule_limit: v === "" ? 3 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Provider slot-change approval expiry (hours)</label><Input type="number" value={String(form.provider_reschedule_approval_hours ?? 24)} onChange={v => setForm({ ...form, provider_reschedule_approval_hours: v === "" ? 24 : Number(v) })} /></div>
               <div><label style={{ fontSize: 11 }}>Technician departure warning (minutes before slot)</label><Input type="number" value={String(form.provider_departure_warning_minutes ?? 15)} onChange={v => setForm({ ...form, provider_departure_warning_minutes: v === "" ? 15 : Number(v) })} /></div>
             </div>
@@ -1366,6 +1369,9 @@ function MonetizationTab() {
                 </div>;
               })}
             </div>
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "8px 0 0" }}>
+              Provider and customer limits are independent. Only a customer-approved provider slot change consumes the provider allowance; rejected, expired and replaced proposals do not. Set the provider limit to 0 to disable provider-initiated rescheduling.
+            </p>
           </div>
 
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>

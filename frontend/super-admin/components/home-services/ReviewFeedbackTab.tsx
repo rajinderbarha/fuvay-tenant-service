@@ -4,6 +4,7 @@ import { Card, Badge, Btn } from "../shared/ui";
 import { hsReviewApi } from "../../lib/api";
 import { useApi } from "../../hooks/useApi";
 import { Star, ShieldCheck, CheckCircle2, XCircle } from "lucide-react";
+import { fieldLabel } from "../../lib/field-labels";
 
 // REVIEW-CONSOLIDATION: Home Services Job 360 -> Review & Feedback tab.
 // Resolves the exact canonical ServiceJob's review via the vertical-scoped
@@ -171,7 +172,7 @@ export function ReviewFeedbackTab({ jobId, jobStatus }: { jobId: string; jobStat
               {Object.entries(integrity.data.checks).filter(([, v]) => v !== null).map(([k, v]) => (
                 <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 5, color: "var(--text-secondary)" }}>
                   {v ? <CheckCircle2 size={13} style={{ color: "var(--success-text)" }} /> : <XCircle size={13} style={{ color: "var(--danger-text)" }} />}
-                  {k.replace(/_/g, " ")}
+                  {fieldLabel(k)}
                 </div>
               ))}
               <div style={{ marginTop: 8 }}>

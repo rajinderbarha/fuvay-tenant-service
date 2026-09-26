@@ -25,6 +25,7 @@ import { hsProviderDirectoryApi, hsReviewApi, verticalCatalogApi } from "../../l
 import { resolveMediaUrl } from "../shared/ProfilePhotoUploader";
 import { ProviderDocuments } from "./ProviderDocuments";
 import { useApi, useAction } from "../../hooks/useApi";
+import { safeStatus } from "../../lib/api-foundation/normalize";
 
 function dt(v?: string | null) {
   return v ? new Date(v).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -605,7 +606,7 @@ function QualityTab({ providerId }: { providerId: string }) {
       <KpiGrid minCardWidth={150}>
         <SummaryCard label="Average Rating" value={rs ? Number(rs.average_rating).toFixed(1) : "—"}
           sub={rs ? `${rs.total_reviews} reviews` : reviews.error ? "Unavailable" : reviews.loading ? "Loading…" : "No reviews yet"} />
-        <SummaryCard label="Health Score" value={`${q.health_score}%`} sub={String(q.health_band)} />
+        <SummaryCard label="Health Score" value={`${q.health_score}%`} sub={safeStatus(q.health_band, "Not yet assessed")} />
         <SummaryCard label="Open Complaints" value={String(q.open_complaints_count ?? 0)} />
         <SummaryCard label="Total Complaints" value={String(q.total_complaints ?? 0)} />
         <SummaryCard label="Completion Rate" value={`${q.completion_rate ?? 0}%`} />

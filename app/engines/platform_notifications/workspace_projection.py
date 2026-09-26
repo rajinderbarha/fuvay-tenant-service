@@ -76,7 +76,10 @@ ACTION_REQUIRED_EVENT_KEYS = {
 # stored (spec: never redirect via an arbitrary backend URL). {entity_id}
 # is substituted with source_record_id when present.
 TRUSTED_DESTINATIONS: dict[str, str] = {
-    "booking.new": "/home-services/dispatch",
+    # Old booking.new rows used the booking id as their source record. Keep a
+    # safe board-level fallback here; project_item adds the exact job drawer
+    # link for newer rows whose source is a service_job.
+    "booking.new": "/home-services/bookings-jobs",
     "job.assigned": "/service-jobs/{entity_id}",
     "job.quote_required": "/service-jobs/{entity_id}/quotes",
     "quote.sent_to_customer": "/service-jobs/{entity_id}/quotes",
@@ -134,7 +137,11 @@ def resolve_category(notification_type: str) -> str:
     return "System"
 
 
-def resolve_destination(notification_type: str, source_record_id: uuid.UUID | None) -> str | None:
+def resolve_destination(notification_type: str, source_record_id: uuid.UUID | None,
+                        source_record_type: str | None = None) -> str | None:
+    if (notification_type == "booking.new"
+            and source_record_type == "service_jobs" and source_record_id):
+        return f"/home-services/bookings-jobs?job_id={source_record_id}"
     template = TRUSTED_DESTINATIONS.get(notification_type)
     if not template:
         return None
@@ -150,7 +157,8 @@ def project_item(n: InAppNotification) -> dict:
     d["category"] = resolve_category(n.notification_type)
     d["is_action_required"] = is_action_required(n)
     d["is_critical"] = n.severity == SEV_CRITICAL
-    d["destination"] = resolve_destination(n.notification_type, n.source_record_id)
+    d["destination"] = resolve_destination(
+        n.notification_type, n.source_record_id, n.source_record_type)
     return d
 
 
@@ -192,11 +200,14 @@ async def get_workspace_summary(db: AsyncSession, user_id: uuid.UUID) -> dict:
 
 
 async def get_workspace_items(db: AsyncSession, user_id: uuid.UUID,
-                              limit: int = 30, offset: int = 0) -> dict:
+                              limit: int = 30, offset: int = 0,
+                              read_status: str | None = None) -> dict:
     base = select(InAppNotification).where(
         InAppNotification.user_id == user_id,
         InAppNotification.read_status != READ_ARCHIVED,
     )
+    if read_status:
+        base = base.where(InAppNotification.read_status == read_status)
     total = await db.scalar(select(func.count()).select_from(base.subquery())) or 0
     rows = (await db.execute(base.order_by(InAppNotification.created_at.desc())
                              .limit(limit).offset(offset))).scalars().all()

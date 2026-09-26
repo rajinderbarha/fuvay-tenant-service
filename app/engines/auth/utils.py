@@ -83,7 +83,7 @@ def _settings():
 
 def create_access_token(
     user_id: str,
-    email: str,
+    email: str | None,
     role: str,
     tenant_id: str | None,
     tenant_name: str | None,
@@ -114,7 +114,7 @@ def create_access_token(
         "exp": int(exp.timestamp()),
         "iss": "serviceos",
         "aud": aud,
-        "email": email,
+        "email": email or "",
         "role": role,
         "tenant_id": tenant_id,
         "tenant_name": tenant_name,

@@ -114,7 +114,9 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
             ["Total Team", s?.total_staff], ["Technicians", s?.technicians], ["Staff & Managers", s?.staff_members],
             ["Active", s?.active], ["Available", s?.available], ["Assigned, not started", s?.assigned_not_started],
             ["Working now", s?.assigned],
-            ["Setup Incomplete", s?.capability_incomplete], ["Inactive / Suspended", s?.suspended],
+            ["SLA breached jobs", s?.sla_breached_jobs], ["Overdue jobs", s?.overdue_jobs],
+            ["No app login", s?.login_not_created], ["Setup Incomplete", s?.capability_incomplete],
+            ["Inactive / Suspended", s?.suspended],
           ].map(([label, value]) => (
             <div key={label as string} style={{ padding: "10px 12px", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", background: "var(--surface)" }}>
               <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
@@ -188,7 +190,10 @@ export function VerticalStaffDirectory({ vertical, verticalLabel }: { vertical: 
                           <td style={{ padding: "9px 14px" }}>{(row.provider_name as string) ?? "—"}</td>
                           <td style={{ padding: "9px 14px" }}><Badge variant={(row.member_type as string) === "technician" ? "success" : "muted"} size="sm">{(row.member_type as string)?.replace(/_/g, " ")}</Badge></td>
                           <td style={{ padding: "9px 14px" }}><Badge variant={verificationVariant(row.verification_status as string)} size="sm">{(row.login_status as string)?.replace(/_/g, " ")}</Badge></td>
-                          <td style={{ padding: "9px 14px" }}><Badge variant={availabilityVariant(row.availability_status as string)} size="sm">{(row.availability_status as string)?.replace(/_/g, " ")}</Badge></td>
+                          <td style={{ padding: "9px 14px" }}>
+                            <Badge variant={availabilityVariant(row.availability_status as string)} size="sm">{(row.availability_status as string)?.replace(/_/g, " ")}</Badge>
+                            {Number(row.sla_breached_jobs ?? 0) > 0 && <div style={{ marginTop: 3, color: "var(--danger-text)", fontSize: 10, fontWeight: 700 }}>{String(row.sla_breached_jobs)} SLA breached</div>}
+                          </td>
                           <td style={{ padding: "9px 14px" }}><Badge variant={assignmentVariant(row.assignment_status as string)} size="sm">{row.assignment_status as string}</Badge></td>
                           <td style={{ padding: "9px 14px", color: "var(--text-tertiary)" }}>{row.updated_at ? new Date(row.updated_at as string).toLocaleDateString() : "—"}</td>
                         </tr>
@@ -283,11 +288,16 @@ function StaffInspector({ vertical, verticalLabel, staffId, tab, onTabChange, on
           <Row label="Designation" value={(d.designation as string) ?? "—"}/>
           <Row label="Login access" value={((d.login_status as string) ?? "not created").replace(/_/g, " ")}/>
           <Row label="Employee code" value={(d.employee_code as string) ?? "—"}/>
+          <Row label="Phone" value={(d.phone as string) ?? "Not provided"}/>
+          <Row label="Email" value={(d.email as string) ?? "Not provided"}/>
           <Row label="Availability" value={(d.availability_status as string)?.replace(/_/g, " ")}/>
           <Row label="Assigned jobs" value={String(d.active_jobs ?? 0)}/>
           <Row label="Work in progress" value={String(d.work_in_progress_jobs ?? 0)}/>
           <Row label="Completed jobs" value={String(d.completed_jobs ?? 0)}/>
+          <Row label="SLA breached" value={String(d.sla_breached_jobs ?? 0)}/>
+          <Row label="Overdue" value={String(d.overdue_jobs ?? 0)}/>
           <Row label="Next job" value={(d.next_job_date as string) ?? "—"}/>
+          <Row label="Next SLA deadline" value={d.next_sla_due_at ? new Date(d.next_sla_due_at as string).toLocaleString("en-IN") : "—"}/>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }}>
             Changes here affect only this staff member&apos;s {verticalLabel} assignment.
           </p>
@@ -310,13 +320,23 @@ function StaffInspector({ vertical, verticalLabel, staffId, tab, onTabChange, on
 
       {tab === "capabilities" && (
         <div style={{ fontSize: 12 }}>
-          {(capabilities.data?.job_types.length ?? 0) === 0 ? (
-            <p style={{ color: "var(--text-tertiary)" }}>No job-type capabilities configured yet.</p>
-          ) : capabilities.data!.job_types.map((jt, i) => (
-            <div key={i} style={{ padding: "4px 0", borderBottom: "1px solid var(--border)" }}>
-              {(jt as Record<string, unknown>).job_type_name as string} — {(jt as Record<string, unknown>).master_service_name as string ?? "—"}
-            </div>
-          ))}
+          {(capabilities.data?.job_types.length ?? 0) === 0 && (((capabilities.data as Record<string, unknown> | null)?.skills as unknown[] | undefined) ?? []).length === 0 ? (
+            <p style={{ color: "var(--text-tertiary)" }}>No approved skills or job-type capabilities configured yet.</p>
+          ) : <>
+            {(((capabilities.data as Record<string, unknown> | null)?.skills as unknown[] | undefined) ?? []).length > 0 && <div style={{ marginBottom: 10 }}>
+              <strong>Approved skills</strong>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+                {(((capabilities.data as Record<string, unknown>).skills as unknown[]) ?? []).map((skill, i) => (
+                  <Badge key={i} variant="success" size="sm">{typeof skill === "string" ? skill.replaceAll("_", " ") : String((skill as Record<string, unknown>).name ?? (skill as Record<string, unknown>).code ?? "Approved")}</Badge>
+                ))}
+              </div>
+            </div>}
+            {(capabilities.data?.job_types ?? []).map((jt, i) => (
+              <div key={i} style={{ padding: "4px 0", borderBottom: "1px solid var(--border)" }}>
+                {(jt as Record<string, unknown>).job_type_name as string} — {(jt as Record<string, unknown>).master_service_name as string ?? "—"}
+              </div>
+            ))}
+          </>}
         </div>
       )}
 
@@ -324,9 +344,14 @@ function StaffInspector({ vertical, verticalLabel, staffId, tab, onTabChange, on
         <div style={{ fontSize: 12 }}>
           <p>Active jobs: {workload.data?.capacity_active ?? 0}</p>
           {(workload.data?.active_jobs ?? []).map((j, i) => (
-            <div key={i} style={{ padding: "4px 0", borderBottom: "1px solid var(--border)" }}>
-              {(j as Record<string, unknown>).job_number as string} — {(j as Record<string, unknown>).status as string}
-            </div>
+            <a key={i} href={`/admin/home-services/service-jobs/${String((j as Record<string, unknown>).job_id)}`}
+              style={{ display: "block", padding: "6px 0", borderBottom: "1px solid var(--border)", color: "inherit", textDecoration: "none" }}>
+              <strong>{(j as Record<string, unknown>).job_number as string}</strong> — {String((j as Record<string, unknown>).status).replaceAll("_", " ")}
+              <small style={{ display: "block", color: (j as Record<string, unknown>).sla_breached ? "var(--danger-text)" : "var(--text-tertiary)" }}>
+                {String((j as Record<string, unknown>).scheduled_date ?? "Date not set")} · {String((j as Record<string, unknown>).time_window ?? "Time not set")}
+                {(j as Record<string, unknown>).sla_breached ? " · SLA breached" : ""}
+              </small>
+            </a>
           ))}
         </div>
       )}

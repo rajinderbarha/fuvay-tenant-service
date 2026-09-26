@@ -516,7 +516,8 @@ class HomeServiceFinalCreationService:
         # work and the customer got no bell notification.
         await self._notify_booking_confirmed(
             booking_id=booking.id, booking_number=booking_number,
-            tenant_id=draft.selected_tenant_id, customer_id=draft.customer_id)
+            job_id=job.id, tenant_id=draft.selected_tenant_id,
+            customer_id=draft.customer_id)
 
         # 9. Customer platform fee (vertical_monetization).
         #
@@ -569,7 +570,7 @@ class HomeServiceFinalCreationService:
             "payment_mode":                "customer_pays_provider_directly",
         }
 
-    async def _notify_booking_confirmed(self, *, booking_id, booking_number,
+    async def _notify_booking_confirmed(self, *, booking_id, booking_number, job_id,
                                         tenant_id, customer_id) -> None:
         """Notify the provider (a new booking to staff) and the customer (their
         booking is confirmed). Best-effort — never block confirmation on it."""
@@ -595,9 +596,9 @@ class HomeServiceFinalCreationService:
                         notification_type="booking.new",
                         title="New booking received",
                         body=f"Booking {booking_number} came in. Assign a technician to get started.",
-                        action_url="/service-jobs",
-                        action_label="View jobs",
-                        source_record_type="service_bookings", source_record_id=booking_id,
+                        action_url=f"/home-services/bookings-jobs?job_id={job_id}",
+                        action_label="Open booking",
+                        source_record_type="service_jobs", source_record_id=job_id,
                         severity="info"))
         except Exception:
             # Notification must never break booking confirmation.

@@ -69,6 +69,14 @@ SELECT
     u.is_active,
     u.account_status,
     u.created_at,
+    u.meta                                                          AS user_meta,
+    EXISTS (
+        SELECT 1 FROM user_sessions us
+        WHERE us.user_id=u.id AND us.revoked_at IS NULL
+    )                                                               AS customer_app_seen,
+    COALESCE(ch.channels, '[]'::jsonb)                            AS channels,
+    ch.instagram_username,
+    ch.whatsapp_number,
     COALESCE(ca.city, '')                                          AS city,
     COALESCE(ca.district, '')                                      AS district,
     COALESCE(ca.state, '')                                         AS state,
@@ -108,6 +116,19 @@ LEFT JOIN LATERAL (
 ) ca ON TRUE
 LEFT JOIN tenants t ON t.id = bk.last_tenant_id
 LEFT JOIN LATERAL (
+    SELECT
+        jsonb_agg(DISTINCT jsonb_build_object(
+            'channel', mt.channel,
+            'username', mt.channel_username,
+            'display_name', mt.display_name,
+            'channel_user_id', CASE WHEN mt.channel = 'whatsapp' THEN mt.channel_user_id ELSE NULL END
+        )) FILTER (WHERE mt.id IS NOT NULL)                       AS channels,
+        MAX(mt.channel_username) FILTER (WHERE mt.channel = 'instagram') AS instagram_username,
+        MAX(mt.channel_user_id) FILTER (WHERE mt.channel = 'whatsapp')   AS whatsapp_number
+    FROM messaging_threads mt
+    WHERE mt.customer_id = u.id AND mt.deleted_at IS NULL
+) ch ON TRUE
+LEFT JOIN LATERAL (
     SELECT COUNT(*) AS complaints_count
     FROM customer_complaints cc2
     WHERE cc2.customer_id = u.id
@@ -146,7 +167,8 @@ def _build_filters(
 
     if q:
         conditions.append(
-            "(u.full_name ILIKE :q_like OR u.phone ILIKE :q_like OR u.email ILIKE :q_like)"
+            "(u.full_name ILIKE :q_like OR u.phone ILIKE :q_like OR u.email ILIKE :q_like "
+            "OR ch.instagram_username ILIKE :q_like OR ch.whatsapp_number ILIKE :q_like)"
         )
         params["q_like"] = f"%{q}%"
 
@@ -227,11 +249,28 @@ def _where_clause(conditions: list[str]) -> str:
 
 
 def _row_to_dict(row) -> dict:
+    email = row.email or ""
+    if email.lower().endswith("@serviceos.internal"):
+        email = ""
+    channels = list(row.channels or [])
+    registration_source = str((row.user_meta or {}).get("registration_source") or "")
+    if (
+        row.phone and (row.customer_app_seen or registration_source == "customer_app")
+        and not any(item.get("channel") == "customer_app" for item in channels)
+    ):
+        channels.append({
+            "channel": "customer_app", "username": None,
+            "display_name": row.full_name, "channel_user_id": None,
+        })
     return {
         "id":                 str(row.id),
         "full_name":          row.full_name or "",
         "phone":              row.phone or "",
-        "email":              row.email or "",
+        "email":              email,
+        "channels":           channels,
+        "instagram_username": row.instagram_username,
+        "whatsapp_number":    row.whatsapp_number,
+        "login_identifier":   "phone" if row.phone else "social_channel",
         "is_active":          row.is_active,
         "account_status":     row.account_status or ("active" if row.is_active else "disabled"),
         "city":               row.city or "",
@@ -375,13 +414,16 @@ async def export_customers(
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "Name", "Phone", "Email", "City", "State", "Zipcode",
+        "Name", "Login phone", "Email", "Instagram", "WhatsApp", "Access channels", "City", "State", "Zipcode",
         "Health Band", "Total Bookings", "Completed", "Cancelled",
         "Complaints", "Reviews", "Avg Rating", "Last Booking", "Created",
     ])
     for row in rows:
+        customer = _row_to_dict(row)
         writer.writerow([
-            row.full_name, row.phone or "", row.email or "",
+            row.full_name, row.phone or "", customer["email"],
+            customer["instagram_username"] or "", customer["whatsapp_number"] or "",
+            ", ".join(sorted({str(item.get("channel") or "") for item in customer["channels"] if item.get("channel")})),
             row.city or "", row.state or "", row.zipcode or "",
             row.health_band,
             int(row.total_bookings), int(row.completed_bookings), int(row.cancelled_bookings),
@@ -455,7 +497,7 @@ async def list_admin_customers(
     # four per-customer aggregate laterals merely to obtain a total count.
     # Enriched counts are reserved for filters that actually depend on them.
     needs_enriched_count = any((
-        health_band, engagement_status, city, state, zipcode,
+        q, health_band, engagement_status, city, state, zipcode,
         has_complaints is not None, has_reviews is not None,
         booking_count_min is not None, booking_count_max is not None,
         last_booking_from, last_booking_to,

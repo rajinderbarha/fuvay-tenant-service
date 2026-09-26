@@ -523,13 +523,14 @@ class AuthService:
                 resolution="Log in at POST /v1/auth/login/phone",
             )
         user = User(
-            email=email or f"customer_{uuid.uuid4().hex[:8]}@serviceos.internal",
+            email=str(email).strip().lower() if email else None,
             phone=phone,
             full_name=full_name,
             role="customer",
             tenant_id=tenant_id,
             is_active=True,
             is_verified=False,
+            meta={"registration_source": "customer_app", "login_identifier": "phone"},
         )
         self.db.add(user)
         await self.db.flush()

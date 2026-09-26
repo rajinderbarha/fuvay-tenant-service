@@ -19,6 +19,14 @@ class _Scalars:
         return self.value
 
 
+class _ScalarValue:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar_one(self):
+        return self.value
+
+
 def _pending_request():
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -141,7 +149,7 @@ async def test_approval_rechecks_capacity_then_resets_visit_timers(monkeypatch):
     )
     db = SimpleNamespace(
         execute=AsyncMock(side_effect=[
-            _Scalars(request), _Scalars(job), _Scalars(assignment),
+            _Scalars(request), _Scalars(job), _ScalarValue(0), _Scalars(assignment),
         ]),
         get=AsyncMock(return_value=booking), add=MagicMock(), flush=AsyncMock(),
     )
@@ -150,7 +158,7 @@ async def test_approval_rechecks_capacity_then_resets_visit_timers(monkeypatch):
     monkeypatch.setattr(
         "app.engines.vertical_monetization.runtime_operations."
         "get_home_services_operations_policy",
-        AsyncMock(return_value=SimpleNamespace(customer_reschedule_limit=3)),
+        AsyncMock(return_value=SimpleNamespace(provider_reschedule_limit=3)),
     )
     stamp = AsyncMock()
     monkeypatch.setattr("app.engines.execution.sla_breach_service.stamp_due_at", stamp)
@@ -204,6 +212,87 @@ async def test_full_slot_at_approval_never_changes_original_visit(monkeypatch):
     assert request.status == "expired"
     assert job.scheduled_date == date(2026, 9, 25)
     assert job.scheduled_time_window == "09:00-11:00"
+
+
+@pytest.mark.asyncio
+async def test_provider_limit_is_rechecked_at_customer_approval(monkeypatch):
+    from app.engines.home_service_assignment import provider_reschedule_service as svc
+
+    request = _pending_request()
+    customer_id = uuid.uuid4()
+    booking = SimpleNamespace(id=request.booking_id, customer_id=customer_id)
+    job = SimpleNamespace(
+        id=request.job_id, booking_id=request.booking_id, tenant_id=request.tenant_id,
+        job_number="JOB-1", offering_id=uuid.uuid4(), job_type_id=uuid.uuid4(),
+        scheduled_date=date(2026, 9, 25), scheduled_time_window="09:00-11:00",
+    )
+    db = SimpleNamespace(
+        execute=AsyncMock(side_effect=[
+            _Scalars(request), _Scalars(job), _ScalarValue(2),
+        ]),
+        get=AsyncMock(return_value=booking), add=MagicMock(), flush=AsyncMock(),
+    )
+    monkeypatch.setattr(svc, "_capacity_available", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        "app.engines.vertical_monetization.runtime_operations."
+        "get_home_services_operations_policy",
+        AsyncMock(return_value=SimpleNamespace(provider_reschedule_limit=2)),
+    )
+    notify = AsyncMock()
+    monkeypatch.setattr(svc, "_notify_provider_decision", notify)
+
+    result = await svc.decide_request(
+        db, request_id=request.id, customer_id=customer_id,
+        decision="approve", actor_user_id=customer_id,
+    )
+
+    assert result["status"] == "reschedule_limit_reached"
+    assert result["provider_reschedules_used"] == 2
+    assert result["provider_reschedules_remaining"] == 0
+    assert request.status == "expired"
+    assert job.scheduled_date == date(2026, 9, 25)
+    assert job.scheduled_time_window == "09:00-11:00"
+    notify.assert_awaited_once_with(db, job, request, approved=False)
+
+
+@pytest.mark.asyncio
+async def test_provider_cannot_open_request_after_approved_limit(monkeypatch):
+    from app.engines.home_service_assignment import provider_reschedule_service as svc
+    from app.exceptions import ServiceOSException
+
+    tenant_id = uuid.uuid4()
+    job = SimpleNamespace(
+        id=uuid.uuid4(), tenant_id=tenant_id, status="scheduled",
+        scheduled_date=date(2026, 9, 29), scheduled_time_window="09:00-11:00",
+    )
+    db = SimpleNamespace(execute=AsyncMock(return_value=_Scalars(job)))
+    monkeypatch.setattr(
+        "app.engines.execution.home_service_service.HomeServiceJobExecutionService."
+        "_resolve_job_type_workflow",
+        AsyncMock(return_value=SimpleNamespace(allows_reschedule=True)),
+    )
+    monkeypatch.setattr(
+        "app.engines.vertical_monetization.runtime_operations."
+        "get_home_services_operations_policy",
+        AsyncMock(return_value=SimpleNamespace(provider_reschedule_limit=2)),
+    )
+    monkeypatch.setattr(
+        svc, "_approved_provider_reschedule_count", AsyncMock(return_value=2),
+    )
+
+    with pytest.raises(ServiceOSException) as error:
+        await svc.create_request(
+            db, job_id=job.id, tenant_id=tenant_id,
+            requested_date=date(2026, 10, 1),
+            requested_time_window="11:00-13:00",
+            reason="Technician availability changed", actor_user_id=uuid.uuid4(),
+        )
+
+    assert error.value.error_code == "JOB_ASSIGNMENT_RESCHEDULE_LIMIT_REACHED"
+    assert error.value.context == {
+        "provider_reschedules_used": 2,
+        "provider_reschedule_limit": 2,
+    }
 
 
 @pytest.mark.asyncio

@@ -44,6 +44,7 @@ class HomeServicesOperationsPolicy:
     urgent_assignment_threshold_minutes: int = 120
     assignment_auto_assign_enabled: bool = True
     customer_reschedule_limit: int = 3
+    provider_reschedule_limit: int = 3
     customer_cancellation_enabled: bool = True
     customer_cancellation_cutoff_minutes: int = 120
     customer_cancellation_reasons: list[dict] = field(
@@ -84,7 +85,8 @@ async def get_home_services_operations_policy(
         "SELECT p.assignment_timeout_enabled, p.assignment_timeout_minutes, "
         "p.urgent_assignment_timeout_minutes, p.urgent_assignment_threshold_minutes, "
         "p.assignment_auto_assign_enabled, "
-        "p.customer_reschedule_limit, p.customer_cancellation_enabled, "
+        "p.customer_reschedule_limit, p.provider_reschedule_limit, "
+        "p.customer_cancellation_enabled, "
         "p.customer_cancellation_cutoff_minutes, p.customer_cancellation_reasons, "
         "p.provider_reschedule_approval_hours, "
         "p.provider_departure_warning_minutes, "
@@ -127,6 +129,11 @@ async def get_home_services_operations_policy(
             row["customer_reschedule_limit"]
             if row["customer_reschedule_limit"] is not None
             else defaults.customer_reschedule_limit
+        ),
+        provider_reschedule_limit=int(
+            row.get("provider_reschedule_limit")
+            if row.get("provider_reschedule_limit") is not None
+            else defaults.provider_reschedule_limit
         ),
         customer_cancellation_enabled=(
             bool(row["customer_cancellation_enabled"])

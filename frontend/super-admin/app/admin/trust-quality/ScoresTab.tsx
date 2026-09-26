@@ -18,6 +18,8 @@ import { AlertTriangle, Gauge } from "lucide-react";
 import { Card, Btn, Badge, Spinner, Select, Pagination, EmptyState } from "../../../components/shared/ui";
 import { trustQualityApi, TQ_ENUMS, HealthScoreRow, HealthRule } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
+import { fieldLabel } from "../../../lib/field-labels";
+import { safeStatus } from "../../../lib/api-foundation/normalize";
 
 const PAGE_SIZE = 25;
 
@@ -76,13 +78,13 @@ export function ScoresTab({ formulas }: { formulas: HealthRule[] }) {
           <div style={{ minWidth: 190 }}>
             <Select label="Target type" value={targetType} onChange={onFilter(setTargetType)}
               options={[{ value: "", label: "All target types" },
-                ...TQ_ENUMS.healthTargets.map(v => ({ value: v, label: v.replace(/_/g, " ") }))]} />
+                ...TQ_ENUMS.healthTargets.map(v => ({ value: v, label: v === "tenant" ? "Provider" : safeStatus(v) }))]} />
           </div>
           <div style={{ minWidth: 190 }}>
             <Select label="Band" value={band} onChange={onFilter(setBand)}
               options={[{ value: "", label: "All bands" },
                 { value: "__unbanded__", label: "Unbanded (insufficient data)" },
-                ...Object.keys(BAND_TONE).map(v => ({ value: v, label: v.replace(/_/g, " ") }))]} />
+                ...Object.keys(BAND_TONE).map(v => ({ value: v, label: safeStatus(v) }))]} />
           </div>
           <div style={{ minWidth: 220 }}>
             <Select label="Formula" value={formulaId} onChange={onFilter(setFormulaId)}
@@ -125,7 +127,7 @@ export function ScoresTab({ formulas }: { formulas: HealthRule[] }) {
                             </span>}
                           </div>
                           <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                            {s.target_type.replace(/_/g, " ")} · {s.target_id.slice(0, 8)}
+                            {s.target_type === "tenant" ? "Provider" : safeStatus(s.target_type)} · reference {s.target_id.slice(0, 8)}
                           </div>
                         </td>
                         <td style={{ padding: "10px 16px", color: "var(--text-secondary)" }}>{s.formula_name ?? "—"}</td>
@@ -138,7 +140,7 @@ export function ScoresTab({ formulas }: { formulas: HealthRule[] }) {
                         </td>
                         <td style={{ padding: "10px 16px" }}>
                           {s.band_key
-                            ? <Badge variant={BAND_TONE[s.band_key] ?? "muted"}>{s.band_key.replace(/_/g, " ")}</Badge>
+                            ? <Badge variant={BAND_TONE[s.band_key] ?? "muted"}>{safeStatus(s.band_key)}</Badge>
                             : <span title="Too few of the formula's metrics were measurable to band this target">
                                 <Badge variant="muted">unbanded</Badge>
                               </span>}
@@ -230,7 +232,7 @@ function Breakdown({ row }: { row: HealthScoreRow }) {
             <tbody>
               {comps.map((c, i) => (
                 <tr key={`${c.metric_key}-${i}`}>
-                  <td style={{ padding: "4px 8px 4px 0", fontFamily: "monospace" }}>{c.metric_key}</td>
+                  <td style={{ padding: "4px 8px 4px 0", fontWeight: 600 }}>{fieldLabel(c.metric_key)}</td>
                   <td style={{ padding: "4px 8px" }}>{String(c.raw_value ?? "—")}</td>
                   <td style={{ padding: "4px 8px" }}>{c.normalized?.toFixed(1)}</td>
                   <td style={{ padding: "4px 8px" }}>{c.weight_percent}%</td>
@@ -245,13 +247,13 @@ function Breakdown({ row }: { row: HealthScoreRow }) {
         {pens.length > 0 && (
           <div>
             <span style={{ color: "var(--danger-text)", fontWeight: 700 }}>Penalties: </span>
-            {pens.map(p => `${p.metric_key} −${p.penalty_points}`).join(", ")}
+            {pens.map(p => `${fieldLabel(p.metric_key)} −${p.penalty_points}`).join(", ")}
           </div>
         )}
         {bons.length > 0 && (
           <div>
             <span style={{ color: "var(--success-text)", fontWeight: 700 }}>Bonuses: </span>
-            {bons.map(b => `${b.metric_key} +${b.bonus_points}`).join(", ")}
+            {bons.map(b => `${fieldLabel(b.metric_key)} +${b.bonus_points}`).join(", ")}
           </div>
         )}
       </div>

@@ -867,6 +867,15 @@ export interface AdminCustomer {
   full_name: string;
   phone: string;
   email: string;
+  channels: Array<{
+    channel: "instagram" | "whatsapp" | "customer_app" | string;
+    username: string | null;
+    display_name: string | null;
+    channel_user_id: string | null;
+  }>;
+  instagram_username: string | null;
+  whatsapp_number: string | null;
+  login_identifier: "phone" | "social_channel";
   is_active: boolean;
   account_status: "active" | "locked" | "suspended" | "disabled" | string;
   city: string;
@@ -9409,7 +9418,7 @@ export interface DashboardExecutiveSummary {
   platform_health: { score: number; status: string };
   active_tenants: { count: number; new_this_month: number; bookable: number };
   live_operations: { total: number; jobs: number; bookings: number; leads: number };
-  pending_admin_actions: { count: number; approvals: number; complaints: number; disputes: number };
+  pending_admin_actions: { count: number; approvals: number; finance_exceptions: number; security_alerts: number };
   at_risk_tenants: { count: number; high_risk: number };
   critical_alerts: { count: number; open_threats: number };
 }
@@ -9434,7 +9443,7 @@ export interface DashboardTenantLifecycle {
 export interface DashboardOperationsSnapshot {
   live_jobs: number; today_bookings: number; pending_provider_acceptance: number;
   technicians_on_duty: number; appointments_today: number; leads_today: number;
-  orders_today: number; sla_breaches: number;
+  orders_today: number; sla_breaches: number; complaint_sla_breaches: number;
 }
 
 export interface DashboardLiveOperationItem {
@@ -9548,7 +9557,7 @@ export interface DashboardHomeServicesSummary {
   provider_coverage_health: { status: string; active_areas: number; tenants_without_areas: number };
   provider_bookability_health: { status: string; bookable_providers: number; not_bookable_providers: number; eligible_providers: number };
   auto_price_options_health: string;
-  completed_job_deduction_health: string;
+  completed_job_deduction_health: string | { status: string; missing_deductions: number };
   published_tenant_services: number;
 }
 

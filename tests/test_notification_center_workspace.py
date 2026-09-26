@@ -139,6 +139,8 @@ class TestTrustedDestinationMapping:
         assert 'def resolve_destination' in c
         assert "TRUSTED_DESTINATIONS.get(notification_type)" in c
 
-    def test_booking_new_maps_to_dispatch_board(self):
+    def test_booking_new_maps_to_booking_workspace(self):
         c = _read(PROJECTION)
-        assert '"booking.new": "/home-services/dispatch"' in c
+        assert '"booking.new": "/home-services/bookings-jobs"' in c
+        assert 'source_record_type == "service_jobs"' in c
+        assert 'f"/home-services/bookings-jobs?job_id={source_record_id}"' in c

@@ -3963,6 +3963,8 @@ export interface InAppNotificationItem {
   title: string;
   body: string;
   action_url: string | null;
+  /** Backend-projected, allow-listed route. Prefer this over historical action_url. */
+  destination?: string | null;
   action_label: string | null;
   severity: string;
   read_status: string;

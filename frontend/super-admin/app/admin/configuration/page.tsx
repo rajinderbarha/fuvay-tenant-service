@@ -1,5 +1,5 @@
 "use client";
-import { TableSurface } from "@serviceos/design-system";
+import { ActionMenu, TableSurface } from "@serviceos/design-system";
 import React, { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
@@ -12,6 +12,8 @@ import { useApi, useAction } from "../../../hooks/useApi";
 import {
   FileText, GitCompare, Plus, Lock, ShieldCheck, AlertTriangle, CheckCircle2, RotateCw,
 } from "lucide-react";
+import { fieldLabel } from "../../../lib/field-labels";
+import { safeStatus } from "../../../lib/api-foundation/normalize";
 
 type Tab = "registry" | "flags" | "changes" | "history" | "audit";
 const VALID_TABS: Tab[] = ["registry", "flags", "changes", "history", "audit"];
@@ -24,6 +26,19 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "danger" | "muted">
   draft: "muted", pending_approval: "warning", scheduled: "warning",
   active: "success", superseded: "muted", rolled_back: "danger",
 };
+
+const SOURCE_LABELS: Record<string, string> = {
+  code_default: "Built-in default", code_locked: "Protected system rule",
+  global: "Global override", vertical: "Home Services override",
+  environment: "Environment override",
+};
+const SNAPSHOT_LABELS: Record<string, string> = {
+  all_active_records: "Applies to all active records",
+  new_records_only: "Applies to new records only",
+  restart_required: "Applies after service restart",
+};
+const moduleLabel = (value?: string | null) => value ? fieldLabel(value) : "Platform";
+const scopeLabel = (value: string) => value === "vertical" ? "Home Services override" : safeStatus(value);
 
 export default function PlatformConfigurationPage() {
   const params = useSearchParams();
@@ -98,6 +113,8 @@ function ConfigurationRegistryTab({ initialSearch = "" }: { initialSearch?: stri
   const [scopeFilter, setScopeFilter] = useState("");
   const [search, setSearch] = useState(initialSearch);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [createRequestKey, setCreateRequestKey] = useState<string | null>(null);
+  const finishCreateRequest = useCallback(() => setCreateRequestKey(null), []);
 
   useEffect(() => { setSearch(initialSearch); }, [initialSearch]);
 
@@ -129,13 +146,13 @@ function ConfigurationRegistryTab({ initialSearch = "" }: { initialSearch?: stri
           <Card style={{ padding: 0 }}>
             <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "flex", gap: 8, flexWrap: "wrap" }}>
               <p style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--text-primary)", flex: "1 1 160px" }}>Registered configuration</p>
-              <div style={{ flex: "1 1 180px" }}><Input placeholder="Search setting name or key…" value={search} onChange={setSearch}/></div>
+              <div style={{ flex: "1 1 180px" }}><Input placeholder="Search settings…" value={search} onChange={setSearch}/></div>
               <Select value={scopeFilter} onChange={setScopeFilter} placeholder="Scope" options={[
                 { value: "", label: "All scopes" }, { value: "global", label: "Global" },
-                { value: "vertical", label: "Vertical" }, { value: "environment", label: "Environment" },
+                { value: "vertical", label: "Home Services override" }, { value: "environment", label: "Environment override" },
               ]}/>
               <Select value={ownerFilter} onChange={setOwnerFilter} placeholder="Owner Module" options={[
-                { value: "", label: "All modules" }, ...ownerModules.map(m => ({ value: m, label: m })),
+                { value: "", label: "All modules" }, ...ownerModules.map(m => ({ value: m, label: moduleLabel(m) })),
               ]}/>
               <Select value={riskFilter} onChange={setRiskFilter} placeholder="Risk" options={[
                 { value: "", label: "All risk levels" }, { value: "low", label: "Low" },
@@ -167,28 +184,57 @@ function ConfigurationRegistryTab({ initialSearch = "" }: { initialSearch?: stri
                           <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
                             {row.label}{row.locked && <Lock size={11} style={{ color: "var(--warning-text)" }}/>}
                           </div>
-                          <div style={{ fontSize: 11, color: "var(--text-tertiary)", fontFamily: "monospace" }}>{row.key}</div>
                         </td>
-                        <td style={{ padding: "10px 14px" }}>{row.owner_module ?? "—"}</td>
-                        <td style={{ padding: "10px 14px" }}>{row.allowed_scopes.join(", ")}</td>
+                        <td style={{ padding: "10px 14px" }}>{moduleLabel(row.owner_module)}</td>
+                        <td style={{ padding: "10px 14px" }}>{row.allowed_scopes.map(scopeLabel).join(", ")}</td>
                         <td style={{ padding: "10px 14px" }}>{typeof row.effective_value === "object" ? JSON.stringify(row.effective_value) : String(row.effective_value ?? "—")}</td>
-                        <td style={{ padding: "10px 14px" }}><Badge variant={RISK_VARIANT[row.risk_level] ?? "muted"} size="sm">{row.risk_level}</Badge></td>
-                        <td style={{ padding: "10px 14px" }}><Badge variant={STATUS_VARIANT[row.status] ?? "muted"} size="sm">{row.status}</Badge></td>
+                        <td style={{ padding: "10px 14px" }}><Badge variant={RISK_VARIANT[row.risk_level] ?? "muted"} size="sm">{safeStatus(row.risk_level)}</Badge></td>
+                        <td style={{ padding: "10px 14px" }}><Badge variant={STATUS_VARIANT[row.status] ?? "muted"} size="sm">{safeStatus(row.status)}</Badge></td>
                         <td style={{ padding: "10px 14px" }}>{row.version ? `v${row.version}` : "—"}</td>
-                        <td style={{ padding: "10px 14px", textAlign: "right", color: "var(--text-tertiary)" }}>⋮</td>
+                        <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                          <ActionMenu
+                            label="Actions"
+                            items={[
+                              {
+                                label: "View details",
+                                icon: <FileText size={14}/>,
+                                onClick: () => {
+                                  setSelectedKey(row.key);
+                                  setCreateRequestKey(null);
+                                },
+                              },
+                              !row.locked && row.admin_mutable && {
+                                label: "Request a change",
+                                icon: <Plus size={14}/>,
+                                onClick: () => {
+                                  setSelectedKey(row.key);
+                                  setCreateRequestKey(row.key);
+                                },
+                              },
+                            ]}
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </TableSurface>
               </div>
             )}
-            <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--text-tertiary)" }}>Showing 1 to {rows.length} of {summary?.registered_settings ?? rows.length} settings</div>
+            <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--text-tertiary)" }}>
+              Showing {rows.length} matching setting{rows.length === 1 ? "" : "s"} from {summary?.registered_settings ?? rows.length} registered settings
+            </div>
           </Card>
         </div>
 
         {selectedRow && (
           <div style={{ width: 400, flexShrink: 0 }}>
-            <SettingInspector row={selectedRow} onChanged={() => listApi.refetch()}/>
+            <SettingInspector
+              key={selectedRow.key}
+              row={selectedRow}
+              startCreating={createRequestKey === selectedRow.key}
+              onStartCreatingHandled={finishCreateRequest}
+              onChanged={() => listApi.refetch()}
+            />
           </div>
         )}
       </div>
@@ -200,7 +246,12 @@ function Metric({ icon, value, label }: { icon: React.ReactNode; value: React.Re
   return <SummaryCard label={label} value={value ?? "—"} icon={icon} />;
 }
 
-function SettingInspector({ row, onChanged }: { row: ConfigurationListItem; onChanged: () => void }) {
+function SettingInspector({ row, startCreating, onStartCreatingHandled, onChanged }: {
+  row: ConfigurationListItem;
+  startCreating: boolean;
+  onStartCreatingHandled: () => void;
+  onChanged: () => void;
+}) {
   const [creating, setCreating] = useState(false);
   const [newValue, setNewValue] = useState("");
   const [reason, setReason] = useState("");
@@ -215,10 +266,16 @@ function SettingInspector({ row, onChanged }: { row: ConfigurationListItem; onCh
   const draft = detail?.history.find(h => h.status === "draft" || h.status === "pending_approval");
 
   function startCreate() {
-    setNewValue(String(detail?.effective.effective_value ?? ""));
+    setNewValue(String(detail?.effective.effective_value ?? row.effective_value ?? ""));
     setCreating(true);
     setErrors([]);
   }
+
+  useEffect(() => {
+    if (!startCreating || row.locked || !row.admin_mutable) return;
+    startCreate();
+    onStartCreatingHandled();
+  }, [startCreating, row.locked, row.admin_mutable, onStartCreatingHandled]);
 
   async function validateAndSubmit() {
     let parsed: unknown = newValue;
@@ -240,7 +297,6 @@ function SettingInspector({ row, onChanged }: { row: ConfigurationListItem; onCh
     return (
       <Card style={{ padding: 16, position: "sticky", top: 12 }}>
         <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>{row.label}</h2>
-        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 12px", fontFamily: "monospace" }}>{row.key}</p>
         <div style={{ padding: "12px 14px", borderRadius: "var(--radius-md)", background: "var(--surface-sunken)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
           <Lock size={16} style={{ color: "var(--warning-text)" }}/>
           <div>
@@ -258,9 +314,8 @@ function SettingInspector({ row, onChanged }: { row: ConfigurationListItem; onCh
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
         <div>
           <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>{row.label}</h2>
-          <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "2px 0 0", fontFamily: "monospace" }}>{row.key}</p>
         </div>
-        <Badge variant={STATUS_VARIANT[row.status] ?? "muted"} size="sm">{row.status}</Badge>
+        <Badge variant={STATUS_VARIANT[row.status] ?? "muted"} size="sm">{safeStatus(row.status)}</Badge>
       </div>
 
       {toast && <p style={{ fontSize: 12, color: "var(--success-text)" }}>{toast}</p>}
@@ -268,9 +323,9 @@ function SettingInspector({ row, onChanged }: { row: ConfigurationListItem; onCh
       {!creating ? (
         <>
           <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", margin: "14px 0 8px" }}>Definition</p>
-          <SummaryRow label="Type" value={row.data_type}/>
-          <SummaryRow label="Owner" value={row.owner_module ?? "—"}/>
-          <SummaryRow label="Allowed scopes" value={row.allowed_scopes.join(", ")}/>
+          <SummaryRow label="Type" value={safeStatus(row.data_type)}/>
+          <SummaryRow label="Owner" value={moduleLabel(row.owner_module)}/>
+          <SummaryRow label="Allowed scopes" value={row.allowed_scopes.map(scopeLabel).join(", ")}/>
           {!row.has_real_consumer && (
             <p style={{ fontSize: 11, color: "var(--warning-text)", margin: "4px 0" }}>
               Registered for governance — no runtime consumer reads this value yet.
@@ -279,7 +334,7 @@ function SettingInspector({ row, onChanged }: { row: ConfigurationListItem; onCh
 
           <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", margin: "16px 0 8px" }}>Current effective value</p>
           <SummaryRow label="Value" value={typeof detail?.effective.effective_value === "object" ? JSON.stringify(detail?.effective.effective_value) : String(detail?.effective.effective_value ?? "—")}/>
-          <SummaryRow label="Source" value={detail?.effective.source ?? "—"}/>
+          <SummaryRow label="Source" value={SOURCE_LABELS[detail?.effective.source ?? ""] ?? safeStatus(detail?.effective.source, "—")}/>
           <SummaryRow label="Fallback" value={String(detail?.effective.fallback_value ?? "—")}/>
 
           {(row.data_type === "duration" || row.data_type === "integer" || row.data_type === "percentage") && (
@@ -292,7 +347,7 @@ function SettingInspector({ row, onChanged }: { row: ConfigurationListItem; onCh
           )}
 
           <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", margin: "16px 0 8px" }}>Impact</p>
-          <SummaryRow label="Snapshot behavior" value={(detail?.snapshot_behavior ?? "—").replace(/_/g, " ")}/>
+          <SummaryRow label="Applies to" value={SNAPSHOT_LABELS[detail?.snapshot_behavior ?? ""] ?? safeStatus(detail?.snapshot_behavior, "—")}/>
           <SummaryRow label="Requires approval" value={detail?.approval_required ? "Yes" : "No"}/>
           <SummaryRow label="Requires restart" value={detail?.restart_required ? "Yes" : "No"}/>
 
@@ -391,8 +446,8 @@ function FeatureFlagsTab() {
           <tbody>
             {flags.map(f => (
               <tr key={f.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                <td style={{ padding: "9px 14px", fontWeight: 600 }}>{f.label}<div style={{ fontSize: 11, color: "var(--text-tertiary)", fontFamily: "monospace" }}>{f.flag_key}</div></td>
-                <td style={{ padding: "9px 14px" }}>{f.owner_module ?? "—"}</td>
+                <td style={{ padding: "9px 14px", fontWeight: 600 }}>{f.label}</td>
+                <td style={{ padding: "9px 14px" }}>{moduleLabel(f.owner_module)}</td>
                 <td style={{ padding: "9px 14px" }}><Badge variant={f.status === "enabled" ? "success" : "muted"} size="sm">{f.status}</Badge></td>
                 <td style={{ padding: "9px 14px" }}>{f.rollout_type}{f.rollout_percent ? ` (${f.rollout_percent}%)` : ""}</td>
               </tr>
@@ -454,7 +509,7 @@ function ChangeRequestsTab() {
               {items.map(cr => (
                 <tr key={cr.id} style={{ borderBottom: "1px solid var(--border)" }}>
                   <td style={{ padding: "9px 14px", fontWeight: 600 }}>{cr.label}</td>
-                  <td style={{ padding: "9px 14px" }}>{cr.scope_type} / {cr.scope_id}</td>
+                  <td style={{ padding: "9px 14px" }}>{scopeLabel(cr.scope_type)}{cr.scope_type !== "global" && cr.scope_id ? ` · ${safeStatus(cr.scope_id)}` : ""}</td>
                   <td style={{ padding: "9px 14px" }}>{typeof cr.value === "object" ? JSON.stringify(cr.value) : String(cr.value)}</td>
                   <td style={{ padding: "9px 14px" }}><Badge variant={STATUS_VARIANT[cr.status] ?? "muted"} size="sm">{cr.status.replace(/_/g, " ")}</Badge></td>
                   <td style={{ padding: "9px 14px", color: "var(--text-secondary)", maxWidth: 200 }}>{cr.change_reason}</td>
@@ -544,7 +599,7 @@ function AuditTab() {
         <TableSurface style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border)" }}>
-              {["Key", "Action", "Old Value", "New Value", "Reason", "When"].map(h => (
+              {["Setting", "Action", "Old Value", "New Value", "Reason", "When"].map(h => (
                 <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase" }}>{h}</th>
               ))}
             </tr>
@@ -552,8 +607,8 @@ function AuditTab() {
           <tbody>
             {items.map(a => (
               <tr key={a.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                <td style={{ padding: "9px 14px", fontFamily: "monospace", fontSize: 12 }}>{a.key}</td>
-                <td style={{ padding: "9px 14px" }}>{a.action_type.replace("change_request.", "")}</td>
+                <td style={{ padding: "9px 14px", fontWeight: 600 }}>{fieldLabel(a.key)}</td>
+                <td style={{ padding: "9px 14px" }}>{safeStatus(a.action_type.replace("change_request.", ""))}</td>
                 <td style={{ padding: "9px 14px" }}>{a.old_value === null ? "—" : String(a.old_value)}</td>
                 <td style={{ padding: "9px 14px" }}>{String(a.new_value)}</td>
                 <td style={{ padding: "9px 14px", color: "var(--text-secondary)" }}>{a.reason ?? "—"}</td>

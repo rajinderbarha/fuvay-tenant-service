@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone, date, timedelta
 from typing import Any
 
-from sqlalchemy import select, and_, text
+from sqlalchemy import and_, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.home_service_assignment.constants import (
@@ -79,6 +79,16 @@ class HomeServiceJobAssignmentService:
             query = query.with_for_update()
         res = await self.db.execute(query)
         return res.scalars().first()
+
+    async def _customer_reschedule_count(self, job_id: uuid.UUID) -> int:
+        """Customer allowance is independent from provider-approved changes."""
+        result = await self.db.execute(
+            select(func.count(ServiceJobAssignmentEvent.id)).where(
+                ServiceJobAssignmentEvent.job_id == job_id,
+                ServiceJobAssignmentEvent.event_type == EVENT_CUSTOMER_RESCHEDULED,
+            )
+        )
+        return int(result.scalar_one() or 0)
 
     async def _load_booking(self, booking_id: uuid.UUID):
         from app.engines.final_records.models import ServiceBooking
@@ -1010,7 +1020,8 @@ class HomeServiceJobAssignmentService:
         policy = await get_home_services_operations_policy(self.db)
         cancellation = self._customer_cancellation_decision(job, workflow, policy)
         max_reschedule_count = policy.customer_reschedule_limit
-        remaining_reschedules = max(0, max_reschedule_count - (job.reschedule_count or 0))
+        customer_reschedules_used = await self._customer_reschedule_count(job.id)
+        remaining_reschedules = max(0, max_reschedule_count - customer_reschedules_used)
         from app.engines.home_service_assignment.constants import CUSTOMER_RESCHEDULABLE_JOB_STATUSES
         reschedule_state_eligible = job.status in CUSTOMER_RESCHEDULABLE_JOB_STATUSES
         can_reschedule = reschedule_state_eligible and workflow_allows_reschedule and remaining_reschedules > 0
@@ -1039,6 +1050,7 @@ class HomeServiceJobAssignmentService:
             "reschedule_block_reason": reschedule_block_reason,
             "remaining_reschedule_allowance": remaining_reschedules,
             "max_reschedule_allowance": max_reschedule_count,
+            "customer_reschedules_used": customer_reschedules_used,
             "requires_provider_approval": False,
             "cancellation_fee": None,
             "cancellation_cutoff": cancellation["cancellation_deadline_at"],
@@ -1247,7 +1259,9 @@ class HomeServiceJobAssignmentService:
             raise ValueError(ERR_REASON_REQUIRED)
         if scheduled_date < _utcnow().date():
             raise ValueError(ERR_PAST_DATE)
-        booking, job = await self._load_booking_and_job(booking_id, customer_id)
+        booking, job = await self._load_booking_and_job(
+            booking_id, customer_id, for_update=True,
+        )
         if not job:
             raise ValueError(ERR_JOB_NOT_FOUND)
 
@@ -1283,7 +1297,8 @@ class HomeServiceJobAssignmentService:
         max_reschedule_count = (
             await get_home_services_operations_policy(self.db)
         ).customer_reschedule_limit
-        if (job.reschedule_count or 0) >= max_reschedule_count:
+        customer_reschedules_used = await self._customer_reschedule_count(job.id)
+        if customer_reschedules_used >= max_reschedule_count:
             raise ValueError(ERR_RESCHEDULE_LIMIT_REACHED)
         self._check_version(job, expected_version)
 

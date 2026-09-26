@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from app.engines.booking.models import BookingRescheduleRequest
 from app.engines.final_records.models import ServiceBooking, ServiceJob
@@ -60,6 +60,54 @@ def _result(row: BookingRescheduleRequest, *, notification_sent: bool | None = N
             if notification_sent is None else notification_sent
         ),
     }
+
+
+async def _approved_provider_reschedule_count(db, job_id: uuid.UUID) -> int:
+    """Count only customer-approved provider changes.
+
+    Rejected, expired and superseded proposals do not move the committed visit
+    and therefore must not consume the provider's operational allowance.
+    """
+    count = (await db.execute(
+        select(func.count(BookingRescheduleRequest.id)).where(
+            BookingRescheduleRequest.job_id == job_id,
+            BookingRescheduleRequest.request_source == "provider",
+            BookingRescheduleRequest.status == APPROVED,
+        )
+    )).scalar_one()
+    return int(count or 0)
+
+
+async def provider_reschedule_allowance(db, job_id: uuid.UUID) -> dict:
+    from app.engines.vertical_monetization.runtime_operations import (
+        get_home_services_operations_policy,
+    )
+    policy = await get_home_services_operations_policy(db)
+    used = await _approved_provider_reschedule_count(db, job_id)
+    limit = max(0, int(policy.provider_reschedule_limit))
+    return {
+        "used": used,
+        "limit": limit,
+        "remaining": max(0, limit - used),
+        "limit_reached": used >= limit,
+    }
+
+
+def _raise_provider_limit_reached(*, used: int, limit: int) -> None:
+    if limit <= 0:
+        message = "Provider-initiated rescheduling is disabled by platform policy."
+    else:
+        message = (
+            f"This provider has used all {limit} allowed reschedule"
+            f"{'s' if limit != 1 else ''} for this job. The customer may choose "
+            "a new slot, or the provider must use the governed cancellation flow."
+        )
+    raise ServiceOSException(
+        "JOB_ASSIGNMENT_RESCHEDULE_LIMIT_REACHED",
+        message,
+        status_code=409,
+        context={"provider_reschedules_used": used, "provider_reschedule_limit": limit},
+    )
 
 
 async def create_request(
@@ -119,10 +167,11 @@ async def create_request(
         get_home_services_operations_policy,
     )
     policy = await get_home_services_operations_policy(db)
-    if (job.reschedule_count or 0) >= policy.customer_reschedule_limit:
-        raise ServiceOSException(
-            "JOB_ASSIGNMENT_RESCHEDULE_LIMIT_REACHED",
-            "The reschedule limit has been reached for this booking.", status_code=409,
+    provider_reschedules_used = await _approved_provider_reschedule_count(db, job.id)
+    if provider_reschedules_used >= policy.provider_reschedule_limit:
+        _raise_provider_limit_reached(
+            used=provider_reschedules_used,
+            limit=policy.provider_reschedule_limit,
         )
     if not await _capacity_available(db, job, requested_date, requested_time_window):
         raise ServiceOSException(
@@ -196,7 +245,14 @@ async def create_request(
     except Exception:
         pass
     await db.flush()
-    return _result(row)
+    return {
+        **_result(row),
+        "provider_reschedules_used": provider_reschedules_used,
+        "provider_reschedule_limit": policy.provider_reschedule_limit,
+        "provider_reschedules_remaining": max(
+            0, policy.provider_reschedule_limit - provider_reschedules_used,
+        ),
+    }
 
 
 async def deliver_request(db, request_id: uuid.UUID) -> bool:
@@ -316,12 +372,21 @@ async def decide_request(
         get_home_services_operations_policy,
     )
     policy = await get_home_services_operations_policy(db)
-    if (job.reschedule_count or 0) >= policy.customer_reschedule_limit:
+    provider_reschedules_used = await _approved_provider_reschedule_count(db, job.id)
+    if provider_reschedules_used >= policy.provider_reschedule_limit:
         row.status = EXPIRED
-        row.rejection_reason = "The reschedule limit was reached before approval."
+        row.rejection_reason = (
+            "The provider reschedule limit was reached before approval."
+        )
         await _notify_provider_decision(db, job, row, approved=False)
         await db.flush()
-        return {**_result(row), "status": "reschedule_limit_reached"}
+        return {
+            **_result(row),
+            "status": "reschedule_limit_reached",
+            "provider_reschedules_used": provider_reschedules_used,
+            "provider_reschedule_limit": policy.provider_reschedule_limit,
+            "provider_reschedules_remaining": 0,
+        }
 
     old_status = job.status
     job.scheduled_date = requested_date

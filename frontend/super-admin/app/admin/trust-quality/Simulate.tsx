@@ -19,6 +19,8 @@ import {
   trustQualityApi, BadgeSimulationResult, HealthSimulationResult, SimulatedCriterion,
 } from "../../../lib/api";
 import { useAction } from "../../../hooks/useApi";
+import { fieldLabel } from "../../../lib/field-labels";
+import { safeStatus } from "../../../lib/api-foundation/normalize";
 
 /** Numeric-looking values go to the API as numbers; the engine compares numerically. */
 function coerce(raw: string): unknown {
@@ -60,7 +62,7 @@ function Shell({ title, metricKeys, values, setValues, onRun, running, children 
           <div style={{ display: "grid", gap: 8,
             gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
             {metricKeys.map(k => (
-              <Input key={k} label={k} value={values[k] ?? ""}
+              <Input key={k} label={fieldLabel(k)} value={values[k] ?? ""}
                 onChange={v => setValues({ ...values, [k]: v })} placeholder="value" />
             ))}
           </div>
@@ -85,8 +87,8 @@ function CriterionRow({ c, passed }: { c: SimulatedCriterion; passed: boolean })
       {passed
         ? <CheckCircle2 size={13} color="var(--success)" />
         : <XCircle size={13} color="var(--danger)" />}
-      <span style={{ fontFamily: "monospace" }}>{c.metric_key}</span>
-      <span style={{ color: "var(--text-tertiary)" }}>{c.operator.replace(/_/g, " ")}</span>
+      <span style={{ fontWeight: 600 }}>{fieldLabel(c.metric_key)}</span>
+      <span style={{ color: "var(--text-tertiary)" }}>{safeStatus(c.operator)}</span>
       <span style={{ fontWeight: 600 }}>{JSON.stringify(c.expected)}</span>
       <span style={{ color: "var(--text-tertiary)" }}>
         — you entered {c.actual === null || c.actual === undefined ? "nothing" : JSON.stringify(c.actual)}
@@ -156,7 +158,7 @@ export function HealthFormulaSimulator({ formulaId, metricKeys }: {
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
             <span style={{ fontSize: 24, fontWeight: 800 }}>{result.score.toFixed(1)}</span>
             {result.band_key
-              ? <Badge variant="success">{result.band_key.replace(/_/g, " ")}</Badge>
+              ? <Badge variant="success">{safeStatus(result.band_key)}</Badge>
               : <Badge variant="muted">unbanded</Badge>}
             <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
               {result.coverage_percent.toFixed(0)}% of the formula was measurable
@@ -173,7 +175,7 @@ export function HealthFormulaSimulator({ formulaId, metricKeys }: {
             <tbody>
               {result.component_breakdown.map((c, i) => (
                 <tr key={i}>
-                  <td style={{ padding: "2px 8px 2px 0", fontFamily: "monospace" }}>{c.metric_key}</td>
+                  <td style={{ padding: "2px 8px 2px 0", fontWeight: 600 }}>{fieldLabel(c.metric_key)}</td>
                   <td style={{ padding: "2px 8px", color: "var(--text-tertiary)" }}>
                     {c.normalized?.toFixed(1)} × {c.weight_percent}%
                   </td>
@@ -184,7 +186,7 @@ export function HealthFormulaSimulator({ formulaId, metricKeys }: {
               ))}
               {result.penalties_applied.map((p, i) => (
                 <tr key={`p${i}`}>
-                  <td style={{ padding: "2px 8px 2px 0", fontFamily: "monospace" }}>{p.metric_key}</td>
+                  <td style={{ padding: "2px 8px 2px 0", fontWeight: 600 }}>{fieldLabel(p.metric_key)}</td>
                   <td style={{ padding: "2px 8px", color: "var(--danger-text)" }}>penalty</td>
                   <td style={{ padding: "2px 0", fontWeight: 600, textAlign: "right", color: "var(--danger-text)" }}>
                     −{p.penalty_points}
@@ -193,7 +195,7 @@ export function HealthFormulaSimulator({ formulaId, metricKeys }: {
               ))}
               {result.bonuses_applied.map((b, i) => (
                 <tr key={`b${i}`}>
-                  <td style={{ padding: "2px 8px 2px 0", fontFamily: "monospace" }}>{b.metric_key}</td>
+                  <td style={{ padding: "2px 8px 2px 0", fontWeight: 600 }}>{fieldLabel(b.metric_key)}</td>
                   <td style={{ padding: "2px 8px", color: "var(--success-text)" }}>bonus</td>
                   <td style={{ padding: "2px 0", fontWeight: 600, textAlign: "right", color: "var(--success-text)" }}>
                     +{b.bonus_points}

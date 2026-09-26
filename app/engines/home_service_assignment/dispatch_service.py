@@ -543,12 +543,17 @@ class HomeServiceDispatchProjectionService:
                 "notification_sent": bool(pending.notification_sent_at),
             }
 
+        from app.engines.home_service_assignment.provider_reschedule_service import (
+            provider_reschedule_allowance,
+        )
+        reschedule_allowance = await provider_reschedule_allowance(self.db, job.id)
+
         actions: list[str] = []
         if job.status not in TERMINAL_STATUSES:
             if current_assignment:
                 actions.append("unassign")
             if slot_expired:
-                if pending_reschedule is None:
+                if pending_reschedule is None and not reschedule_allowance["limit_reached"]:
                     actions.append("reschedule")
             elif pending_reschedule is None:
                 if current_assignment and eligible_out:
@@ -573,6 +578,7 @@ class HomeServiceDispatchProjectionService:
                     if assignment_deadline.deadline else None
                 ),
                 "pending_reschedule": pending_reschedule,
+                "provider_reschedule_allowance": reschedule_allowance,
             },
             "eligible_technicians":  eligible_out,
             "excluded_technicians":  excluded_out,

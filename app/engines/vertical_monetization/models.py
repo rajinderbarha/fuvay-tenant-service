@@ -118,6 +118,7 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     urgent_assignment_threshold_minutes: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
     assignment_auto_assign_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     customer_reschedule_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    provider_reschedule_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     customer_cancellation_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False,
     )
@@ -287,6 +288,7 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "urgent_assignment_threshold_minutes": self.urgent_assignment_threshold_minutes,
             "assignment_auto_assign_enabled": self.assignment_auto_assign_enabled,
             "customer_reschedule_limit": self.customer_reschedule_limit,
+            "provider_reschedule_limit": self.provider_reschedule_limit,
             "customer_cancellation_enabled": self.customer_cancellation_enabled,
             "customer_cancellation_cutoff_minutes": self.customer_cancellation_cutoff_minutes,
             "customer_cancellation_reasons": self.customer_cancellation_reasons,

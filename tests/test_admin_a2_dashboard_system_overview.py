@@ -120,7 +120,7 @@ def test_backend_home_services_summary_endpoint_real():
 # ── 7. Operations summary ─────────────────────────────────────────────────────
 def test_operations_summary():
     assert "Live operations board" in PAGE
-    for label in ["Live Jobs", "Today's Bookings", "Pending Provider Acceptance", "SLA Breaches"]:
+    for label in ["Live Jobs", "Today's Bookings", "Awaiting Technician", "Job SLA Breaches"]:
         assert label in PAGE
 
 

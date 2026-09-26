@@ -28,6 +28,7 @@ import { resolveMediaUrl } from "../../../../components/shared/ProfilePhotoUploa
 import { useViewport } from "../../../../hooks/useViewport";
 import { usePermissions } from "../../../../hooks/usePermissions";
 import { SUPER_ADMIN_ONLY } from "../../../../lib/permission-catalog";
+import { fieldLabel } from "../../../../lib/field-labels";
 import { EntitlementsTab } from "../../../../components/enterprise/EntitlementsTab";
 import {
   Building, CreditCard, ClipboardCheck,
@@ -2316,7 +2317,7 @@ function Tenant360PageInner({ params }: { params: Promise<{ id: string }> }) {
               return (
                 <div key={sig} style={{ marginBottom:10 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
-                    <span style={{ fontSize:12, color:"var(--text-secondary)", textTransform:"capitalize" }}>{sig.replace(/_/g," ")}</span>
+                    <span style={{ fontSize:12, color:"var(--text-secondary)" }}>{SIGNAL_LABELS[sig] ?? fieldLabel(sig)}</span>
                     <span style={{ fontSize:12, fontWeight:600, color:"var(--text-primary)" }}>{score.toFixed(0)}</span>
                   </div>
                   <div style={{ height:6, background:"var(--surface-sunken)", borderRadius:3, overflow:"hidden" }}>

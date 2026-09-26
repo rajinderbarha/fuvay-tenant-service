@@ -762,6 +762,12 @@ export interface HsDispatchJobSummary {
     weights?: { payment_reliability?: number; customer_behavior?: number };
     minimum_evidence_events?: number;
   } | null;
+  provider_reschedule_allowance?: {
+    used: number;
+    limit: number;
+    remaining: number;
+    limit_reached: boolean;
+  };
 }
 
 export interface HsDispatchTechnician {
@@ -997,6 +1003,23 @@ export const financeReadinessApi = {
 // ── Booking window & availability exceptions ───────────────────────────────
 export type BookingWindowSettings = WsPayload;
 export type AvailabilityException = WsPayload;
+export interface AvailabilityClosureImpact {
+  date: string;
+  total_jobs: number;
+  protected_started_jobs: number;
+  pre_start_jobs: number;
+  policy: "honor_existing";
+  requires_acknowledgement: boolean;
+  jobs: Array<{
+    job_id: string;
+    job_number: string;
+    status: string;
+    time_window: string | null;
+    assigned: boolean;
+    started: boolean;
+    sla_breached: boolean;
+  }>;
+}
 export interface HolidayCalendarItem {
   date: string;
   name: string;
@@ -1026,6 +1049,8 @@ export const availabilityExceptionsApi = {
   list: <T = WsPayload>() => apiFetch<T>("/v1/provider/availability/exceptions"),
   holidayCalendar: <T = HolidayCalendarResponse>(params?: { from_date?: string; to_date?: string }) =>
     apiFetch<T>(`/v1/provider/availability/holiday-calendar${query(params)}`),
+  impact: (date: string) =>
+    apiFetch<AvailabilityClosureImpact>(`/v1/provider/availability/exceptions/impact${query({ date })}`),
   create: <T = AvailabilityException>(payload: Record<string, unknown>) =>
     apiFetch<T>("/v1/provider/availability/exceptions", post(payload)),
   delete: <T = WsPayload>(exceptionId: string) =>

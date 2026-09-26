@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import select, update, delete, text
+from sqlalchemy import bindparam, select, update, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.engines.vertical_catalog.pricing_readiness import PUBLISHED_PRICED_SERVICES_SQL
 
@@ -1171,6 +1171,59 @@ async def create_availability(
 # A literal path segment must be registered before the parameterised one that would
 # otherwise swallow it. The POST/PUT/DELETE exception routes below do not collide: those
 # are two or three segments deep and the `{rule_id}` routes are one.
+_CLOSURE_TERMINAL_STATUSES = (
+    "completed", "cancelled", "closed", "failed", "expired", "no_show",
+)
+_CLOSURE_STARTED_STATUSES = (
+    "reached_site", "inspection_started", "inspection_done", "quote_required",
+    "awaiting_customer_quote_approval", "quote_approved", "service_started",
+    "in_progress", "customer_not_available",
+)
+
+
+async def _closure_job_impact(db: AsyncSession, tenant_id: uuid.UUID, target_date: date) -> dict:
+    """Return the commitments a closure must preserve.
+
+    Availability exceptions close *new* capacity.  They never mutate existing
+    jobs: started visits are protected, while pre-start visits must be honoured
+    or rescheduled through the normal customer-approval workflow.
+    """
+    rows = (await db.execute(text("""
+        SELECT id, job_number, status, scheduled_time_window, assigned_staff_id,
+               sla_breached_at
+        FROM service_jobs
+        WHERE tenant_id=:tid AND scheduled_date=:target_date
+          AND status NOT IN :terminal_statuses
+        ORDER BY scheduled_time_window NULLS LAST, created_at
+    """).bindparams(bindparam("terminal_statuses", expanding=True)), {
+        "tid": str(tenant_id), "target_date": target_date,
+        "terminal_statuses": _CLOSURE_TERMINAL_STATUSES,
+    })).fetchall()
+    jobs = []
+    protected_count = 0
+    for row in rows:
+        started = row.status in _CLOSURE_STARTED_STATUSES
+        protected_count += int(started)
+        jobs.append({
+            "job_id": str(row.id),
+            "job_number": row.job_number,
+            "status": row.status,
+            "time_window": row.scheduled_time_window,
+            "assigned": bool(row.assigned_staff_id),
+            "started": started,
+            "sla_breached": bool(row.sla_breached_at),
+        })
+    return {
+        "date": target_date.isoformat(),
+        "total_jobs": len(jobs),
+        "protected_started_jobs": protected_count,
+        "pre_start_jobs": len(jobs) - protected_count,
+        "policy": "honor_existing",
+        "requires_acknowledgement": bool(jobs),
+        "jobs": jobs,
+    }
+
+
 @router.get("/availability/exceptions")
 async def list_availability_exceptions(
     request: Request,
@@ -1184,6 +1237,19 @@ async def list_availability_exceptions(
         {"tid": str(tid)})
     rows = [dict(r._mapping) for r in result.fetchall()]
     return ok({"exceptions": rows, "count": len(rows)}, request_id=rid)
+
+
+@router.get("/availability/exceptions/impact")
+async def availability_exception_impact(
+    request: Request,
+    target_date: date = Query(..., alias="date"),
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+):
+    """Preflight a closure without changing availability or any job."""
+    tid = _tid(user)
+    rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "-")
+    return ok(await _closure_job_impact(db, tid, target_date), request_id=rid)
 
 
 @router.get("/availability/holiday-calendar")
@@ -1385,21 +1451,44 @@ async def create_availability_exception(
     tid = _tid(user)
     rid = (getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—"))
     _validate_exception_payload(payload)
+    closure_date = _parse_date(payload["date"])
+    impact = await _closure_job_impact(db, tid, closure_date)
+    policy = str(payload.get("existing_jobs_policy") or "").strip().lower()
+    if impact["requires_acknowledgement"] and policy != "honor_existing":
+        raise ServiceOSException(
+            "CLOSURE_HAS_EXISTING_JOBS",
+            f"{impact['total_jobs']} existing job(s) are already committed on this date. "
+            "Review them and confirm they will be honoured; rescheduling still requires customer approval.",
+            status_code=409,
+        )
+    policy = "honor_existing"
     new_id = str(uuid.uuid4())
     await db.execute(text("""
         INSERT INTO tenant_availability_exceptions
             (id, tenant_id, date, reason, full_day_closed, start_time, end_time,
-             affected_service_area_ids, affected_service_ids, status)
+             affected_service_area_ids, affected_service_ids, status,
+             existing_jobs_policy, conflict_snapshot)
         VALUES (:id, :tid, :date, :reason, :full_day, :start, :end,
-                CAST(:areas AS jsonb), CAST(:services AS jsonb), 'active')
+                CAST(:areas AS jsonb), CAST(:services AS jsonb), 'active',
+                :policy, CAST(:impact AS jsonb))
     """), {
         "id": new_id, "tid": str(tid),
-        "date": _parse_date(payload["date"]), "reason": payload["reason"],
+        "date": closure_date, "reason": payload["reason"],
         "full_day": payload.get("full_day_closed", True),
         "start": payload.get("start_time"), "end": payload.get("end_time"),
         "areas": json.dumps(payload.get("affected_service_area_ids") or []),
         "services": json.dumps(payload.get("affected_service_ids") or []),
+        "policy": policy, "impact": json.dumps(impact),
     })
+    await record_platform_audit(
+        db, operation="provider_schedule.closure_created", engine_id="provider_portal",
+        tenant_id=tid, entity_type="availability_exception", entity_id=new_id,
+        actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
+        after={
+            "date": closure_date.isoformat(), "reason": payload["reason"],
+            "existing_jobs_policy": policy, "conflict_snapshot": impact,
+        },
+    )
     await db.commit()
     row = await db.execute(text("SELECT * FROM tenant_availability_exceptions WHERE id=:id"), {"id": new_id})
     return ok(dict(row.fetchone()._mapping), request_id=rid)
@@ -1420,19 +1509,43 @@ async def update_availability_exception(
         raise HTTPException(404, "Exception not found")
     merged = {**dict(existing._mapping), **payload}
     _validate_exception_payload(merged)
+    closure_date = _parse_date(merged["date"])
+    impact = await _closure_job_impact(db, tid, closure_date)
+    date_changed = closure_date != existing.date
+    if date_changed and impact["requires_acknowledgement"] and str(
+        payload.get("existing_jobs_policy") or ""
+    ).strip().lower() != "honor_existing":
+        raise ServiceOSException(
+            "CLOSURE_HAS_EXISTING_JOBS",
+            f"{impact['total_jobs']} existing job(s) are already committed on the new date. "
+            "Review and explicitly honour them before moving this closure.",
+            status_code=409,
+        )
     await db.execute(text("""
         UPDATE tenant_availability_exceptions
         SET date=:date, reason=:reason, full_day_closed=:full_day, start_time=:start, end_time=:end,
             affected_service_area_ids=CAST(:areas AS jsonb), affected_service_ids=CAST(:services AS jsonb),
+            existing_jobs_policy='honor_existing', conflict_snapshot=CAST(:impact AS jsonb),
             updated_at=now()
         WHERE id=:id AND tenant_id=:tid
     """), {
         "id": str(exception_id), "tid": str(tid),
-        "date": _parse_date(merged["date"]), "reason": merged["reason"], "full_day": merged.get("full_day_closed", True),
+        "date": closure_date, "reason": merged["reason"], "full_day": merged.get("full_day_closed", True),
         "start": merged.get("start_time"), "end": merged.get("end_time"),
         "areas": json.dumps(merged.get("affected_service_area_ids") or []),
         "services": json.dumps(merged.get("affected_service_ids") or []),
+        "impact": json.dumps(impact),
     })
+    await record_platform_audit(
+        db, operation="provider_schedule.closure_updated", engine_id="provider_portal",
+        tenant_id=tid, entity_type="availability_exception", entity_id=str(exception_id),
+        actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
+        before={"date": existing.date.isoformat(), "reason": existing.reason},
+        after={
+            "date": closure_date.isoformat(), "reason": merged["reason"],
+            "existing_jobs_policy": "honor_existing", "conflict_snapshot": impact,
+        },
+    )
     await db.commit()
     row = await db.execute(text("SELECT * FROM tenant_availability_exceptions WHERE id=:id"), {"id": str(exception_id)})
     return ok(dict(row.fetchone()._mapping), request_id=rid)
@@ -1449,6 +1562,12 @@ async def delete_availability_exception(
     await db.execute(
         text("UPDATE tenant_availability_exceptions SET status='deleted', updated_at=now() WHERE id=:id AND tenant_id=:tid"),
         {"id": str(exception_id), "tid": str(tid)})
+    await record_platform_audit(
+        db, operation="provider_schedule.closure_removed", engine_id="provider_portal",
+        tenant_id=tid, entity_type="availability_exception", entity_id=str(exception_id),
+        actor_id=uuid.UUID(str(user.user_id)), actor_role=user.role, request_id=rid,
+        after={"status": "deleted", "new_booking_capacity_reopened": True},
+    )
     await db.commit()
     return ok({"deleted": True}, request_id=rid)
 

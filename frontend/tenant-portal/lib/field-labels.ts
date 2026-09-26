@@ -85,6 +85,45 @@ export const FIELD_LABELS: Record<string, string> = {
   subscription_plan:               "Subscription Plan",
   feature_flags:                   "Feature Flags",
 
+  // Trust, quality and provider health. Keep persisted/API names internal.
+  trust_score:                     "Provider Health",
+  health_score:                    "Health Score",
+  provider_health:                 "Provider Health",
+  job_completion:                 "Job Completion",
+  job_completion_rate:            "Job Completion Rate",
+  completed_jobs_count:            "Completed Jobs",
+  terminal_jobs_count:            "Completed or Cancelled Jobs",
+  cancellation_rate:              "Cancellation Rate",
+  average_rating:                 "Average Customer Rating",
+  avg_customer_rating:            "Average Customer Rating",
+  avg_rating:                     "Average Customer Rating",
+  rating_score:                   "Customer Rating Score",
+  review_count:                   "Customer Reviews",
+  complaint_rate:                 "Unresolved Complaint Rate",
+  complaint_dispute_score:        "Unresolved Complaints & Disputes",
+  response_sla_score:             "Complaint Response Performance",
+  sla_success_rate:               "SLA Success Rate",
+  response_time_minutes:          "Average Response Time",
+  document_verified:              "Documents Verified",
+  owner_verified:                 "Owner Verified",
+  document_verification_score:    "Document Verification",
+  provider_reschedule_score:      "Schedule Reliability",
+  provider_reschedule_count:      "Provider Reschedules",
+  provider_reschedule_limit:      "Maximum Provider Reschedules per Job",
+  provider_reschedules_over_grace:"Reschedules Above Allowance",
+  on_time_arrival_rate:           "On-Time Arrival Rate",
+  sla_adherence_rate:             "On-Time Service Rate",
+  avg_job_duration_min:           "Average Job Duration",
+  composite_score:                "Overall Performance",
+  account_verified:               "Account Verified",
+  account_verification_score:     "Account Verification",
+  profile_completion_percent:     "Profile Completion",
+  usage_credit_score:             "Usage Credit Readiness",
+  staff_availability_score:       "Team Availability",
+  tenant_status:                  "Provider Status",
+  payment_reliability:            "Payment Reliability",
+  customer_behavior:              "Customer Behaviour",
+
   // Generic
   status:                          "Status",
   notes:                           "Notes",
@@ -100,8 +139,15 @@ export const FIELD_LABELS: Record<string, string> = {
 
 /** Returns the human-readable label for a field key, or a formatted fallback. */
 export function fieldLabel(key: string): string {
-  if (FIELD_LABELS[key]) return FIELD_LABELS[key];
-  return key
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, c => c.toUpperCase());
+  const normalized = String(key ?? "").trim();
+  if (!normalized) return "Field";
+  if (FIELD_LABELS[normalized]) return FIELD_LABELS[normalized];
+  return normalized
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_.-]+/g, " ")
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .replace(/\bSla\b/g, "SLA")
+    .replace(/\bId\b/g, "ID")
+    .replace(/\bApi\b/g, "API")
+    .replace(/\bGps\b/g, "GPS");
 }

@@ -10,6 +10,7 @@
 import React, { useState } from "react";
 import { AlertTriangle, Copy, Check, RefreshCw, ShieldOff, Info } from "lucide-react";
 import type { ApiError } from "../../lib/api-foundation/error-model";
+import { fieldLabel } from "../../lib/field-labels";
 import { Skeleton, EmptyState } from "./ui";
 
 // ── RequestIdBadge / CopyRequestIdButton ───────────────────────────────────
@@ -113,7 +114,7 @@ export function ApiValidationErrorList({ fieldErrors }: { fieldErrors?: Record<s
       <ul style={{ margin: 0, paddingLeft: 18 }}>
         {Object.entries(fieldErrors).map(([field, msgs]) => (
           <li key={field} style={{ fontSize: 12, color: "var(--danger-text)" }}>
-            <strong>{field}:</strong> {msgs.join(", ")}
+            <strong>{fieldLabel(field)}:</strong> {msgs.join(", ")}
           </li>
         ))}
       </ul>

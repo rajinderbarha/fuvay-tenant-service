@@ -26,6 +26,8 @@ def test_finalize_notifies_both_parties_in_source():
     assert "booking.confirmed" in helper
     assert "booking.new" in helper
     assert "/customer/bookings/" in helper
+    assert "/home-services/bookings-jobs?job_id=" in helper
+    assert 'source_record_type="service_jobs"' in helper
     assert "owner_user_id" in helper  # resolves the provider recipient
     assert "InAppNotification" in helper
 

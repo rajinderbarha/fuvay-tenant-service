@@ -28,6 +28,7 @@ import { authApi, providerStatusApi, entitlementApi, providerNotifApi, categoryD
 import { CreditPill } from "./CreditPill";
 import { useSetupStatus, type SetupStatus } from "../../hooks/useSetupStatus";
 import { Drawer, Input } from "@serviceos/design-system";
+import { notificationDestination } from "../../lib/notificationDestination";
 
 // FINAL-L5-04B: live tenant module/category entitlement state, fetched once
 // per shell mount and refreshable after an admin entitlement mutation —
@@ -788,7 +789,8 @@ function TenantShellInner({ children, activeNav }: {
                         setRecentNotifs(rs => (rs ?? []).map(x => x.id === n.id ? { ...x, read_status: "read" } : x));
                       }
                       setBellOpen(false);
-                      if (n.action_url) window.location.href = n.action_url;
+                      const destination = notificationDestination(n);
+                      if (destination) window.location.assign(destination);
                     };
                     return (
                       <div key={n.id} onClick={go} style={{
@@ -898,7 +900,7 @@ function TenantShellInner({ children, activeNav }: {
         </header>
 
         <main className="provider-main" style={{ flex: 1, overflowY: "auto", padding: "28px 32px", background: "var(--bg-gradient)" }}>
-          <div className="provider-content" style={{ maxWidth: 1440, margin: "0 auto" }}>
+          <div className="provider-content" style={{ width: "100%" }}>
             <Breadcrumbs/>
             {children}
           </div>

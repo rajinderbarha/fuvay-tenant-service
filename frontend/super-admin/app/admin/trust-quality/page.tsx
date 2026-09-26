@@ -31,10 +31,35 @@ import { AuditTab } from "./AuditTab";
 import { RecalcTab } from "./RecalcTab";
 import { EarnedTab } from "./EarnedTab";
 import { BadgeRuleSimulator, HealthFormulaSimulator } from "./Simulate";
+import { fieldLabel, HEALTH_COMPONENT_OPTIONS, TRUST_METRIC_OPTIONS } from "../../../lib/field-labels";
+import { safeStatus } from "../../../lib/api-foundation/normalize";
 
 type Tab = "definitions" | "badges" | "health" | "scores" | "recalc" | "earned" | "audit";
 
-const opt = (v: string) => ({ value: v, label: v.replace(/_/g, " ") });
+const opt = (v: string) => ({ value: v, label: safeStatus(v) });
+
+function metricOptions(current?: string) {
+  if (!current || TRUST_METRIC_OPTIONS.some(option => option.value === current)) {
+    return [...TRUST_METRIC_OPTIONS];
+  }
+  return [...TRUST_METRIC_OPTIONS, { value: current, label: fieldLabel(current) }];
+}
+
+function healthMetricOptions(current?: string) {
+  if (!current || HEALTH_COMPONENT_OPTIONS.some(option => option.value === current)) {
+    return [...HEALTH_COMPONENT_OPTIONS];
+  }
+  return [...HEALTH_COMPONENT_OPTIONS, { value: current, label: fieldLabel(current) }];
+}
+
+function generatedInternalKey(prefix: string, label: string): string {
+  const slug = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "custom";
+  return `${prefix}_${slug}_${Date.now().toString(36).slice(-6)}`;
+}
+
+function generatedBandKey(label: string): string {
+  return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "custom";
+}
 
 // Curated lucide icons for badges, keyed by the name stored in the badge's
 // `icon` field. Keeping a fixed registry (rather than free-text) means every
@@ -111,7 +136,7 @@ export default function TrustQualityPage() {
 
   const statusBadge = (s: string) => (
     <Badge variant={s === "active" ? "success" : s === "completed" ? "success"
-      : s === "failed" ? "danger" : s === "running" ? "info" : "muted"}>{s}</Badge>
+      : s === "failed" ? "danger" : s === "running" ? "info" : "muted"}>{safeStatus(s)}</Badge>
   );
 
   // Look up a rule's badge definition so its icon/color show on the rule row.
@@ -224,13 +249,13 @@ export default function TrustQualityPage() {
                       <td style={{ padding: "10px 16px", fontWeight: 600 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                           <BadgeIcon icon={defsById[r.badge_id]?.icon} color={defsById[r.badge_id]?.color} />
-                          {r.badge?.name ?? r.rule_key}
+                          {r.badge?.name ?? "Badge rule"}
                           {r.badge?.customer_visible && <Badge variant="muted" size="sm">customer-visible</Badge>}
                         </span>
                       </td>
-                      <td style={{ padding: "10px 16px", color: "var(--text-tertiary)" }}>{r.rule_type?.replace(/_/g, " ")}</td>
+                      <td style={{ padding: "10px 16px", color: "var(--text-tertiary)" }}>{safeStatus(r.rule_type)}</td>
                       <td style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-secondary)" }}>
-                        {(r.criteria ?? []).map(c => `${c.metric_key} ${c.operator.replace(/_/g, " ")} ${c.value}`).join("; ") || "—"}
+                        {(r.criteria ?? []).map(c => `${fieldLabel(c.metric_key)} ${safeStatus(c.operator).toLowerCase()} ${c.value}`).join("; ") || "—"}
                       </td>
                       <td style={{ padding: "10px 16px" }}>{r.auto_award ? "Auto" : "Manual"}</td>
                       <td style={{ padding: "10px 16px" }}>{statusBadge(r.status)}</td>
@@ -238,7 +263,7 @@ export default function TrustQualityPage() {
                         <span style={{ display: "inline-flex", gap: 6 }}>
                           <Btn size="sm" variant="ghost" onClick={() => setModal({ type: "badge-rule", editing: r })}>Edit</Btn>
                           <Btn size="sm" variant="secondary" disabled={busy === r.id}
-                            onClick={() => askReason("badge", r, r.badge?.name ?? r.rule_key)}>
+                            onClick={() => askReason("badge", r, r.badge?.name ?? "Badge rule")}>
                             {r.status === "active" ? "Deactivate" : "Activate"}
                           </Btn>
                         </span>
@@ -311,7 +336,9 @@ export default function TrustQualityPage() {
                   {healthRules.data?.map(r => (
                     <tr key={r.id} style={{ borderBottom: "1px solid var(--border)" }}>
                       <td style={{ padding: "10px 16px", fontWeight: 600 }}>{r.name}</td>
-                      <td style={{ padding: "10px 16px", color: "var(--text-tertiary)" }}>{r.target_type?.replace(/_/g, " ")}</td>
+                      <td style={{ padding: "10px 16px", color: "var(--text-tertiary)" }}>
+                        {r.target_type === "tenant" ? "Provider" : safeStatus(r.target_type)}
+                      </td>
                       <td style={{ padding: "10px 16px" }}>{r.min_score}–{r.max_score} (base {r.base_score})</td>
                       <td style={{ padding: "10px 16px" }}>{statusBadge(r.status)}</td>
                       <td style={{ padding: "10px 16px" }}>
@@ -431,7 +458,7 @@ function TrustBadgeCard({ badge, BadgeIcon }: {
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
         {badge.customer_visible && <Badge variant="info" size="sm">customer visible</Badge>}
         {badge.tenant_visible && <Badge variant="muted" size="sm">provider visible</Badge>}
-        <Badge variant="muted" size="sm">{badge.badge_key}</Badge>
+        <Badge variant="muted" size="sm">Level {badge.level ?? "—"}</Badge>
       </div>
     </div>
   );
@@ -494,7 +521,7 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
           target_type: selectedBadge?.target_type ?? editing.target_type, criteria: cleaned });
       } else {
         await trustQualityApi.createBadgeRule({
-          rule_key: f.rule_key.trim(), badge_id: f.badge_id,
+          rule_key: f.rule_key.trim() || generatedInternalKey("rule", selectedBadge?.name ?? "badge"), badge_id: f.badge_id,
           target_type: selectedBadge?.target_type ?? "tenant",
           rule_type: f.rule_type, auto_award: f.auto_award,
           status: "draft", criteria: cleaned });
@@ -503,7 +530,7 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
     } catch (e) { setErr(e instanceof Error ? e.message : "Failed to save rule."); }
   });
 
-  const valid = f.rule_key.trim() && f.badge_id;
+  const valid = Boolean(f.badge_id);
   return (
     <Modal open={open} onClose={onClose} title={editing ? "Edit badge rule" : "New badge rule"} size="lg">
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -513,11 +540,12 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
             Sync the fixed badge catalog first — a rule awards one of the approved badges.
           </div>
         )}
-        <Input label="Rule key" required value={f.rule_key} onChange={v => setF({ ...f, rule_key: v })}
-          disabled={!!editing} hint={editing ? "Key is immutable" : "Unique machine key, e.g. auto_top_rated"} />
         <Select label="Badge to award" value={f.badge_id} onChange={v => setF({ ...f, badge_id: v })}
           placeholder="Select a badge..."
-          options={selectableBadges.map(b => ({ value: b.id, label: `${b.name} (${b.target_type})` }))} />
+          options={selectableBadges.map(b => ({
+            value: b.id,
+            label: `${b.name} · ${b.target_type === "tenant" ? "Provider" : safeStatus(b.target_type)}`,
+          }))} />
         <Select label="Rule type" value={f.rule_type} onChange={v => setF({ ...f, rule_type: v })}
           options={TQ_ENUMS.badgeRuleTypes.map(opt)} />
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
@@ -530,8 +558,9 @@ function BadgeRuleModal({ open, onClose, onSaved, badges, editing }: {
           <div style={{ fontSize: 13, fontWeight: 700, margin: "6px 0 8px" }}>Award criteria</div>
           {criteria.map((c, i) => (
             <div key={i} style={{ ...rowStyle, gridTemplateColumns: "1fr 1fr 0.8fr auto" }}>
-              <Input label={i === 0 ? "Metric key" : undefined} value={c.metric_key}
-                onChange={v => setCrit(i, { metric_key: v })} placeholder="average_rating" />
+              <Select label={i === 0 ? "Measure" : undefined} value={c.metric_key}
+                onChange={v => setCrit(i, { metric_key: v })} placeholder="Select a measure..."
+                options={metricOptions(c.metric_key)} />
               <Select label={i === 0 ? "Operator" : undefined} value={c.operator}
                 onChange={v => setCrit(i, { operator: v })} options={TQ_ENUMS.operators.map(opt)} />
               <Input label={i === 0 ? "Value" : undefined} value={String(c.value ?? "")}
@@ -629,30 +658,30 @@ function HealthFormulaModal({ open, onClose, onSaved, editing }: {
         ...c, metric_key: c.metric_key.trim(), weight_percent: Number(c.weight_percent),
         min_value: Number(c.min_value), max_value: Number(c.max_value),
       })),
-      bands: bands.map(b => ({ ...b, min_score: Number(b.min_score), max_score: Number(b.max_score) })),
+      bands: bands.map(b => ({ ...b,
+        band_key: b.band_key.trim() || generatedBandKey(b.band_name),
+        min_score: Number(b.min_score), max_score: Number(b.max_score) })),
     };
     try {
       if (editing) {
         await trustQualityApi.updateHealthFormula(editing.id, payload);
       } else {
         await trustQualityApi.createHealthFormula({
-          formula_key: f.formula_key.trim(), base_score: 100, min_score: 0, max_score: 100,
+          formula_key: f.formula_key.trim() || generatedInternalKey("health", f.name), base_score: 100, min_score: 0, max_score: 100,
           status: "draft", ...payload });
       }
       onSaved();
     } catch (e) { setErr(e instanceof Error ? e.message : "Failed to save formula."); }
   });
 
-  const valid = f.formula_key.trim() && f.name.trim() && components.some(c => c.metric_key.trim());
+  const valid = f.name.trim() && components.some(c => c.metric_key.trim());
   return (
     <Modal open={open} onClose={onClose} title={editing ? "Edit health formula" : "New health formula"} size="xl">
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-          <Input label="Formula key" required value={f.formula_key} onChange={v => setF({ ...f, formula_key: v })}
-            disabled={!!editing} hint={editing ? "Key is immutable" : "e.g. provider_health_v2"} />
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
           <Input label="Name" required value={f.name} onChange={v => setF({ ...f, name: v })} />
           <Select label="Target" value={f.target_type} onChange={v => setF({ ...f, target_type: v })}
-            disabled={!!editing} options={TQ_ENUMS.healthTargets.map(opt)} />
+            disabled={!!editing} options={TQ_ENUMS.healthTargets.map(v => ({ value: v, label: v === "tenant" ? "Provider" : safeStatus(v) }))} />
         </div>
 
         <div>
@@ -665,8 +694,9 @@ function HealthFormulaModal({ open, onClose, onSaved, editing }: {
           </div>
           {components.map((c, i) => (
             <div key={i} style={{ ...rowStyle, gridTemplateColumns: "1.4fr 0.7fr 0.9fr auto" }}>
-              <Input label={i === 0 ? "Metric key" : undefined} value={c.metric_key}
-                onChange={v => setComp(i, { metric_key: v })} placeholder="job_completion_rate" />
+              <Select label={i === 0 ? "Health measure" : undefined} value={c.metric_key}
+                onChange={v => setComp(i, { metric_key: v })} placeholder="Select a health measure..."
+                options={healthMetricOptions(c.metric_key)} />
               <Input label={i === 0 ? "Weight %" : undefined} type="number" value={String(c.weight_percent)}
                 onChange={v => setComp(i, { weight_percent: Number(v) })} />
               <Select label={i === 0 ? "Direction" : undefined} value={c.direction ?? "positive"}
@@ -683,9 +713,7 @@ function HealthFormulaModal({ open, onClose, onSaved, editing }: {
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, margin: "6px 0 8px" }}>Score bands (must cover 0–100)</div>
           {bands.map((b, i) => (
-            <div key={i} style={{ ...rowStyle, gridTemplateColumns: "1fr 1fr 0.7fr 0.7fr auto" }}>
-              <Input label={i === 0 ? "Band key" : undefined} value={b.band_key}
-                onChange={v => setBand(i, { band_key: v })} placeholder="healthy" />
+            <div key={i} style={{ ...rowStyle, gridTemplateColumns: "1.4fr 0.7fr 0.7fr auto" }}>
               <Input label={i === 0 ? "Band name" : undefined} value={b.band_name}
                 onChange={v => setBand(i, { band_name: v })} />
               <Input label={i === 0 ? "Min" : undefined} type="number" value={String(b.min_score)}

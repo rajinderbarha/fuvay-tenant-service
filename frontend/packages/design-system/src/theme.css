@@ -56,6 +56,13 @@
   --motion-slow: 320ms;
   --motion-easing: cubic-bezier(0.2, 0, 0, 1);
 
+  /* Shared overlay order. Drawers and dialogs portal to document.body so a
+   * page-level stacking context cannot place a sticky header above them. */
+  --z-header: 200;
+  --z-popover: 1100;
+  --z-drawer: 1200;
+  --z-modal: 1300;
+
   --focus-ring: 0 0 0 2px var(--bg, #fff), 0 0 0 4px var(--border-focus, #0f6b60);
   --overlay: rgba(27, 26, 24, 0.5);
   --skeleton: rgba(138, 133, 124, 0.18);

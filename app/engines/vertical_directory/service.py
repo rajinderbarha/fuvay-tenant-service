@@ -222,6 +222,18 @@ class VerticalStaffDirectoryService:
             func.count(ServiceJob.id).filter(
                 ServiceJob.status.in_(_WORK_IN_PROGRESS_JOB_STATUSES)
             ).label("work_in_progress_jobs"),
+            func.count(ServiceJob.id).filter(and_(
+                ServiceJob.status.in_(_ACTIVE_JOB_STATUSES),
+                ServiceJob.sla_breached_at.isnot(None),
+            )).label("sla_breached_jobs"),
+            func.count(ServiceJob.id).filter(and_(
+                ServiceJob.status.in_(_ACTIVE_JOB_STATUSES),
+                ServiceJob.scheduled_date < func.current_date(),
+            )).label("overdue_jobs"),
+            func.min(ServiceJob.sla_due_at).filter(and_(
+                ServiceJob.status.in_(_ACTIVE_JOB_STATUSES),
+                ServiceJob.sla_due_at.isnot(None),
+            )).label("next_sla_due_at"),
             func.min(ServiceJob.scheduled_date).filter(
                 ServiceJob.status.in_(_ACTIVE_JOB_STATUSES)).label("next_job_date"),
         ).where(ServiceJob.assigned_staff_id.isnot(None)).group_by(ServiceJob.assigned_staff_id)
@@ -252,16 +264,23 @@ class VerticalStaffDirectoryService:
                 continue
             current = result.setdefault(owner, {
                 "total_jobs": 0, "completed_jobs": 0, "active_jobs": 0,
-                "work_in_progress_jobs": 0, "next_job_date": None,
+                "work_in_progress_jobs": 0, "sla_breached_jobs": 0,
+                "overdue_jobs": 0, "next_job_date": None, "next_sla_due_at": None,
             })
             current["total_jobs"] += int(row.total_jobs or 0)
             current["completed_jobs"] += int(row.completed_jobs or 0)
             current["active_jobs"] += int(row.active_jobs or 0)
             current["work_in_progress_jobs"] += int(row.work_in_progress_jobs or 0)
+            current["sla_breached_jobs"] += int(row.sla_breached_jobs or 0)
+            current["overdue_jobs"] += int(row.overdue_jobs or 0)
             if row.next_job_date and (
                 current["next_job_date"] is None or row.next_job_date < current["next_job_date"]
             ):
                 current["next_job_date"] = row.next_job_date
+            if row.next_sla_due_at and (
+                current["next_sla_due_at"] is None or row.next_sla_due_at < current["next_sla_due_at"]
+            ):
+                current["next_sla_due_at"] = row.next_sla_due_at
         return result
 
     def _derive_availability(
@@ -340,9 +359,11 @@ class VerticalStaffDirectoryService:
                 "login_status": ("not_created" if not ptm.user_id else "enabled" if user and user.is_active else "disabled"),
                 "availability_status": avail,
                 "active_jobs": active_jobs, "work_in_progress_jobs": work_in_progress_jobs,
+                "sla_breached_jobs": int(wl.get("sla_breached_jobs", 0)),
+                "overdue_jobs": int(wl.get("overdue_jobs", 0)),
                 "completed_jobs": int(wl.get("completed_jobs", 0)),
                 "has_capabilities": bool(
-                    ptm.supported_offering_ids or ptm.supported_type_ids or ptm.supported_brand_ids
+                    ptm.skills or ptm.supported_offering_ids or ptm.supported_type_ids or ptm.supported_brand_ids
                     or (sbv and (sbv.job_type_capabilities or sbv.service_capabilities))
                 ),
                 "updated_at": ptm.updated_at.isoformat() if ptm.updated_at else None,
@@ -384,8 +405,11 @@ class VerticalStaffDirectoryService:
                 ptm, sbv, active_jobs, work_in_progress_jobs
             ),
             "active_jobs": active_jobs, "work_in_progress_jobs": work_in_progress_jobs,
+            "sla_breached_jobs": int(wl.get("sla_breached_jobs", 0)),
+            "overdue_jobs": int(wl.get("overdue_jobs", 0)),
             "completed_jobs": int(wl.get("completed_jobs", 0)),
             "next_job_date": wl["next_job_date"].isoformat() if wl.get("next_job_date") else None,
+            "next_sla_due_at": wl["next_sla_due_at"].isoformat() if wl.get("next_sla_due_at") else None,
         }
 
     async def get_capabilities(self, db: AsyncSession, scope: VerticalScope, staff_id: uuid.UUID) -> dict:
@@ -411,6 +435,7 @@ class VerticalStaffDirectoryService:
         return {
             "job_types": job_types,
             "service_capabilities": (sbv.service_capabilities if sbv else None) or ptm.supported_offering_ids or [],
+            "skills": ptm.skills or [],
             "supported_type_ids": ptm.supported_type_ids or [],
             "supported_brand_ids": ptm.supported_brand_ids or [],
         }
@@ -425,7 +450,10 @@ class VerticalStaffDirectoryService:
         active = [j for j in jobs if j.status in _ACTIVE_JOB_STATUSES]
         return {
             "active_jobs": [{"job_id": str(j.id), "job_number": j.job_number, "status": j.status,
-                             "scheduled_date": j.scheduled_date.isoformat() if j.scheduled_date else None} for j in active],
+                             "scheduled_date": j.scheduled_date.isoformat() if j.scheduled_date else None,
+                             "time_window": j.scheduled_time_window,
+                             "sla_breached": bool(j.sla_breached_at),
+                             "sla_due_at": j.sla_due_at.isoformat() if j.sla_due_at else None} for j in active],
             "capacity_active": len(active),
         }
 
@@ -471,6 +499,7 @@ class VerticalStaffDirectoryService:
         total = len(rows)
         active = pending_verification = suspended = capability_incomplete = 0
         technicians = staff_members = available = assigned = assigned_not_started = unavailable = 0
+        sla_breached_jobs = overdue_jobs = login_not_created = 0
         for ptm, sbv, _, user in rows:
             assignment = self._effective_assignment(sbv, ptm)
             verification = self._effective_verification(sbv, ptm, user)
@@ -479,9 +508,18 @@ class VerticalStaffDirectoryService:
             suspended += int(assignment in ("suspended", "deactivated", "inactive"))
             technicians += int(ptm.member_type == "technician")
             staff_members += int(ptm.member_type != "technician")
-            capability_incomplete += int(ptm.member_type == "technician" and not ptm.supported_offering_ids)
+            capability_incomplete += int(
+                ptm.member_type == "technician" and not (
+                    ptm.skills or ptm.supported_offering_ids or ptm.supported_type_ids
+                    or ptm.supported_brand_ids
+                    or (sbv and (sbv.job_type_capabilities or sbv.service_capabilities))
+                )
+            )
+            login_not_created += int(not ptm.user_id)
             aj = int(workloads.get(ptm.id, {}).get("active_jobs", 0))
             wip = int(workloads.get(ptm.id, {}).get("work_in_progress_jobs", 0))
+            sla_breached_jobs += int(workloads.get(ptm.id, {}).get("sla_breached_jobs", 0))
+            overdue_jobs += int(workloads.get(ptm.id, {}).get("overdue_jobs", 0))
             av = self._derive_availability(ptm, sbv, aj, wip)
             if av == "available": available += 1
             elif av == "on_job": assigned += 1
@@ -493,6 +531,8 @@ class VerticalStaffDirectoryService:
             "available": available, "assigned": assigned,
             "assigned_not_started": assigned_not_started, "unavailable": unavailable,
             "capability_incomplete": capability_incomplete, "suspended": suspended,
+            "sla_breached_jobs": sla_breached_jobs, "overdue_jobs": overdue_jobs,
+            "login_not_created": login_not_created,
             "technicians": technicians, "staff_members": staff_members,
         }
 

@@ -144,25 +144,32 @@ class DashboardCommandCenterService:
               (SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status='active' AND terminated_at IS NULL AND archived_at IS NULL) AS active_tenants,
               (SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status='active' AND terminated_at IS NULL AND archived_at IS NULL AND created_at > NOW()-INTERVAL '30 days') AS new_tenants,
               (SELECT COUNT(*) FROM provider_signals WHERE is_bookable=true) AS bookable,
-              (SELECT COUNT(*) FROM service_jobs WHERE status NOT IN ('completed','cancelled')) AS live_jobs,
-              (SELECT COUNT(*) FROM service_bookings WHERE created_at>=CURRENT_DATE AND created_at<CURRENT_DATE+INTERVAL '1 day') AS today_bookings,
-              (SELECT COUNT(*) FROM tenants WHERE status IN ('pending_review','onboarding_pending')) AS pending_tenants,
-              (SELECT COUNT(*) FROM tenants WHERE verification_status='changes_pending_review' AND meta->>'pending_changes' IS NOT NULL AND terminated_at IS NULL AND archived_at IS NULL) AS pending_changes,
-              (SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN """ + RESOLVED_OR_FINAL_SQL + """ AND sla_status IN ('breached','escalated')) AS overdue_complaints,
+              (SELECT COUNT(*) FROM service_jobs sj JOIN tenants t ON t.id=sj.tenant_id WHERE t.vertical='home_services' AND sj.status NOT IN ('completed','cancelled')) AS live_jobs,
+              (SELECT COUNT(*) FROM service_bookings sb JOIN tenants t ON t.id=sb.tenant_id WHERE t.vertical='home_services' AND sb.created_at>=CURRENT_DATE AND sb.created_at<CURRENT_DATE+INTERVAL '1 day') AS today_bookings,
+              (SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status IN ('pending_review','onboarding_pending')) AS pending_tenants,
+              (SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND verification_status='changes_pending_review' AND meta->>'pending_changes' IS NOT NULL AND terminated_at IS NULL AND archived_at IS NULL) AS pending_changes,
+              (SELECT COUNT(*) FROM customer_complaints cc JOIN tenants t ON t.id=cc.tenant_id WHERE t.vertical='home_services' AND cc.status NOT IN """ + RESOLVED_OR_FINAL_SQL + """ AND cc.sla_status IN ('breached','escalated')) AS overdue_complaints,
               (SELECT COUNT(*) FROM provider_signals WHERE risk_level IN ('high','critical')) AS attention_count,
               (SELECT COUNT(*) FROM provider_signals WHERE risk_level='critical') AS critical_attention,
               (SELECT COUNT(*) FROM suspicious_activity_logs WHERE status IN ('open','investigating')) AS open_threats,
-              (SELECT COUNT(*) FROM service_jobs sj LEFT JOIN usage_credit_ledger ucl ON ucl.job_id=sj.id AND ucl.event_type='completed_job_deduction' WHERE sj.status='completed' AND sj.updated_at>NOW()-INTERVAL '7 days' AND ucl.id IS NULL) AS failed_deductions
+              (SELECT COUNT(*) FROM service_jobs sj JOIN tenants t ON t.id=sj.tenant_id LEFT JOIN usage_credit_ledger ucl ON ucl.job_id=sj.id AND ucl.event_type='completed_job_deduction' WHERE t.vertical='home_services' AND sj.status='completed' AND sj.updated_at>NOW()-INTERVAL '7 days' AND ucl.id IS NULL) AS failed_deductions
         """)
         row = rows[0] if rows else {}
         health = self._health_payload(row)
-        pending_actions = sum(int(row.get(key) or 0) for key in ("pending_tenants", "pending_changes"))
+        approvals = sum(int(row.get(key) or 0) for key in ("pending_tenants", "pending_changes"))
+        finance_exceptions = int(row.get("failed_deductions") or 0)
+        security_alerts = int(row.get("open_threats") or 0)
+        pending_actions = approvals + finance_exceptions + security_alerts
 
         return {
             "platform_health": {"score": health["score"], "status": health["status"]},
             "active_tenants": {"count": int(row.get("active_tenants") or 0), "new_this_month": int(row.get("new_tenants") or 0), "bookable": int(row.get("bookable") or 0)},
             "live_operations": {"total": int(row.get("live_jobs") or 0)+int(row.get("today_bookings") or 0), "jobs": int(row.get("live_jobs") or 0), "bookings": int(row.get("today_bookings") or 0), "leads": 0},
-            "pending_admin_actions": {"count": pending_actions, "approvals": pending_actions, "complaints": 0, "disputes": 0},
+            "pending_admin_actions": {
+                "count": pending_actions, "approvals": approvals,
+                "finance_exceptions": finance_exceptions,
+                "security_alerts": security_alerts,
+            },
             "at_risk_tenants": {"count": int(row.get("attention_count") or 0), "high_risk": int(row.get("critical_attention") or 0)},
             "critical_alerts": {"count": int(row.get("open_threats") or 0), "open_threats": int(row.get("open_threats") or 0)},
         }
@@ -172,10 +179,10 @@ class DashboardCommandCenterService:
     async def get_platform_health(self) -> dict[str, Any]:
         rows = await _safe_rows(self.db, """
             SELECT
-              (SELECT COUNT(*) FROM tenants WHERE status IN ('pending_review','onboarding_pending')) AS pending_tenants,
-              (SELECT COUNT(*) FROM service_jobs sj LEFT JOIN usage_credit_ledger ucl ON ucl.job_id=sj.id AND ucl.event_type='completed_job_deduction' WHERE sj.status='completed' AND sj.updated_at>NOW()-INTERVAL '7 days' AND ucl.id IS NULL) AS failed_deductions,
+              (SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status IN ('pending_review','onboarding_pending')) AS pending_tenants,
+              (SELECT COUNT(*) FROM service_jobs sj JOIN tenants t ON t.id=sj.tenant_id LEFT JOIN usage_credit_ledger ucl ON ucl.job_id=sj.id AND ucl.event_type='completed_job_deduction' WHERE t.vertical='home_services' AND sj.status='completed' AND sj.updated_at>NOW()-INTERVAL '7 days' AND ucl.id IS NULL) AS failed_deductions,
               (SELECT COUNT(*) FROM suspicious_activity_logs WHERE status IN ('open','investigating')) AS open_threats,
-              (SELECT COUNT(*) FROM customer_complaints WHERE status NOT IN """ + RESOLVED_OR_FINAL_SQL + """ AND sla_status IN ('breached','escalated')) AS overdue_complaints
+              (SELECT COUNT(*) FROM customer_complaints cc JOIN tenants t ON t.id=cc.tenant_id WHERE t.vertical='home_services' AND cc.status NOT IN """ + RESOLVED_OR_FINAL_SQL + """ AND cc.sla_status IN ('breached','escalated')) AS overdue_complaints
         """)
         return self._health_payload(rows[0] if rows else {})
 
@@ -218,9 +225,11 @@ class DashboardCommandCenterService:
         """, p)
         missing_deductions = await _safe_count(self.db, """
             SELECT COUNT(*) FROM service_jobs sj
+            JOIN tenants t ON t.id = sj.tenant_id
             LEFT JOIN usage_credit_ledger ucl
               ON ucl.job_id = sj.id AND ucl.event_type = 'completed_job_deduction'
-            WHERE sj.status = 'completed' AND sj.updated_at BETWEEN :f AND :t AND ucl.id IS NULL
+            WHERE t.vertical = 'home_services' AND sj.status = 'completed'
+              AND sj.updated_at BETWEEN :f AND :t AND ucl.id IS NULL
         """, p)
         return {
             "platform_revenue": float(topups or 0), "usage_credit_topups": float(topups or 0),
@@ -233,12 +242,12 @@ class DashboardCommandCenterService:
     # ── Part F: Tenant Lifecycle Snapshot ────────────────────────────────────
 
     async def get_tenant_lifecycle(self) -> dict[str, Any]:
-        new_requests = await _safe_count(self.db, "SELECT COUNT(*) FROM tenants WHERE status = 'onboarding_pending'")
-        pending_review = await _safe_count(self.db, "SELECT COUNT(*) FROM tenants WHERE status = 'pending_review'")
-        changes_requested = await _safe_count(self.db, "SELECT COUNT(*) FROM tenants WHERE status = 'changes_requested'")
+        new_requests = await _safe_count(self.db, "SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status = 'onboarding_pending'")
+        pending_review = await _safe_count(self.db, "SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status = 'pending_review'")
+        changes_requested = await _safe_count(self.db, "SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status = 'changes_requested'")
         approved_week = await _safe_count(self.db,
-            "SELECT COUNT(*) FROM tenants WHERE verification_status IN ('approved','verified') AND updated_at > NOW() - INTERVAL '7 days'")
-        suspended = await _safe_count(self.db, "SELECT COUNT(*) FROM tenants WHERE status = 'suspended'")
+            "SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND verification_status IN ('approved','verified') AND updated_at > NOW() - INTERVAL '7 days'")
+        suspended = await _safe_count(self.db, "SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status = 'suspended'")
         bookable = await _safe_count(self.db, """
             SELECT COUNT(*) FROM tenants t
             JOIN (
@@ -271,35 +280,54 @@ class DashboardCommandCenterService:
     # ── Part G: Operations Snapshot / Live Operations ────────────────────────
 
     async def get_operations_snapshot(self, vertical: str | None = None) -> dict[str, Any]:
-        live_jobs = await _safe_count(self.db,
-            "SELECT COUNT(*) FROM service_jobs WHERE status NOT IN ('completed','cancelled')")
-        today_bookings = await _safe_count(self.db, """
-            SELECT COUNT(*) FROM service_bookings
-            WHERE created_at >= CURRENT_DATE AND created_at < CURRENT_DATE + INTERVAL '1 day'
+        live_jobs = await _safe_count(self.db, """
+            SELECT COUNT(*) FROM service_jobs sj JOIN tenants t ON t.id=sj.tenant_id
+            WHERE t.vertical='home_services' AND sj.status NOT IN ('completed','cancelled')
         """)
-        pending_acceptance = await _safe_count(self.db,
-            "SELECT COUNT(*) FROM service_jobs WHERE status = 'pending_assignment'")
-        technicians_on_duty = await _safe_count(self.db,
-            "SELECT COUNT(DISTINCT assigned_staff_id) FROM service_jobs WHERE status NOT IN ('completed','cancelled') AND assigned_staff_id IS NOT NULL")
-        sla_breaches = await _safe_count(self.db, """
-            SELECT COUNT(*) FROM customer_complaints
-            WHERE status NOT IN ('resolved','closed','cancelled') AND sla_status = 'breached'
+        today_bookings = await _safe_count(self.db, """
+            SELECT COUNT(*) FROM service_bookings sb JOIN tenants t ON t.id=sb.tenant_id
+            WHERE t.vertical='home_services'
+              AND sb.created_at >= CURRENT_DATE AND sb.created_at < CURRENT_DATE + INTERVAL '1 day'
+        """)
+        pending_assignment = await _safe_count(self.db, """
+            SELECT COUNT(*) FROM service_jobs sj JOIN tenants t ON t.id=sj.tenant_id
+            WHERE t.vertical='home_services' AND sj.status = 'pending_assignment'
+        """)
+        technicians_on_duty = await _safe_count(self.db, """
+            SELECT COUNT(DISTINCT sj.assigned_staff_id) FROM service_jobs sj
+            JOIN tenants t ON t.id=sj.tenant_id
+            WHERE t.vertical='home_services' AND sj.status NOT IN ('completed','cancelled')
+              AND sj.assigned_staff_id IS NOT NULL
+        """)
+        job_sla_breaches = await _safe_count(self.db, """
+            SELECT COUNT(*) FROM service_jobs sj JOIN tenants t ON t.id=sj.tenant_id
+            WHERE t.vertical='home_services' AND sj.status NOT IN ('completed','cancelled')
+              AND sj.sla_breached_at IS NOT NULL AND sj.sla_stopped_at IS NULL
+        """)
+        complaint_sla_breaches = await _safe_count(self.db, """
+            SELECT COUNT(*) FROM customer_complaints cc JOIN tenants t ON t.id=cc.tenant_id
+            WHERE t.vertical='home_services'
+              AND cc.status NOT IN ('resolved','closed','cancelled')
+              AND cc.sla_status IN ('breached','escalated')
         """)
 
         return {
             "live_jobs": live_jobs, "today_bookings": today_bookings,
-            "pending_provider_acceptance": pending_acceptance, "technicians_on_duty": technicians_on_duty,
+            "pending_provider_acceptance": pending_assignment, "technicians_on_duty": technicians_on_duty,
             "appointments_today": 0, "leads_today": 0,
-            "orders_today": 0, "sla_breaches": sla_breaches,
+            "orders_today": 0, "sla_breaches": job_sla_breaches,
+            "complaint_sla_breaches": complaint_sla_breaches,
         }
 
     async def get_live_operations(self, limit: int = 30) -> dict[str, Any]:
         rows = await _safe_rows(self.db, """
             SELECT j.id, j.job_number AS item, t.vertical, t.business_name AS tenant,
-                   j.status, false AS sla_breach, j.assigned_staff_id, j.updated_at
+                   j.status,
+                   (j.sla_breached_at IS NOT NULL AND j.sla_stopped_at IS NULL) AS sla_breach,
+                   j.assigned_staff_id, j.updated_at
             FROM service_jobs j
-            LEFT JOIN tenants t ON t.id = j.tenant_id
-            WHERE j.status NOT IN ('completed', 'cancelled')
+            JOIN tenants t ON t.id = j.tenant_id
+            WHERE t.vertical='home_services' AND j.status NOT IN ('completed', 'cancelled')
             ORDER BY j.updated_at DESC
             LIMIT :limit
         """, {"limit": limit})
@@ -328,8 +356,10 @@ class DashboardCommandCenterService:
         from_dt, to_dt = _date_defaults(date_from, date_to)
         p = {"f": from_dt, "t": to_dt}
         jobs = await _safe_rows(self.db, """
-            SELECT DATE_TRUNC('day', created_at)::date::text AS date, COUNT(*) AS value
-            FROM service_jobs WHERE created_at BETWEEN :f AND :t GROUP BY 1 ORDER BY 1
+            SELECT DATE_TRUNC('day', sj.created_at)::date::text AS date, COUNT(*) AS value
+            FROM service_jobs sj JOIN tenants t ON t.id=sj.tenant_id
+            WHERE t.vertical='home_services' AND sj.created_at BETWEEN :f AND :t
+            GROUP BY 1 ORDER BY 1
         """, p)
         revenue = await _safe_rows(self.db, """
             SELECT DATE_TRUNC('day', cto.created_at)::date::text AS date,
@@ -343,8 +373,10 @@ class DashboardCommandCenterService:
             FROM tenants WHERE vertical='home_services' AND created_at BETWEEN :f AND :t GROUP BY 1 ORDER BY 1
         """, p)
         complaints = await _safe_rows(self.db, """
-            SELECT DATE_TRUNC('day', created_at)::date::text AS date, COUNT(*) AS value
-            FROM customer_complaints WHERE created_at BETWEEN :f AND :t GROUP BY 1 ORDER BY 1
+            SELECT DATE_TRUNC('day', cc.created_at)::date::text AS date, COUNT(*) AS value
+            FROM customer_complaints cc JOIN tenants t ON t.id=cc.tenant_id
+            WHERE t.vertical='home_services' AND cc.created_at BETWEEN :f AND :t
+            GROUP BY 1 ORDER BY 1
         """, p)
         deductions_trend = await _safe_rows(self.db, """
             SELECT DATE_TRUNC('day', ucl.created_at)::date::text AS date, COALESCE(SUM(-ucl.credit_delta),0) AS value
@@ -414,7 +446,7 @@ class DashboardCommandCenterService:
 
         profile_changes = await _safe_rows(self.db, """
             SELECT id, business_name, vertical FROM tenants
-            WHERE verification_status='changes_pending_review'
+            WHERE vertical='home_services' AND verification_status='changes_pending_review'
               AND meta ->> 'pending_changes' IS NOT NULL
               AND terminated_at IS NULL AND archived_at IS NULL
             ORDER BY updated_at DESC LIMIT 20
@@ -556,16 +588,14 @@ class DashboardCommandCenterService:
 
     async def get_home_services_summary(self) -> dict[str, Any]:
         hs_providers = await _safe_count(self.db, """
-            SELECT COUNT(*) FROM tenants
-            WHERE vertical = 'home_services' AND status = 'active'
+            SELECT COUNT(*) FROM tenants WHERE vertical = 'home_services' AND status = 'active'
               AND terminated_at IS NULL AND archived_at IS NULL
         """)
         # A legacy active registration can still be unverified and therefore
         # cannot enter customer matching. Keep it in onboarding, not in the
         # denominator of the operational bookability/trust gate.
         approved_providers = await _safe_count(self.db, """
-            SELECT COUNT(*) FROM tenants
-            WHERE vertical = 'home_services' AND status = 'active'
+            SELECT COUNT(*) FROM tenants WHERE vertical = 'home_services' AND status = 'active'
               AND verification_status IN ('approved', 'verified')
               AND suspended_at IS NULL
               AND terminated_at IS NULL AND archived_at IS NULL
@@ -611,6 +641,14 @@ class DashboardCommandCenterService:
             JOIN tenants t ON t.id = tsa.tenant_id
             WHERE t.vertical = 'home_services' AND tsa.is_active = true
         """), 0)
+        missing_completed_deductions = await _safe_count(self.db, """
+            SELECT COUNT(*) FROM service_jobs sj
+            JOIN tenants t ON t.id=sj.tenant_id
+            LEFT JOIN usage_credit_ledger ucl
+              ON ucl.job_id=sj.id AND ucl.event_type='completed_job_deduction'
+            WHERE t.vertical='home_services' AND sj.status='completed'
+              AND sj.updated_at > NOW() - INTERVAL '30 days' AND ucl.id IS NULL
+        """)
 
         def _health(ok_count: int, total: int) -> str:
             if total == 0:
@@ -648,7 +686,11 @@ class DashboardCommandCenterService:
                 "eligible_providers": approved_providers,
             },
             "auto_price_options_health": "retired",
-            "completed_job_deduction_health": "healthy" if monetization_policies > 0 else "not_configured",
+            "completed_job_deduction_health": {
+                "status": ("not_configured" if monetization_policies == 0 else
+                           "critical" if missing_completed_deductions > 0 else "healthy"),
+                "missing_deductions": missing_completed_deductions,
+            },
             "published_tenant_services": published_tenant_services,
         }
 
@@ -660,8 +702,10 @@ class DashboardCommandCenterService:
             JOIN tenants t ON t.id=cr.tenant_id
             WHERE t.vertical='home_services' AND cr.status <> 'deleted'
         """)
-        completed_jobs = await _safe_count(self.db,
-            "SELECT COUNT(*) FROM service_jobs WHERE status='completed'")
+        completed_jobs = await _safe_count(self.db, """
+            SELECT COUNT(*) FROM service_jobs sj JOIN tenants t ON t.id=sj.tenant_id
+            WHERE t.vertical='home_services' AND sj.status='completed'
+        """)
         complaint_count = await _safe_count(self.db, """
             SELECT COUNT(*) FROM customer_complaints cc JOIN tenants t ON t.id=cc.tenant_id
             WHERE t.vertical='home_services'
@@ -753,8 +797,13 @@ class DashboardCommandCenterService:
                 'home_services' AS vertical_key,
                 'Home Services' AS category_name,
                 (SELECT COUNT(*) FROM tenants WHERE vertical='home_services' AND status='active') AS tenant_count,
-                (SELECT COUNT(*) FROM service_bookings WHERE created_at BETWEEN :f AND :t) AS booking_count,
-                (SELECT COUNT(*) FROM service_jobs WHERE status='completed' AND updated_at BETWEEN :f AND :t) AS completed_count,
+                (SELECT COUNT(*) FROM service_bookings sb JOIN tenants t ON t.id=sb.tenant_id
+                  WHERE t.vertical='home_services' AND sb.created_at BETWEEN :f AND :t) AS booking_count,
+                (SELECT COUNT(*) FROM service_jobs sj
+                   JOIN service_bookings sb ON sb.id=sj.booking_id
+                   JOIN tenants t ON t.id=sj.tenant_id
+                  WHERE t.vertical='home_services' AND sj.status='completed'
+                    AND sb.created_at BETWEEN :f AND :t) AS completed_count,
                 (SELECT COALESCE(SUM(cto.amount_paid - COALESCE(cto.refunded_amount,0)),0)
                    FROM credit_topup_orders cto JOIN tenants t ON t.id=cto.tenant_id
                   WHERE t.vertical='home_services' AND cto.payment_status IN ('credited','partially_refunded')
@@ -763,7 +812,8 @@ class DashboardCommandCenterService:
                    JOIN tenants t ON t.id=cr.tenant_id
                   WHERE t.vertical='home_services' AND cr.created_at BETWEEN :f AND :t
                     AND cr.status <> 'deleted') AS avg_rating,
-                (SELECT COUNT(*) FROM customer_complaints WHERE created_at BETWEEN :f AND :t) AS complaint_count
+                (SELECT COUNT(*) FROM customer_complaints cc JOIN tenants t ON t.id=cc.tenant_id
+                  WHERE t.vertical='home_services' AND cc.created_at BETWEEN :f AND :t) AS complaint_count
             WHERE EXISTS (SELECT 1 FROM verticals WHERE key='home_services' AND is_enabled=true)
         """, p)
         items = []

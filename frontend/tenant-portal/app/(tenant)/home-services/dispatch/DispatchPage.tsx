@@ -1704,6 +1704,11 @@ function AssignmentPanel({
                 This booked visit window has ended. Choose a new open slot and send it for customer approval. Technician assignment unlocks only after approval; any SLA penalty already charged remains recorded.
               </Alert>
             )}
+            {options.job_context.scheduled_date && options.job_context.provider_reschedule_allowance?.limit_reached && (
+              <Alert tone="danger">
+                Provider reschedule limit reached ({options.job_context.provider_reschedule_allowance.used} of {options.job_context.provider_reschedule_allowance.limit}). The customer can choose a new slot, or use the governed cancellation flow if this visit cannot be fulfilled.
+              </Alert>
+            )}
             {options.job_context.assignment_overdue && !options.job_context.slot_expired && (
               <Alert tone="warning">
                 Technician assignment is overdue. Assign now; the provider and customer price remain unchanged.
@@ -1770,6 +1775,7 @@ function AssignmentPanel({
                 onClick={onSchedule}
                 disabled={
                   Boolean(options.job_context.pending_reschedule)
+                  || Boolean(options.job_context.scheduled_date && options.job_context.provider_reschedule_allowance?.limit_reached)
                   || (!options.current_assignment && !options.job_context.slot_expired)
                 }
               >
@@ -1778,6 +1784,11 @@ function AssignmentPanel({
                   ? "Choose recovery slot"
                   : options.job_context.scheduled_date ? "Reschedule" : "Schedule"}
               </Button>
+              {options.job_context.scheduled_date && options.job_context.provider_reschedule_allowance && (
+                <span style={{ alignSelf: "center", fontSize: 12, color: "var(--text-tertiary)" }}>
+                  {options.job_context.provider_reschedule_allowance.remaining} provider reschedule{options.job_context.provider_reschedule_allowance.remaining === 1 ? "" : "s"} remaining
+                </span>
+              )}
             </div>
             {options.current_assignment && (
               <div

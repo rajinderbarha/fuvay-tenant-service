@@ -24,6 +24,7 @@
  * re-exports them under the ORIGINAL familiar name its pages already use.
  */
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus, Pencil, Trash2, Eye, X, CheckCircle2, AlertTriangle,
   XCircle, Info, TrendingUp, TrendingDown, Minus, ChevronLeft, ChevronRight,
@@ -405,11 +406,11 @@ export function Dialog({ open, onClose, title, children, size = "md" }: {
     previouslyFocused.current = null;
   }, [open]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
   const W = { sm: 400, md: 560, lg: 720, xl: 900 };
-  return (
+  return createPortal(
     <div style={{
-      position: "fixed", inset: 0, zIndex: 300,
+      position: "fixed", inset: 0, zIndex: "var(--z-modal, 1300)",
       display: "flex", alignItems: "center", justifyContent: "center",
       background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)",
       animation: "fadeIn 0.15s ease",
@@ -446,7 +447,8 @@ export function Dialog({ open, onClose, title, children, size = "md" }: {
         )}
         <div style={{ padding: 24 }}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -654,6 +656,7 @@ export function KpiGrid({
         gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${minCardWidth}px), 1fr))`,
         gap: "var(--space-3)",
         alignItems: "stretch",
+        marginBlockEnd: "var(--space-1)",
         ...style,
       }}
     >

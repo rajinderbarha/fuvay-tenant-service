@@ -907,7 +907,7 @@ class BackendToolExecutor:
                                 role=user.role)
                 if not user:
                     user = User(
-                        email=f"customer_wa_{_uuid.uuid4().hex[:12]}@serviceos.internal",
+                        email=None,
                         phone=phone,
                         full_name=draft_model.customer_name or self.display_name or "WhatsApp Customer",
                         role="customer",
@@ -922,6 +922,13 @@ class BackendToolExecutor:
                 self.customer_id = user.id
                 draft_model.customer_id = user.id
                 draft_model.customer_phone = draft_model.customer_phone or phone
+                from app.engines.messaging_gateway.models import MessagingThread
+                await self.db.execute(
+                    MessagingThread.__table__.update().where(
+                        MessagingThread.channel == "whatsapp",
+                        MessagingThread.channel_user_id == str(self.channel_user_id or ""),
+                    ).values(customer_id=user.id)
+                )
                 if self.session_id:
                     ai_session = await self.db.get(AIConversationSession, _uuid.UUID(self.session_id))
                     if ai_session:
@@ -969,17 +976,24 @@ class BackendToolExecutor:
                     f"instagram-test-phone:{phone}".encode("utf-8"),
                     hashlib.sha256,
                 ).hexdigest()
-                synthetic_email = f"customer_ig_{identity_hash}@serviceos.internal"
+                from app.engines.messaging_gateway.models import MessagingThread
                 sender_user = (await self.db.execute(
-                    select(User).where(User.email == synthetic_email).limit(1)
+                    select(User)
+                    .join(MessagingThread, MessagingThread.customer_id == User.id)
+                    .where(
+                        MessagingThread.channel == "instagram",
+                        MessagingThread.channel_user_id == sender_id,
+                    )
+                    .order_by(MessagingThread.updated_at.desc())
+                    .limit(1)
                 )).scalars().first()
                 current_user = await self.db.get(User, self.customer_id) if self.customer_id else None
                 # An entered phone is deliberately *not* verified in this
                 # temporary Instagram test mode.  It therefore cannot be used
                 # to merge two different Instagram senders into one customer;
                 # doing so exposed one account's name and bookings in another
-                # account.  Reuse is sender-scoped through synthetic_email, and
-                # that -- not the number -- is what keeps senders apart.
+                # account. Reuse is sender-scoped through the durable
+                # messaging-thread identity, not through an invented email.
                 #
                 # So the number typed in chat is a CONTACT number for this one
                 # booking, never an identity: nothing looks an account up by
@@ -1004,7 +1018,7 @@ class BackendToolExecutor:
                         }
                 if not user:
                     user = User(
-                        email=synthetic_email,
+                        email=None,
                         phone=None,
                         full_name=(
                             draft_model.customer_name
@@ -1027,6 +1041,12 @@ class BackendToolExecutor:
                     )
                     self.db.add(user)
                     await self.db.flush()
+                await self.db.execute(
+                    MessagingThread.__table__.update().where(
+                        MessagingThread.channel == "instagram",
+                        MessagingThread.channel_user_id == sender_id,
+                    ).values(customer_id=user.id)
+                )
                 profile_meta = dict(user.meta or {})
                 if self.instagram_username:
                     profile_meta["instagram_username"] = self.instagram_username

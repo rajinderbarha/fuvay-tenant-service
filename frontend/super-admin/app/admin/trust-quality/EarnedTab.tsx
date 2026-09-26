@@ -20,6 +20,7 @@ import {
   BadgeDefinition, EarnedBadge, EarnedBadgeDirectoryRow,
 } from "../../../lib/api";
 import { useAction, useApi } from "../../../hooks/useApi";
+import { safeStatus } from "../../../lib/api-foundation/normalize";
 
 /** Target types that are tenants; everything else is looked up by id. */
 const TENANT_TARGETS = ["tenant"];
@@ -165,7 +166,7 @@ export function EarnedTab({ badges, BadgeIcon }: {
                         </div>
                       </td>
                       <td style={{ padding: "11px 16px" }}>
-                        <Badge variant="muted">{row.target_type}</Badge>
+                        <Badge variant="muted">{row.target_type === "tenant" ? "Provider" : safeStatus(row.target_type)}</Badge>
                       </td>
                       <td style={{ padding: "11px 16px", minWidth: 190 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -182,7 +183,7 @@ export function EarnedTab({ badges, BadgeIcon }: {
                         </Badge>
                       </td>
                       <td style={{ padding: "11px 16px", color: "var(--text-secondary)" }}>
-                        {row.award_source.replace(/_/g, " ")}
+                        {safeStatus(row.award_source)}
                       </td>
                       <td style={{ padding: "11px 16px", whiteSpace: "nowrap", color: "var(--text-secondary)" }}>
                         {row.earned_at ? row.earned_at.slice(0, 10) : "—"}

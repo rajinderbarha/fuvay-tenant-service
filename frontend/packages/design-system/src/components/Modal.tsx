@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 export interface ModalProps {
@@ -64,7 +65,9 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
 
   if (!open) return null;
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -76,7 +79,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 1000,
+        zIndex: "var(--z-modal, 1300)",
       }}
     >
       <div
@@ -112,6 +115,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
         <div style={{ padding: "1.25rem", overflowY: "auto" }}>{children}</div>
         {footer && <div style={{ padding: "1rem 1.25rem", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -5,6 +5,7 @@ import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Input, SectionHeader } from "../../../../components/shared/ui";
 import { autoPriceOptionsApi, type MatchingDiagnosticsResult, type MatchingDiagnosticsBadge } from "../../../../lib/api";
 import { useAction } from "../../../../hooks/useApi";
+import { fieldLabel } from "../../../../lib/field-labels";
 
 // Matches the backend's PROVIDER_LEVELS icon keys
 // (auto_price_options_router.py) -- one lucide icon per level.
@@ -151,7 +152,7 @@ export default function MatchingDiagnosticsPage() {
                 {Object.entries(result.selected_provider.internal_score_breakdown).map(([k, v]) => (
                   <div key={k} style={{ padding: 8, borderRadius:"var(--radius-md)", background: "var(--surface-sunken)", textAlign: "center" }}>
                     <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{String(v ?? "—")}</p>
-                    <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: 0, textTransform: "capitalize" }}>{k.replace(/_/g, " ")}</p>
+                    <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: 0 }}>{fieldLabel(k)}</p>
                   </div>
                 ))}
               </div>

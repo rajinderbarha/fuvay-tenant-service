@@ -15,6 +15,7 @@ import { ScrollText } from "lucide-react";
 import { Card, Btn, Badge, Spinner, Select, Pagination, EmptyState } from "../../../components/shared/ui";
 import { trustQualityApi, TrustQualityAuditRow, TQ_ENUMS } from "../../../lib/api";
 import { useApi } from "../../../hooks/useApi";
+import { safeStatus } from "../../../lib/api-foundation/normalize";
 
 const PAGE_SIZE = 25;
 
@@ -98,10 +99,10 @@ export function AuditTab() {
                           {String(l.created_at ?? "").replace("T", " ").slice(0, 19)}
                         </td>
                         <td style={{ padding: "10px 16px" }}>
-                          <Badge variant={actionTone(l.action_type)}>{l.action_type}</Badge>
+                          <Badge variant={actionTone(l.action_type)}>{safeStatus(l.action_type.replace(/\./g, "_"))}</Badge>
                         </td>
                         <td style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-secondary)" }}>
-                          {l.target_type ? `${l.target_type.replace(/_/g, " ")}` : "—"}
+                          {l.target_type ? (l.target_type === "tenant" ? "Provider" : safeStatus(l.target_type)) : "—"}
                           {l.target_id && <div style={{ color: "var(--text-tertiary)", fontSize: 11 }}>{l.target_id.slice(0, 8)}</div>}
                         </td>
                         <td style={{ padding: "10px 16px", fontSize: 12 }}>{l.actor_role ?? "system"}</td>

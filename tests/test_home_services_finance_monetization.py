@@ -236,6 +236,7 @@ class TestPolicyLifecycle:
             "assignment_timeout_enabled": True,
             "assignment_timeout_minutes": 30,
             "customer_reschedule_limit": 3,
+            "provider_reschedule_limit": 2,
             "arrival_verification_enabled": True,
             "arrival_radius_meters": 250,
             "arrival_location_max_age_seconds": 120,
@@ -259,6 +260,7 @@ class TestPolicyLifecycle:
         assert published["is_current"] is True
         assert published["assignment_timeout_minutes"] == 30
         assert published["customer_reschedule_limit"] == 3
+        assert published["provider_reschedule_limit"] == 2
         assert published["arrival_radius_meters"] == 250
         assert published["false_arrival_penalty_amount"] == 150.0
         assert published["customer_photo_retention_days"] == 30

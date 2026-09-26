@@ -234,8 +234,11 @@ function CustomerDetailContent({ customerId, onClose }: { customerId: string; on
                       Contact Details
                     </div>
                     <InfoRow label="Full Name" value={customer.full_name} />
-                    <InfoRow label="Phone" value={customer.phone} />
-                    <InfoRow label="Email" value={customer.email} />
+                    <InfoRow label="Login phone" value={customer.phone || "Not linked"} />
+                    <InfoRow label="Email (optional)" value={customer.email || "Not provided"} />
+                    <InfoRow label="Instagram" value={customer.instagram_username ? `@${customer.instagram_username}` : "Not linked"} />
+                    <InfoRow label="WhatsApp" value={customer.whatsapp_number || "Not linked"} />
+                    <InfoRow label="Access channels" value={Array.from(new Set((customer.channels ?? []).map(identity => identity.channel.replace("customer_app", "Customer app")))).join(", ") || "Social only"} />
                     <InfoRow label="Status" value={customer.account_status.replace(/_/g, " ")} />
                     <InfoRow label="Member Since" value={customer.created_at ? new Date(customer.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : undefined} />
                   </div>

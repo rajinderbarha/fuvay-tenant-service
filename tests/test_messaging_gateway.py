@@ -1582,7 +1582,8 @@ async def test_staging_instagram_confirmation_creates_customer_only_at_confirmat
     assert result["confirmed"] is True
     customer = next(row for row in added if isinstance(row, User))
     assert customer.phone is None
-    assert customer.email.startswith("customer_ig_")
+    assert customer.email is None
+    assert customer.meta["instagram_identity_hash"]
     assert customer.meta["phone_verification_bypassed"] is True
     assert customer.meta["instagram_test_phone_hash"]
     assert draft.customer_id == customer.id

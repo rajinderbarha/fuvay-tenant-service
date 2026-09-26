@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, Bell, BriefcaseBusiness, CheckCircle2, ChevronRight, CreditCard, UserRound } from "lucide-react";
 import { Alert, Button, PageHeader, PageShell } from "@serviceos/design-system";
 import { providerNotifApi, type InAppNotificationItem } from "../../../../lib/api";
+import { notificationDestination } from "../../../../lib/notificationDestination";
 import { useAction, useApi } from "../../../../hooks/useApi";
 import styles from "./notifications.module.css";
 
@@ -74,8 +75,9 @@ function NotificationRow({ notification, onRead }: { notification: InAppNotifica
   </>;
 
   const className = `${styles.notificationRow} ${unread ? styles.unreadRow : ""}`;
-  if (notification.action_url) {
-    return <Link href={notification.action_url} className={className} onClick={() => unread && onRead(notification.id)}>{content}</Link>;
+  const destination = notificationDestination(notification);
+  if (destination) {
+    return <Link href={destination} className={className} onClick={() => unread && onRead(notification.id)}>{content}</Link>;
   }
   if (unread) {
     return <button type="button" className={className} onClick={() => onRead(notification.id)} aria-label={`Mark ${notification.title} as read`}>{content}</button>;

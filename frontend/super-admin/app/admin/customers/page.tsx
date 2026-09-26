@@ -360,8 +360,14 @@ function CustomersContent() {
       key: "phone", label: "Contact",
       render: (_: unknown, row: AdminCustomer) => (
         <div>
-          <div style={{ fontSize: 12, color: "var(--text)" }}>{row.phone || "—"}</div>
+          <div style={{ fontSize: 12, color: "var(--text)" }}>{row.phone || "Phone not linked"}</div>
           {row.email && <div style={{ fontSize: 11, color: "var(--muted-text)" }}>{row.email}</div>}
+          {row.instagram_username && <div style={{ fontSize: 11, color: "var(--muted-text)" }}>Instagram @{row.instagram_username}</div>}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+            {Array.from(new Set((row.channels ?? []).map(identity => identity.channel))).map(channel => (
+              <Badge key={channel} variant="muted" size="sm">{channel.replace("customer_app", "app")}</Badge>
+            ))}
+          </div>
         </div>
       ),
     },

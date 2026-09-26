@@ -18,7 +18,10 @@ class User(ServiceOSBase):
         Index("ix_users_role", "role"),
         Index("ix_users_phone", "phone"),
     )
-    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Email is optional for phone/OTP and social-channel customers. Provider,
+    # staff and admin onboarding still require a real email at their service
+    # boundaries; the shared identity table must not invent one for customers.
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(30), nullable=False)

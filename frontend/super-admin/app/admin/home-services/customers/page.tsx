@@ -21,6 +21,7 @@ import { AdminLayout } from "../../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Input, DataTable, Skeleton, Modal, Pagination, SummaryCard, KpiGrid, SectionHeader } from "../../../../components/shared/ui";
 import { hsCustomerDirectoryApi } from "../../../../lib/api";
 import { useApi } from "../../../../hooks/useApi";
+import { fieldLabel } from "../../../../lib/field-labels";
 
 function dt(v?: string | null) {
   return v ? new Date(v).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -190,7 +191,7 @@ function DefinitionsPanel() {
     <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12 }}>
       {Object.entries(d).map(([key, value]) => (
         <div key={key}>
-          <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 10, color: "var(--text-tertiary)" }}>{key.replace(/_/g, " ")}</div>
+          <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 10, color: "var(--text-tertiary)" }}>{fieldLabel(key)}</div>
           <div>{String(value)}</div>
         </div>
       ))}

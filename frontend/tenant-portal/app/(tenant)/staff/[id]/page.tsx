@@ -17,6 +17,7 @@ import { useApi, useAction }             from "../../../../hooks/useApi";
 import type { WorkingHours, StaffSecurityStatus, StaffLoginEvent } from "../../../../lib/api";
 import { CalendarDays } from "lucide-react";
 import { Card, Button, Modal, Skeleton, StatusBadge, Alert } from "@serviceos/design-system";
+import { fieldLabel } from "../../../../lib/field-labels";
 
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"] as const;
 const DAY_LABEL: Record<string,string> = {
@@ -203,7 +204,7 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                       <div key={key}>
                         <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
                           <span style={{ fontSize:12, color:"var(--text-secondary)", textTransform:"capitalize" }}>
-                            {key.replace(/_/g," ")}
+                            {fieldLabel(key)}
                           </span>
                           <span style={{ fontSize:12, fontWeight:700, color:"var(--text-primary)" }}>
                             {pct.toFixed(0)}

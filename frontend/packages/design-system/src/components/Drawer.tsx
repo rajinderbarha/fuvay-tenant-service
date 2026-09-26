@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 export interface DrawerProps {
@@ -23,12 +24,14 @@ export function Drawer({ open, onClose, title, side = "right", children }: Drawe
 
   if (!open) return null;
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: 1000, display: "flex", justifyContent: side === "right" ? "flex-end" : "flex-start" }}
+      style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: "var(--z-drawer, 1200)", display: "flex", justifyContent: side === "right" ? "flex-end" : "flex-start" }}
     >
       <div
         role="dialog"
@@ -56,6 +59,7 @@ export function Drawer({ open, onClose, title, side = "right", children }: Drawe
         </div>
         <div style={{ padding: "1.25rem", overflowY: "auto", flex: 1 }}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

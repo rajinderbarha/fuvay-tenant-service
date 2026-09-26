@@ -29,6 +29,7 @@ import {
   type SupportArticle,
 } from "../../../lib/api";
 import { Skeleton, Btn, Badge, Card, Modal, Input, Select, EmptyState } from "../../../components/shared/ui";
+import { fieldLabel } from "../../../lib/field-labels";
 
 type Tab = "requests" | "knowledge" | "announcements";
 const TABS: { id: Tab; label: string }[] = [
@@ -240,7 +241,7 @@ function CreateRequestDrawer({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <Select label="Link a record (optional)" value={relatedKey} onChange={setRelatedKey}
               placeholder="Reference type"
-              options={ws.form_options.related_entity_keys.map(k => ({ value: k, label: k.replace(/_/g, " ") }))} />
+              options={ws.form_options.related_entity_keys.map(k => ({ value: k, label: fieldLabel(k) }))} />
             <Input label="Reference ID" value={relatedValue} onChange={setRelatedValue}
               placeholder="Paste the ID only" hint="Only the ID is stored — never customer details." />
           </div>
@@ -450,7 +451,7 @@ function RequestDetailPanel({
           <>
             <span style={ROW_LABEL}>Related</span>
             <span style={{ fontFamily: "monospace", fontSize: 11.5 }}>
-              {Object.entries(detail.related_entities).map(([k, v]) => `${k}: ${v}`).join(" · ")}
+              {Object.entries(detail.related_entities).map(([k, v]) => `${fieldLabel(k)}: ${v}`).join(" · ")}
             </span>
           </>
         )}

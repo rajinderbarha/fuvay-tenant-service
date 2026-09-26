@@ -2592,7 +2592,7 @@ class MessagingGatewayService:
             return "That code is invalid or expired. Send /link to request a new one."
         if not user:
             user = User(
-                email=f"customer_ig_{uuid.uuid4().hex[:12]}@serviceos.internal",
+                email=None,
                 phone=phone,
                 full_name=thread.display_name or "Instagram Customer",
                 role="customer",

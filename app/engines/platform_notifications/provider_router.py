@@ -86,8 +86,12 @@ async def provider_list_notifications(
     u: UserContext = Depends(_provider_guard),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await _notif_svc.get_user_notifications(
-        db, uuid.UUID(u.user_id), read_status=read_status, limit=limit, offset=offset,
+    # Return the same trusted route projection used by the full workspace.
+    # Raw action_url values are historical data and may point at retired or
+    # unsafe routes (notably the old /service-jobs list URL).
+    result = await get_workspace_items(
+        db, uuid.UUID(u.user_id), read_status=read_status,
+        limit=limit, offset=offset,
     )
     return ok(result, _rid(r), "provider.notifications.list")
 

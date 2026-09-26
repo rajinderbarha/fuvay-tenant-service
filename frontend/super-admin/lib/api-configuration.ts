@@ -201,6 +201,7 @@ export interface MonetizationPolicy {
   urgent_assignment_threshold_minutes?: number;
   assignment_auto_assign_enabled?: boolean;
   customer_reschedule_limit?: number;
+  provider_reschedule_limit?: number;
   customer_cancellation_enabled?: boolean;
   customer_cancellation_cutoff_minutes?: number;
   customer_cancellation_reasons?: Array<{

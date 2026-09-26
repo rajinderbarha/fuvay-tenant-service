@@ -12,6 +12,7 @@ import {
   providerServiceAreasApi, providerAvailabilityApi, bookingWindowApi, availabilityExceptionsApi,
   ServiceOSError, type ProviderServiceArea, type ProviderAvailabilityRule,
   type BookingWindowSettings, type AvailabilityException, type HolidayCalendarResponse,
+  type AvailabilityClosureImpact,
 } from "../../../../../../lib/api";
 import { topupApi } from "../../../../../../lib/api-topup";
 import { WeeklyScheduleEditor } from "../../../../../../components/availability/WeeklyScheduleEditor";
@@ -50,6 +51,10 @@ function CoverageAvailabilityWorkspace() {
   const [notice, setNotice] = useState("");
   const [exceptionSaving, setExceptionSaving] = useState(false);
   const [exceptions, setExceptions] = useState<AvailabilityException[] | null>(null);
+  const [closureReview, setClosureReview] = useState<{
+    entry: { date: string; reason: string; source: "holiday_calendar" | "custom" };
+    impact: AvailabilityClosureImpact;
+  } | null>(null);
   const [holidayCalendar, setHolidayCalendar] = useState<HolidayCalendarResponse | null>(null);
   const [holidayCalendarError, setHolidayCalendarError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -247,6 +252,32 @@ function CoverageAvailabilityWorkspace() {
     } finally { setSaving(false); }
   }
 
+  async function saveException(
+    entry: { date: string; reason: string; source: "holiday_calendar" | "custom" },
+    acknowledgeExistingJobs: boolean,
+  ) {
+    const created = await availabilityExceptionsApi.create({
+      date: entry.date,
+      reason: entry.reason.trim(),
+      full_day_closed: true,
+      ...(acknowledgeExistingJobs ? { existing_jobs_policy: "honor_existing" } : {}),
+    });
+    setExceptions(list => [...(list ?? []), created]);
+    setHolidayCalendar(current => current ? {
+      ...current,
+      holidays: current.holidays.map(holiday => holiday.date === entry.date
+        ? { ...holiday, already_closed: true, exception_id: created.id }
+        : holiday),
+    } : current);
+    setClosureReview(null);
+    setNotice(acknowledgeExistingJobs
+      ? `Closure added. ${created.conflict_snapshot?.total_jobs ?? 0} existing booking(s) remain committed and must be honoured or rescheduled with customer approval.`
+      : entry.source === "holiday_calendar"
+        ? `${entry.reason} was added as a full-day closure.`
+        : "Custom full-day closure added.");
+    setPreviewRevision(value => value + 1);
+  }
+
   async function handleAddException(entry: { date: string; reason: string; source: "holiday_calendar" | "custom" }) {
     if (!entry.date || !entry.reason.trim()) {
       setError("Choose a closure date and reason.");
@@ -257,25 +288,30 @@ function CoverageAvailabilityWorkspace() {
     setError(null);
     setExceptionSaving(true);
     try {
-      const created = await availabilityExceptionsApi.create({
-        date: entry.date, reason: entry.reason.trim(), full_day_closed: true,
-      });
-      setExceptions(list => [...(list ?? []), created]);
-      setHolidayCalendar(current => current ? {
-        ...current,
-        holidays: current.holidays.map(holiday => holiday.date === entry.date
-          ? { ...holiday, already_closed: true, exception_id: created.id }
-          : holiday),
-      } : current);
-      setNotice(entry.source === "holiday_calendar"
-        ? `${entry.reason} was added as a full-day closure.`
-        : "Custom full-day closure added.");
-      setPreviewRevision(value => value + 1);
+      const impact = await availabilityExceptionsApi.impact(entry.date);
+      if (impact.requires_acknowledgement) {
+        setClosureReview({ entry, impact });
+        return false;
+      }
+      await saveException(entry, false);
       return true;
     } catch (err) {
       setError(err instanceof ServiceOSError ? err.message : "Could not add this exception.");
       return false;
     } finally { setExceptionSaving(false); }
+  }
+
+  async function confirmClosureWithExistingJobs() {
+    if (!closureReview) return;
+    setError(null);
+    setExceptionSaving(true);
+    try {
+      await saveException(closureReview.entry, true);
+    } catch (err) {
+      setError(err instanceof ServiceOSError ? err.message : "Could not add this closure.");
+    } finally {
+      setExceptionSaving(false);
+    }
   }
 
   async function handleRemoveException(id: string) {
@@ -512,6 +548,7 @@ function CoverageAvailabilityWorkspace() {
             <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Schedule exceptions</h2>
             <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>Select a recognized holiday without typing, or add your own one-time closure.</p>
             <ScheduleExceptionComposer
+              key={(exceptions ?? []).map(item => item.id).join("|")}
               calendar={holidayCalendar}
               calendarError={holidayCalendarError}
               exceptions={exceptions ?? []}
@@ -519,12 +556,49 @@ function CoverageAvailabilityWorkspace() {
               saving={exceptionSaving}
               onAdd={handleAddException}
             />
+            {closureReview && (
+              <div role="alert" style={{
+                marginTop: 14, padding: 14, borderRadius: 12,
+                border: "1px solid var(--warning-border)", background: "var(--warning-bg)",
+              }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>
+                  {closureReview.impact.total_jobs} existing booking{closureReview.impact.total_jobs === 1 ? "" : "s"} on {closureReview.entry.date}
+                </p>
+                <p style={{ margin: "6px 0 10px", fontSize: 12, lineHeight: 1.55, color: "var(--text-secondary)" }}>
+                  This closure stops new bookings only. Existing visits remain committed. The {closureReview.impact.protected_started_jobs} already-started visit(s) cannot be cancelled by a closure; the {closureReview.impact.pre_start_jobs} pre-start visit(s) must be honoured or rescheduled individually with customer approval.
+                </p>
+                <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
+                  {closureReview.impact.jobs.slice(0, 5).map(job => (
+                    <div key={job.job_id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11 }}>
+                      <strong>{job.job_number}</strong>
+                      <span>{job.time_window || "Time not set"} · {job.status.replaceAll("_", " ")}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <Btn variant="warning" size="sm" loading={exceptionSaving} onClick={confirmClosureWithExistingJobs}>
+                    Keep existing bookings and add closure
+                  </Btn>
+                  <Btn variant="ghost" size="sm" disabled={exceptionSaving} onClick={() => setClosureReview(null)}>Cancel</Btn>
+                  <a href={`/home-services/bookings-jobs?date=${closureReview.entry.date}`} style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: "var(--brand)" }}>
+                    Review bookings
+                  </a>
+                </div>
+              </div>
+            )}
             <h3 style={{ fontSize: 13, fontWeight: 700, margin: "20px 0 8px", color: "var(--text-primary)" }}>Upcoming closures</h3>
             {(exceptions ?? []).length === 0 ? (
               <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No upcoming exceptions.</p>
             ) : (exceptions ?? []).map(ex => (
               <div key={ex.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-                <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{ex.date} · {ex.full_day_closed ? "Closed" : "Custom hours"} · {ex.reason}</span>
+                <span style={{ fontSize: 13, color: "var(--text-primary)" }}>
+                  {ex.date} · {ex.full_day_closed ? "Closed" : "Custom hours"} · {ex.reason}
+                  {Number(ex.conflict_snapshot?.total_jobs ?? 0) > 0 && (
+                    <small style={{ display: "block", marginTop: 3, color: "var(--warning-text)" }}>
+                      {ex.conflict_snapshot.total_jobs} existing booking(s) preserved
+                    </small>
+                  )}
+                </span>
                 <button aria-label={`Remove schedule exception for ${ex.date}`} onClick={() => handleRemoveException(ex.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", display: "flex" }}>
                   <Trash2 size={15}/>
                 </button>
