@@ -105,8 +105,9 @@ export interface HsCommissionRates {
   health_adjustment_pct_points: string;
   health_snapshot: {
     score: number; band_key: string | null; source: string; reason: string | null;
-    calculated_at: string | null;
+    calculated_at: string | null; bookable_allowed?: boolean;
   } | null;
+  non_bookable_health_charge_mode: "BASE_RATE_ONLY" | "BAND_ADJUSTMENT";
   basis: string;
   charged_as: string;
   /** Customer-paid fee collected by the provider and remitted to Fuvay.

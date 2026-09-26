@@ -31,6 +31,7 @@ _DRAFT_FIELDS = {
     "provider_min_charge_minor", "provider_max_charge_minor",
     "provider_health_adjustment_enabled", "provider_health_adjustments_json",
     "provider_health_score_max_age_days", "provider_health_max_effective_percentage",
+    "provider_non_bookable_health_charge_mode",
     "customer_fee_model", "customer_fee_percentage", "customer_fee_fixed_amount_minor",
     "customer_fee_min_minor", "customer_fee_max_minor", "customer_fee_basis",
     "collection_stage", "customer_fee_refund_policy", "currency", "effective_from", "change_summary",
@@ -246,6 +247,13 @@ class VerticalMonetizationPolicyService:
         )
         if health_enabled and provider_pct is not None and health_cap is not None and health_cap < provider_pct:
             errors.append("provider_health_max_effective_percentage cannot be below provider_percentage")
+        non_bookable_mode = payload.get(
+            "provider_non_bookable_health_charge_mode", "BASE_RATE_ONLY"
+        )
+        if non_bookable_mode not in {"BASE_RATE_ONLY", "BAND_ADJUSTMENT"}:
+            errors.append(
+                "provider_non_bookable_health_charge_mode must be BASE_RATE_ONLY or BAND_ADJUSTMENT"
+            )
 
         cf = payload.get("customer_fee_model", "NONE")
         if cf not in CUSTOMER_FEE_MODELS:
@@ -664,15 +672,27 @@ class VerticalMonetizationPolicyService:
         health_examples = {}
         if draft_dict.get("provider_health_adjustment_enabled"):
             for band, adjustment in (draft_dict.get("provider_health_adjustments_json") or {}).items():
+                is_non_bookable_default_band = band in {"at_risk", "blocked"}
+                mode = draft_dict.get(
+                    "provider_non_bookable_health_charge_mode", "BASE_RATE_ONLY"
+                )
+                applied_adjustment = (
+                    0 if is_non_bookable_default_band and mode == "BASE_RATE_ONLY"
+                    else adjustment
+                )
                 calculated = calculate_provider_completion_credits(
                     policy=fake_policy,
                     service_amount=example_service_amount,
-                    health_adjustment_percentage_points=adjustment,
+                    health_adjustment_percentage_points=applied_adjustment,
                 )
                 health_examples[band] = {
-                    "adjustment_percentage_points": str(adjustment),
+                    "configured_adjustment_percentage_points": str(adjustment),
+                    "adjustment_percentage_points": str(applied_adjustment),
                     "effective_percentage": calculated["provider_charge_breakdown"].get("percentage"),
                     "provider_charge_credit_units": calculated["provider_charge_credit_units"],
+                    "non_bookable_base_rate_guard_applied": bool(
+                        is_non_bookable_default_band and mode == "BASE_RATE_ONLY"
+                    ),
                 }
         result["provider_health_adjustment_examples"] = health_examples
         customer_recovery_units = Decimal(to_major(result["fee_amount_minor"]))

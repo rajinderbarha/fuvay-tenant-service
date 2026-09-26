@@ -19,6 +19,12 @@ from app.engines.trust_quality.models import (
     TrustQualityRecalculationJob, TrustQualityAuditLog,
 )
 from app.exceptions import ServiceOSException
+from app.engines.trust_quality.provider_health_policy import (
+    provider_reschedule_metrics,
+    resolve_provider_health_policy,
+    smoothed_provider_outcomes,
+    smoothed_rating_score,
+)
 
 # Where a recalculation job finds the rows for each target_type. The badge engine
 # and the health engine name the same entity differently ("tenant" vs
@@ -53,6 +59,20 @@ _COUNTED_JOB_OUTCOME_SQL = (
 # How much of a formula's total weight must be measurable before its score is
 # trustworthy enough to put a target into a band. See _calc_score.
 _MIN_HEALTH_COVERAGE_PERCENT = 50.0
+
+# Audit context retained beside each component in HealthScore. Defined once so
+# high-volume batch recalculation does not rebuild this mapping per component.
+_HEALTH_COMPONENT_EVIDENCE_KEYS = {
+    "job_completion_rate": ("completed_jobs_count", "terminal_jobs_count"),
+    "cancellation_rate": ("completed_jobs_count", "terminal_jobs_count"),
+    "rating_score": ("average_rating", "review_count"),
+    "complaint_dispute_score": ("complaint_count",),
+    "response_sla_score": ("complaint_count", "response_time_minutes"),
+    "provider_reschedule_score": (
+        "provider_reschedule_count", "provider_reschedule_grace_count",
+        "provider_reschedule_grace_remaining", "provider_reschedules_over_grace",
+    ),
+}
 
 # Tenant onboarding stores the successful business-verification decision as
 # ``approved``.  A few older/imported rows use ``verified`` for the same
@@ -280,9 +300,19 @@ def calc_health_score(formula: HealthFormula, components: list[HealthFormulaComp
         scoring_weight += float(c.weight_percent)
         contribution = norm * float(c.weight_percent) / 100.0
         weighted_sum += contribution
-        breakdown.append({"metric_key": c.metric_key, "raw_value": raw, "normalized": norm,
-                           "weight_percent": float(c.weight_percent), "contribution": contribution,
-                           "missing": missing})
+        evidence: dict = {}
+        if metrics.get("health_history_window_days") is not None:
+            evidence["history_window_days"] = metrics["health_history_window_days"]
+        evidence_keys = _HEALTH_COMPONENT_EVIDENCE_KEYS.get(c.metric_key, ())
+        evidence.update({key: metrics[key] for key in evidence_keys if key in metrics})
+        item = {
+            "metric_key": c.metric_key, "raw_value": raw, "normalized": norm,
+            "weight_percent": float(c.weight_percent), "contribution": contribution,
+            "missing": missing,
+        }
+        if evidence:
+            item["evidence"] = evidence
+        breakdown.append(item)
 
     # Optional components whose metric is unavailable are skipped above, so
     # their weight must leave the denominator too. Scoring the weighted sum
@@ -1315,26 +1345,49 @@ class TrustQualityService:
         else:
             return m
 
+        is_provider = target_type in ("tenant", "tenant_provider")
+        health_policy = await resolve_provider_health_policy(self.db) if is_provider else None
+        window_start = (
+            _now() - timedelta(days=health_policy["history_window_days"])
+            if health_policy else None
+        )
+        window_params = {"window_start": window_start} if window_start else {}
+        if health_policy:
+            m["health_history_window_days"] = health_policy["history_window_days"]
+
         counts = dict((await self.db.execute(
             text(f"SELECT status, count(*) AS c FROM service_jobs "
                  f"WHERE {job_col} = :t AND {_COUNTED_JOB_OUTCOME_SQL} "
-                 f"GROUP BY status"), {"t": str(target_id)})).all())
+                 + ("AND updated_at >= :window_start " if is_provider else "")
+                 + "GROUP BY status"), {"t": str(target_id), **window_params})).all())
         done = sum(counts.get(s, 0) for s in _JOB_DONE_STATUSES)
         cancelled = sum(counts.get(s, 0) for s in _JOB_CANCELLED_STATUSES)
         terminal = done + cancelled
         m["completed_jobs_count"] = done
-        if terminal:
+        if is_provider:
+            m.update(smoothed_provider_outcomes(
+                done, cancelled, health_policy["confidence_prior_jobs"],
+            ))
+        elif terminal:
             m["job_completion_rate"] = round(done * 100.0 / terminal, 2)
             m["cancellation_rate"] = round(cancelled * 100.0 / terminal, 2)
 
         row = (await self.db.execute(
             text(f"SELECT avg(overall_rating) AS avg, count(*) AS n FROM customer_reviews "
-                 f"WHERE {review_col} = :t AND hidden_at IS NULL"), {"t": str(target_id)})).one()
+                 f"WHERE {review_col} = :t AND hidden_at IS NULL "
+                 + ("AND created_at >= :window_start" if is_provider else "")),
+            {"t": str(target_id), **window_params})).one()
         m["review_count"] = int(row.n or 0)
         if row.avg is not None:
             m["average_rating"] = round(float(row.avg), 2)
             # Formulas score out of 100, ratings are out of 5.
-            m["rating_score"] = round(float(row.avg) * 20.0, 2)
+            m["rating_score"] = (
+                smoothed_rating_score(
+                    float(row.avg), int(row.n or 0),
+                    health_policy["rating_prior_count"],
+                    health_policy["neutral_rating_score"],
+                ) if is_provider else round(float(row.avg) * 20.0, 2)
+            )
 
         if target_type in ("staff", "technician", "tenant_staff"):
             punctuality = (await self.db.execute(text("""
@@ -1354,18 +1407,26 @@ class TrustQualityService:
                      f"       count(*) FILTER (WHERE status NOT IN "
                      f"         ('resolved','closed','cancelled','rejected','settled')) AS unresolved, "
                      f"       count(*) FILTER (WHERE sla_status = 'breached') AS breached "
-                     f"FROM customer_complaints WHERE {complaint_col} = :t"),
-                {"t": str(target_id)})).one()
+                     f"FROM customer_complaints WHERE {complaint_col} = :t "
+                     + ("AND created_at >= :window_start" if is_provider else "")),
+                {"t": str(target_id), **window_params})).one()
             n = int(row.n or 0)
             unresolved = int(row.unresolved or 0)
             breached = int(row.breached or 0)
+            m["complaint_count"] = n
             if terminal:
-                rate = round(unresolved * 100.0 / terminal, 2)
+                denominator = terminal + (
+                    health_policy["confidence_prior_jobs"] if is_provider else 0
+                )
+                rate = round(unresolved * 100.0 / denominator, 2)
                 m["complaint_rate"] = rate
                 m["complaint_dispute_score"] = rate
             if n:
                 # Share of complaints answered inside the SLA.
-                m["response_sla_score"] = round((n - breached) * 100.0 / n, 2)
+                prior = health_policy["confidence_prior_jobs"] if is_provider else 0
+                m["response_sla_score"] = round(
+                    (n - breached + prior) * 100.0 / (n + prior), 2,
+                )
                 m["sla_success_rate"] = m["response_sla_score"]
         elif target_type in ("staff", "technician", "tenant_staff"):
             row = (await self.db.execute(text("""
@@ -1389,6 +1450,21 @@ class TrustQualityService:
                 m["sla_success_rate"] = m["response_sla_score"]
 
         if target_type in ("tenant", "tenant_provider"):
+            approved_provider_reschedules = int((await self.db.execute(text("""
+                SELECT count(*)
+                  FROM booking_reschedule_requests
+                 WHERE tenant_id = :target_id
+                   AND request_source = 'provider'
+                   AND status = 'approved'
+                   AND COALESCE(resolved_at, updated_at, created_at) >= :window_start
+            """), {
+                "target_id": str(target_id), "window_start": window_start,
+            })).scalar_one() or 0)
+            m.update(provider_reschedule_metrics(
+                approved_provider_reschedules, terminal,
+                health_policy["reschedule_grace_count"],
+                health_policy["confidence_prior_jobs"],
+            ))
             tenant = (await self.db.execute(text("""
                 SELECT status, verification_status, business_name, email, phone,
                        address_line1, city, state, zipcode, business_type
@@ -1430,7 +1506,10 @@ class TrustQualityService:
                 SELECT avg(EXTRACT(EPOCH FROM (provider_responded_at - created_at)) / 60.0)
                   FROM customer_complaints
                  WHERE tenant_id = :target_id AND provider_responded_at IS NOT NULL
-            """), {"target_id": str(target_id)})).scalar_one_or_none()
+                   AND created_at >= :window_start
+            """), {
+                "target_id": str(target_id), "window_start": window_start,
+            })).scalar_one_or_none()
             if response_minutes is not None:
                 m["response_time_minutes"] = round(float(response_minutes), 2)
         elif target_type in ("staff", "technician", "tenant_staff"):
@@ -1919,20 +1998,24 @@ _DEFAULT_HEALTH_FORMULAS = [
             # Readiness (profile, funding, catalog and schedule configuration)
             # is enforced by the bookability gate. Health measures operational
             # quality only, so the same fact is never counted twice.
-            {"metric_key": "job_completion_rate", "weight_percent": 25},
+            {"metric_key": "job_completion_rate", "weight_percent": 20},
             {"metric_key": "rating_score", "weight_percent": 20},
             {"metric_key": "complaint_dispute_score", "weight_percent": 15, "direction": "negative"},
-            {"metric_key": "cancellation_rate", "weight_percent": 20, "direction": "negative"},
+            {"metric_key": "cancellation_rate", "weight_percent": 15, "direction": "negative"},
             {"metric_key": "response_sla_score", "weight_percent": 10},
             {"metric_key": "document_verification_score", "weight_percent": 10},
+            {"metric_key": "provider_reschedule_score", "weight_percent": 10},
         ],
         "penalties": [
             {"metric_key": "tenant_status", "operator": "equals", "value": "suspended", "penalty_points": 0, "hard_override_score": 0},
-            {"metric_key": "complaint_rate", "operator": "greater_than", "value": 10, "penalty_points": 20},
-            {"metric_key": "average_rating", "operator": "less_than", "value": 3.5, "penalty_points": 20},
+            # The component already responds gradually to unresolved cases.
+            # Reserve the additional penalty for a sustained pattern so one
+            # early complaint cannot abruptly remove twenty health points.
+            {"metric_key": "complaint_rate", "operator": "greater_than", "value": 25, "penalty_points": 20},
+            {"metric_key": "rating_score", "operator": "less_than", "value": 70, "penalty_points": 20},
         ],
         "bonuses": [
-            {"metric_key": "average_rating", "operator": "greater_than_or_equal", "value": 4.7, "bonus_points": 5},
+            {"metric_key": "rating_score", "operator": "greater_than_or_equal", "value": 94, "bonus_points": 5},
             {"metric_key": "job_completion_rate", "operator": "greater_than_or_equal", "value": 95, "bonus_points": 5},
         ],
         "bands": [

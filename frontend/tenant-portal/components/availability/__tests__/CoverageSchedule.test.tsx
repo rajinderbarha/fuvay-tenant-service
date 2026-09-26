@@ -14,7 +14,12 @@ vi.mock("../../../lib/api", () => ({
   providerServiceAreasApi: { list: async () => ({ areas: [{ id: "area", coverage_type: "zipcode", zipcode: "110001", is_active: true }] }) },
   providerAvailabilityApi: { list: api.list, saveSchedule: api.save, slotPreview: api.preview },
   bookingWindowApi: { get: async () => ({ minimum_notice_minutes: 120, maximum_advance_booking_days: 7, buffer_minutes_between_jobs: 0, slot_duration_minutes: 120, allow_same_day_booking: true, emergency_booking_allowed: false, timezone: "Asia/Kolkata" }) },
-  availabilityExceptionsApi: { list: async () => ({ exceptions: [] }), create: api.createException },
+  availabilityExceptionsApi: {
+    list: async () => ({ exceptions: [] }),
+    holidayCalendar: async () => ({ country: "IN", states: ["Delhi"], subdivisions: ["DL"], source: "python-holidays", from_date: "2026-09-25", to_date: "2027-09-25", holidays: [] }),
+    create: api.createException,
+    delete: vi.fn(),
+  },
 }));
 
 const rule = { id: "monday", tenant_id: "tenant", scope_type: "provider", scope_id: null, day_of_week: 1,

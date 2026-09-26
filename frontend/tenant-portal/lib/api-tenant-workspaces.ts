@@ -656,9 +656,14 @@ export interface BJDetail {
   quote: (Record<string, unknown> & { customer_payable_amount?: number | string; total_amount?: number | string; status?: string }) | null;
   visit_fee: string | null; open_complaint_count: number; sla: BJSla;
   customer_health?: {
-    score: number; band: string; can_book: boolean;
+    score: number | null; band: string; can_book: boolean;
     advance_required_pct: number; signals: Record<string, number>;
-    computed_at: string;
+    computed_at: string | null;
+    assessment_status?: "unassessed" | "assessed" | "admin_override";
+    display_label?: string | null;
+    evidence?: { payment_outcomes?: number; behavior_assessments?: number; total_events?: number };
+    weights?: { payment_reliability?: number; customer_behavior?: number };
+    minimum_evidence_events?: number;
   } | null;
   workflow_stages: Array<{
     step_key: string; label: string; state: "completed" | "current" | "skipped" | "upcoming";
@@ -745,12 +750,17 @@ export interface HsDispatchJobSummary {
   } | null;
   has_conflict?: boolean;
   customer_health?: {
-    score: number;
+    score: number | null;
     band: string;
     can_book: boolean;
     advance_required_pct?: number;
     signals?: Record<string, number>;
-    computed_at?: string;
+    computed_at?: string | null;
+    assessment_status?: "unassessed" | "assessed" | "admin_override";
+    display_label?: string | null;
+    evidence?: { payment_outcomes?: number; behavior_assessments?: number; total_events?: number };
+    weights?: { payment_reliability?: number; customer_behavior?: number };
+    minimum_evidence_events?: number;
   } | null;
 }
 
@@ -987,6 +997,23 @@ export const financeReadinessApi = {
 // ── Booking window & availability exceptions ───────────────────────────────
 export type BookingWindowSettings = WsPayload;
 export type AvailabilityException = WsPayload;
+export interface HolidayCalendarItem {
+  date: string;
+  name: string;
+  scope: "national" | "regional";
+  subdivisions: string[];
+  already_closed: boolean;
+  exception_id?: string | null;
+}
+export interface HolidayCalendarResponse {
+  country: string;
+  states: string[];
+  subdivisions: string[];
+  source: string;
+  from_date: string;
+  to_date: string;
+  holidays: HolidayCalendarItem[];
+}
 
 export const bookingWindowApi = {
   get: <T = BookingWindowSettings>() => apiFetch<T>("/v1/provider/booking-window"),
@@ -997,6 +1024,8 @@ export const bookingWindowApi = {
 export const availabilityExceptionsApi = {
   /** Returns an `{ exceptions: [...] }` envelope, not a bare array. */
   list: <T = WsPayload>() => apiFetch<T>("/v1/provider/availability/exceptions"),
+  holidayCalendar: <T = HolidayCalendarResponse>(params?: { from_date?: string; to_date?: string }) =>
+    apiFetch<T>(`/v1/provider/availability/holiday-calendar${query(params)}`),
   create: <T = AvailabilityException>(payload: Record<string, unknown>) =>
     apiFetch<T>("/v1/provider/availability/exceptions", post(payload)),
   delete: <T = WsPayload>(exceptionId: string) =>

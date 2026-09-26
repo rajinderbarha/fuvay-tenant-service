@@ -2268,21 +2268,27 @@ class TenantCatalogService:
             )
         )).scalars().all()
         if active_area_ids:
-            active_mappings = (await self.db.execute(
+            existing_mappings = (await self.db.execute(
                 select(TenantServiceAreaService).where(
                     TenantServiceAreaService.tenant_id == ts.tenant_id,
                     TenantServiceAreaService.service_id == ts.master_service_id,
                     TenantServiceAreaService.job_type == ts.job_type,
-                    TenantServiceAreaService.is_available.is_(True),
+                ).order_by(
+                    TenantServiceAreaService.is_available.desc(),
+                    TenantServiceAreaService.created_at.desc(),
                 )
             )).scalars().all()
-            mappings_by_area = {
-                mapping.tenant_service_area_id: mapping
-                for mapping in active_mappings
-            }
+            # Keep at most one canonical row per area.  Older installations
+            # may contain a revoked/unavailable row from the retired manual
+            # coverage UI; re-publishing must reactivate it instead of trying
+            # to insert around it or leaving the service invisible.
+            mappings_by_area = {}
+            for mapping in existing_mappings:
+                mappings_by_area.setdefault(mapping.tenant_service_area_id, mapping)
             for area_id in active_area_ids:
                 existing_mapping = mappings_by_area.get(area_id)
                 if existing_mapping is not None:
+                    existing_mapping.is_available = True
                     existing_mapping.status = "ACTIVE"
                 else:
                     self.db.add(TenantServiceAreaService(

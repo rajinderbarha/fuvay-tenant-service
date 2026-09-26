@@ -537,8 +537,29 @@ def _bookability_row(coverage_row: dict, tenant_bookable: dict | None) -> dict:
 async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
     errors: list[str] = []
 
-    from app.engines.tenant_engine.health import refresh_provider_operational_health
-    await _safe(refresh_provider_operational_health(db, tid), "provider_health", errors)
+    # Trust & Quality owns provider health.  This dashboard used to refresh and
+    # display tenants.health_score, a legacy lifetime projection that could
+    # disagree with matching and finance.  Keep the dashboard read-only and use
+    # the same canonical snapshot and governed policy as every decision engine.
+    from app.engines.trust_quality.provider_health import get_provider_health_snapshot
+    from app.engines.trust_quality.provider_health_policy import resolve_provider_health_policy
+    provider_health = await _safe(
+        get_provider_health_snapshot(db, tid), "provider_health", errors,
+    ) or {
+        "score": None, "band_key": None, "source": "unavailable",
+        "reason": "provider_health_unavailable", "calculated_at": None,
+    }
+    provider_health_policy = await _safe(
+        resolve_provider_health_policy(db), "provider_health_policy", errors,
+    ) or {
+        "history_window_days": 180,
+        "reschedule_grace_count": 3,
+    }
+    displayed_health_score = (
+        provider_health.get("score")
+        if provider_health.get("source") == "canonical"
+        else None
+    )
 
     from app.engines.home_service_assignment.team_readiness_service import compute_team_summary, compute_service_coverage
     team_summary = await _safe(compute_team_summary(db, tid), "staff_capacity", errors) or {"counts": {}, "per_member": {}}
@@ -566,14 +587,14 @@ async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
 
     tenant = (await db.execute(text(
         "SELECT COALESCE(business_name, tenant_name) AS business_name, "
-        "tenant_code, city, state, zipcode, logo_url, health_score, health_band "
+        "tenant_code, city, state, zipcode, logo_url "
         "FROM tenants WHERE id=:tid"
     ), {"tid": str(tid)})).fetchone()
     from app.engines.home_service_booking.matching_engine import _public_badges
     public_badges = await _safe(
         _public_badges(
             db, tid,
-            tenant.health_score if tenant else None,
+            displayed_health_score,
             None,
         ),
         "provider_badges", errors,
@@ -607,9 +628,20 @@ async def get_dashboard(db: AsyncSession, tid: uuid.UUID) -> dict:
             "attention_items": sum(int(item.get("count", 0)) for item in attention),
         },
         "provider_health": {
-            "score": float(tenant.health_score) if tenant and tenant.health_score is not None else None,
-            "band": tenant.health_band if tenant else None,
-            "note": "Cancellations, assignment response, completed work, customer satisfaction and payment readiness contribute to this score.",
+            # A neutral prior protects an unassessed provider in matching, but
+            # it is not earned history and must not be displayed as 65/100.
+            "score": displayed_health_score,
+            "band": provider_health.get("band_key"),
+            "source": provider_health.get("source"),
+            "assessment_reason": provider_health.get("reason"),
+            "calculated_at": provider_health.get("calculated_at"),
+            "history_window_days": provider_health_policy["history_window_days"],
+            "reschedule_grace_count": provider_health_policy["reschedule_grace_count"],
+            "note": (
+                f"Based on the latest {provider_health_policy['history_window_days']} days. "
+                f"The first {provider_health_policy['reschedule_grace_count']} customer-approved "
+                "provider reschedules in that window do not reduce health."
+            ),
             "badges": public_badges,
         },
         "attention_queue": attention,

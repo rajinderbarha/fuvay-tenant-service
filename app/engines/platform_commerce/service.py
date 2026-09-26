@@ -44,22 +44,22 @@ WARRANTY_RESOLUTION_HOURS = 72
 utcnow = lambda: datetime.now(timezone.utc)
 
 
-def customer_payment_score(paid: int, unpaid: int) -> float:
+def customer_payment_score(paid: int, unpaid: int, neutral_prior: float = 80.0) -> float:
     """Pending provider claims and unresolved disputes are not customer faults."""
     if paid + unpaid == 0:
-        return CUSTOMER_DEFAULT_SIGNALS["payment_reliability"]
+        return neutral_prior
     # Two neutral prior outcomes prevent one disputed record from blocking a customer.
-    return round((paid * 100.0 + 2 * 80.0) / (paid + unpaid + 2), 2)
+    return round((paid * 100.0 + 2 * neutral_prior) / (paid + unpaid + 2), 2)
 
 
-def customer_behavior_score(counts: dict[str, int]) -> float:
+def customer_behavior_score(counts: dict[str, int], neutral_prior: float = 80.0) -> float:
     values = {"respectful": 100.0, "neutral": 80.0, "difficult": 40.0, "unsafe": 0.0}
     total = sum(max(0, counts.get(code, 0)) for code in values)
     if not total:
-        return CUSTOMER_DEFAULT_SIGNALS["customer_behavior"]
+        return neutral_prior
     # Subjective feedback is smoothed and never alone determines booking access.
     weighted = sum(max(0, counts.get(code, 0)) * value for code, value in values.items())
-    return round((weighted + 3 * 80.0) / (total + 3), 2)
+    return round((weighted + 3 * neutral_prior) / (total + 3), 2)
 
 
 class CommerceService:
@@ -485,22 +485,89 @@ class CommerceService:
                 "month": await _sum(today-timedelta(days=30))}
 
     # ── Customer Health (6) ────────────────────────────────────────────────────
+    async def _customer_health_evidence(self, cid, tid) -> dict:
+        """Count only genuine payment and completed-job behaviour evidence."""
+        from sqlalchemy import text
+
+        payments = (await self.db.execute(text("""
+            SELECT
+              count(*) FILTER (
+                WHERE reconciliation_status='confirmed' OR payment_status='verified'
+              ) AS paid,
+              count(*) FILTER (WHERE payment_status IN ('failed','unpaid')) AS unpaid
+            FROM service_payment_records
+            WHERE customer_id=:cid AND tenant_id=:tid
+        """), {"cid": str(cid), "tid": str(tid)})).mappings().first() or {}
+        behavior_rows = (await self.db.execute(text("""
+            SELECT behavior_code, count(*) AS total
+            FROM customer_behavior_assessments
+            WHERE customer_id=:cid AND tenant_id=:tid
+            GROUP BY behavior_code
+        """), {"cid": str(cid), "tid": str(tid)})).mappings().all()
+        behavior_counts = {
+            row["behavior_code"]: int(row["total"]) for row in behavior_rows
+        }
+        paid = int(payments.get("paid") or 0)
+        unpaid = int(payments.get("unpaid") or 0)
+        behavior_total = sum(behavior_counts.values())
+        return {
+            "paid_payments": paid,
+            "unpaid_payments": unpaid,
+            "payment_outcomes": paid + unpaid,
+            "behavior_assessments": behavior_total,
+            "total_events": paid + unpaid + behavior_total,
+            "behavior_counts": behavior_counts,
+        }
+
+    async def _customer_health_policy(self) -> dict:
+        from app.engines.platform_commerce.customer_health_policy import (
+            resolve_customer_health_policy,
+        )
+        return await resolve_customer_health_policy(self.db)
+
+    @staticmethod
+    def _new_customer_health(cid, tid, *, policy: dict, evidence: dict) -> dict:
+        public_evidence = {key: value for key, value in evidence.items() if key != "behavior_counts"}
+        return {
+            "customer_id": str(cid), "tenant_id": str(tid),
+            "assessment_status": "unassessed", "display_label": "New customer",
+            "score": None, "band": "new_customer", "can_book": True,
+            "advance_required_pct": 0.0, "signals": {}, "computed_at": None,
+            "evidence": public_evidence,
+            "weights": {
+                "payment_reliability": policy["payment_weight_percentage"],
+                "customer_behavior": policy["behavior_weight_percentage"],
+            },
+            "minimum_evidence_events": policy["minimum_evidence_events"],
+        }
+
     async def get_customer_health(self, cid, tid):
+        policy = await self._customer_health_policy()
+        evidence = await self._customer_health_evidence(cid, tid)
         r = await self.db.execute(select(CustomerHealthScore).where(
             CustomerHealthScore.customer_id==cid, CustomerHealthScore.tenant_id==tid))
         h = r.scalar_one_or_none()
+        override_active = bool(
+            h and h.override_band and h.override_expires_at and h.override_expires_at > utcnow()
+        )
+        if evidence["total_events"] < policy["minimum_evidence_events"] and not override_active:
+            # Opening Dispatch must never manufacture an earned score.
+            return self._new_customer_health(cid, tid, policy=policy, evidence=evidence)
         if not h:
-            h = CustomerHealthScore(customer_id=cid, tenant_id=tid, score=Decimal("80.00"),
-                band="standard", signals=dict(CUSTOMER_DEFAULT_SIGNALS),
-                can_book=True, advance_required_pct=Decimal("0.00"))
-            self.db.add(h); await self.db.flush()
-        band = h.band
-        if h.override_band and h.override_expires_at and h.override_expires_at > utcnow():
-            band = h.override_band
+            return await self.recompute_customer_health(cid, tid)
+        band = h.override_band if override_active else h.band
         adv = CUSTOMER_ADVANCE_REQUIRED_PCT.get(band, Decimal("0.00"))
         return {"customer_id": str(cid), "tenant_id": str(tid), "score": float(h.score),
                 "band": band, "can_book": band != "blocked", "advance_required_pct": float(adv),
-                "signals": h.signals, "computed_at": h.computed_at.isoformat()}
+                "signals": h.signals, "computed_at": h.computed_at.isoformat(),
+                "assessment_status": "admin_override" if override_active else "assessed",
+                "display_label": "Admin reviewed" if override_active else None,
+                "evidence": {key: value for key, value in evidence.items() if key != "behavior_counts"},
+                "weights": {
+                    "payment_reliability": policy["payment_weight_percentage"],
+                    "customer_behavior": policy["behavior_weight_percentage"],
+                },
+                "minimum_evidence_events": policy["minimum_evidence_events"]}
 
     async def get_customer_health_history(self, cid, tid):
         return {"customer_id": str(cid), "tenant_id": str(tid), "history": []}
@@ -535,31 +602,25 @@ class CommerceService:
 
     async def recompute_customer_health(self, cid, tid):
         """Rebuild from reconciled payment outcomes and private staff behavior only."""
-        from sqlalchemy import text
-        payments = (await self.db.execute(text("""
-            SELECT
-              count(*) FILTER (
-                WHERE reconciliation_status='confirmed' OR payment_status='verified'
-              ) AS paid,
-              count(*) FILTER (
-                WHERE payment_status IN ('failed','unpaid')
-              ) AS unpaid
-            FROM service_payment_records
-            WHERE customer_id=:cid AND tenant_id=:tid
-        """), {"cid": str(cid), "tid": str(tid)})).mappings().first() or {}
-        behavior = (await self.db.execute(text("""
-            SELECT behavior_code, count(*) AS total
-            FROM customer_behavior_assessments
-            WHERE customer_id=:cid AND tenant_id=:tid
-            GROUP BY behavior_code
-        """), {"cid": str(cid), "tid": str(tid)})).mappings().all()
-        paid = int(payments.get("paid") or 0)
-        unpaid = int(payments.get("unpaid") or 0)
+        policy = await self._customer_health_policy()
+        evidence = await self._customer_health_evidence(cid, tid)
+        if evidence["total_events"] < policy["minimum_evidence_events"]:
+            return self._new_customer_health(cid, tid, policy=policy, evidence=evidence)
+
+        neutral_prior = policy["neutral_prior_score"]
         signals = {
-            "payment_reliability": customer_payment_score(paid, unpaid),
-            "customer_behavior": customer_behavior_score({r["behavior_code"]: int(r["total"]) for r in behavior}),
+            "payment_reliability": customer_payment_score(
+                evidence["paid_payments"], evidence["unpaid_payments"], neutral_prior,
+            ),
+            "customer_behavior": customer_behavior_score(
+                evidence["behavior_counts"], neutral_prior,
+            ),
         }
-        score = round(sum(signals[k] * w for k, w in CUSTOMER_SIGNAL_WEIGHTS.items()), 2)
+        score = round(
+            signals["payment_reliability"] * policy["payment_weight"]
+            + signals["customer_behavior"] * policy["behavior_weight"],
+            2,
+        )
         band = next(
             (name for name, (low, _high) in sorted(
                 CUSTOMER_HEALTH_BANDS.items(), key=lambda item: item[1][0], reverse=True

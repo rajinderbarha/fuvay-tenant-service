@@ -78,6 +78,13 @@ class VerticalMonetizationPolicy(ServiceOSBase):
     provider_health_max_effective_percentage: Mapped[Decimal] = mapped_column(
         Numeric(6, 3), default=Decimal("25"), nullable=False,
     )
+    # A non-bookable health band stops new work.  It must never confiscate
+    # prepaid credits or retroactively add a punitive rate to work accepted
+    # before the block.  Admins may explicitly opt into the band adjustment,
+    # but the safe default charges the published base rate only.
+    provider_non_bookable_health_charge_mode: Mapped[str] = mapped_column(
+        String(30), default="BASE_RATE_ONLY", nullable=False,
+    )
 
     # ── SLA breach: what a late job costs, and where the money goes ──────────
     # Every one of these is admin policy rather than a constant, so a penalty
@@ -252,6 +259,7 @@ class VerticalMonetizationPolicy(ServiceOSBase):
             "provider_health_adjustments_json": self.provider_health_adjustments_json,
             "provider_health_score_max_age_days": self.provider_health_score_max_age_days,
             "provider_health_max_effective_percentage": str(self.provider_health_max_effective_percentage),
+            "provider_non_bookable_health_charge_mode": self.provider_non_bookable_health_charge_mode,
             "customer_fee_model": self.customer_fee_model,
             "customer_fee_percentage": str(self.customer_fee_percentage) if self.customer_fee_percentage is not None else None,
             "customer_fee_fixed_amount_minor": self.customer_fee_fixed_amount_minor,

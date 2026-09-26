@@ -11,10 +11,11 @@ import { PageHeader, PageShell } from "@serviceos/design-system";
 import {
   providerServiceAreasApi, providerAvailabilityApi, bookingWindowApi, availabilityExceptionsApi,
   ServiceOSError, type ProviderServiceArea, type ProviderAvailabilityRule,
-  type BookingWindowSettings, type AvailabilityException,
+  type BookingWindowSettings, type AvailabilityException, type HolidayCalendarResponse,
 } from "../../../../../../lib/api";
 import { topupApi } from "../../../../../../lib/api-topup";
 import { WeeklyScheduleEditor } from "../../../../../../components/availability/WeeklyScheduleEditor";
+import { ScheduleExceptionComposer } from "../../../../../../components/availability/ScheduleExceptionComposer";
 import { scheduleDraft, schedulePayload, dayError, businessDate, type DayDraft } from "../../../../../../lib/coverage-schedule";
 
 const SETUP_STEPS = [
@@ -49,6 +50,8 @@ function CoverageAvailabilityWorkspace() {
   const [notice, setNotice] = useState("");
   const [exceptionSaving, setExceptionSaving] = useState(false);
   const [exceptions, setExceptions] = useState<AvailabilityException[] | null>(null);
+  const [holidayCalendar, setHolidayCalendar] = useState<HolidayCalendarResponse | null>(null);
+  const [holidayCalendarError, setHolidayCalendarError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [technicianCapacity, setTechnicianCapacity] = useState<number | null>(null);
@@ -74,21 +77,21 @@ function CoverageAvailabilityWorkspace() {
   const [pincodeNeedsManualLocation, setPincodeNeedsManualLocation] = useState(false);
   const [manualPincodeCity, setManualPincodeCity] = useState("");
   const [manualPincodeState, setManualPincodeState] = useState("");
-  const [newExceptionDate, setNewExceptionDate] = useState("");
-  const [newExceptionReason, setNewExceptionReason] = useState("");
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
+    setHolidayCalendarError("");
     return Promise.all([
       providerServiceAreasApi.list(),
       providerAvailabilityApi.list(),
       bookingWindowApi.get(),
       availabilityExceptionsApi.list(),
       topupApi.status(),
+      availabilityExceptionsApi.holidayCalendar().catch(() => null),
     ])
-      .then(([a, r, bw, ex, seats]) => {
+      .then(([a, r, bw, ex, seats, calendar]) => {
         setTechnicianCapacity(Math.min(seats.entitled_seats, seats.used_seats));
         setAreas(a.areas);
         setRules(r.rules);
@@ -96,6 +99,8 @@ function CoverageAvailabilityWorkspace() {
         setBookingWindow(bw);
         setWindowDraft(bw);
         setExceptions(ex.exceptions);
+        setHolidayCalendar(calendar);
+        if (!calendar) setHolidayCalendarError("The holiday calendar could not be synced right now.");
       })
       .catch((err: unknown) => setError(err instanceof ServiceOSError ? err.message : "We couldn't load your coverage and availability settings."))
       .finally(() => setLoading(false));
@@ -242,23 +247,34 @@ function CoverageAvailabilityWorkspace() {
     } finally { setSaving(false); }
   }
 
-  async function handleAddException() {
-    if (!newExceptionDate || !newExceptionReason.trim()) {
-      setError("Enter a date and a reason for the exception.");
-      return;
+  async function handleAddException(entry: { date: string; reason: string; source: "holiday_calendar" | "custom" }) {
+    if (!entry.date || !entry.reason.trim()) {
+      setError("Choose a closure date and reason.");
+      return false;
     }
-    if (newExceptionDate < businessDate(String(windowDraft?.timezone || "Asia/Kolkata"))) { setError("Choose today or a future closure date."); return; }
-    if ((exceptions ?? []).some(ex => ex.date === newExceptionDate)) { setError("A closure is already configured for this date."); return; }
+    if (entry.date < businessDate(String(windowDraft?.timezone || "Asia/Kolkata"))) { setError("Choose today or a future closure date."); return false; }
+    if ((exceptions ?? []).some(ex => ex.date === entry.date)) { setError("A closure is already configured for this date."); return false; }
     setError(null);
     setExceptionSaving(true);
     try {
       const created = await availabilityExceptionsApi.create({
-        date: newExceptionDate, reason: newExceptionReason.trim(), full_day_closed: true,
+        date: entry.date, reason: entry.reason.trim(), full_day_closed: true,
       });
       setExceptions(list => [...(list ?? []), created]);
-      setNewExceptionDate(""); setNewExceptionReason("");
+      setHolidayCalendar(current => current ? {
+        ...current,
+        holidays: current.holidays.map(holiday => holiday.date === entry.date
+          ? { ...holiday, already_closed: true, exception_id: created.id }
+          : holiday),
+      } : current);
+      setNotice(entry.source === "holiday_calendar"
+        ? `${entry.reason} was added as a full-day closure.`
+        : "Custom full-day closure added.");
+      setPreviewRevision(value => value + 1);
+      return true;
     } catch (err) {
       setError(err instanceof ServiceOSError ? err.message : "Could not add this exception.");
+      return false;
     } finally { setExceptionSaving(false); }
   }
 
@@ -266,7 +282,15 @@ function CoverageAvailabilityWorkspace() {
     setError(null);
     try {
       await availabilityExceptionsApi.delete(id);
+      const removed = (exceptions ?? []).find(item => item.id === id);
       setExceptions(list => (list ?? []).filter(e => e.id !== id));
+      if (removed?.date) setHolidayCalendar(current => current ? {
+        ...current,
+        holidays: current.holidays.map(holiday => holiday.date === removed.date
+          ? { ...holiday, already_closed: false, exception_id: null }
+          : holiday),
+      } : current);
+      setPreviewRevision(value => value + 1);
     } catch (err) {
       setError(err instanceof ServiceOSError ? err.message : "Could not remove this exception.");
     }
@@ -486,15 +510,16 @@ function CoverageAvailabilityWorkspace() {
 
           <Card>
             <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px", color: "var(--text-primary)" }}>Schedule exceptions</h2>
-            <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>Add holidays or one-time closures.</p>
-            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-              <input type="date" disabled={exceptionSaving} aria-label="Exception date" min={businessDate(String(windowDraft.timezone || "Asia/Kolkata"))} value={newExceptionDate} onChange={e => setNewExceptionDate(e.target.value)}
-                style={{ height: 38, padding: "0 10px", fontSize: 13, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text-primary)" }}/>
-              <div style={{ flex: 1, minWidth: 160 }}>
-                <Input disabled={exceptionSaving} placeholder="Reason (e.g. Independence Day)" value={newExceptionReason} onChange={setNewExceptionReason}/>
-              </div>
-              <Btn variant="secondary" loading={exceptionSaving} icon={<Plus size={14}/>} onClick={handleAddException}>Add exception</Btn>
-            </div>
+            <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>Select a recognized holiday without typing, or add your own one-time closure.</p>
+            <ScheduleExceptionComposer
+              calendar={holidayCalendar}
+              calendarError={holidayCalendarError}
+              exceptions={exceptions ?? []}
+              minDate={businessDate(String(windowDraft.timezone || "Asia/Kolkata"))}
+              saving={exceptionSaving}
+              onAdd={handleAddException}
+            />
+            <h3 style={{ fontSize: 13, fontWeight: 700, margin: "20px 0 8px", color: "var(--text-primary)" }}>Upcoming closures</h3>
             {(exceptions ?? []).length === 0 ? (
               <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>No upcoming exceptions.</p>
             ) : (exceptions ?? []).map(ex => (

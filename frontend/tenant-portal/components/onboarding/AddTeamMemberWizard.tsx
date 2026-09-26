@@ -390,14 +390,14 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
           <SectionTitle>Approved skills</SectionTitle>
           <Btn variant="secondary" disabled={servicesLoading} onClick={() => setSkillsReload(value => value + 1)}>Refresh skills</Btn>
           {isTechnician && (
-            <Field label="Approved skills" hint="Optional tags controlled by the platform administrator for this business category.">
+            <Field label="Approved skills" hint="Optional platform-approved skills from all services your business has published.">
               {servicesLoading ? (
                 <p role="status" style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Loading approved skills...</p>
               ) : skillsLoadFailed ? (
                 <p role="status" style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0 }}>Approved skills could not be loaded. You can still save the technician and assign services.</p>
               ) : availableSkills.length === 0 ? (
                 <div style={{ padding: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-sunken)", color: "var(--text-secondary)", fontSize: 12 }}>
-                  No optional skill tags are configured for this category. Service assignments below are enough to add this technician.
+                  No optional skill tags are configured for your published services. Service assignments below are enough to add this technician.
                 </div>
               ) : (
                 <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
@@ -407,7 +407,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
                       style={{ width: "100%", height: 38, padding: "0 12px 0 36px", border: 0, outline: 0, background: "var(--surface-sunken)", color: "var(--text-primary)", boxSizing: "border-box" }}/>
                   </div>
                   <div style={{ maxHeight: 230, overflowY: "auto", padding: 8, display: "grid", gap: 6 }}>
-                    {availableSkills.filter(skill => `${skill.name} ${skill.description ?? ""} ${skill.service_group_name ?? ""}`.toLowerCase().includes(skillSearch.trim().toLowerCase())).map(skill => {
+                    {availableSkills.filter(skill => `${skill.name} ${skill.description ?? ""} ${skill.category_name ?? ""} ${skill.service_group_name ?? ""}`.toLowerCase().includes(skillSearch.trim().toLowerCase())).map(skill => {
                       const checked = selectedSkillIds.includes(skill.id);
                       return (
                         <label key={skill.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 11px", borderRadius: 8, cursor: "pointer", border: `1px solid ${checked ? "var(--brand)" : "var(--border)"}`, background: checked ? "color-mix(in srgb, var(--brand) 7%, var(--surface))" : "var(--surface)" }}>
@@ -415,6 +415,7 @@ export function AddTeamMemberWizard({ existing, onClose, onSaved, technicianSeat
                           <div style={{ minWidth: 0, flex: 1 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                               <span style={{ fontSize: 13, fontWeight: 650, color: "var(--text-primary)" }}>{skill.name}</span>
+                              {skill.category_name && <span style={{ fontSize: 10, color: "var(--brand)", padding: "2px 6px", borderRadius: 999, background: "color-mix(in srgb, var(--brand) 9%, var(--surface))" }}>{skill.category_name}</span>}
                               {skill.service_group_name && <span style={{ fontSize: 10, color: "var(--text-tertiary)", padding: "2px 6px", borderRadius: 999, background: "var(--surface-sunken)" }}>{skill.service_group_name}</span>}
                               {skill.requires_verification && <span title="Verification required" style={{ display: "inline-flex", color: "var(--warning)" }}><ShieldCheck size={13}/></span>}
                             </div>

@@ -27,6 +27,7 @@ from app.config import get_settings
 from app.models.base import utcnow
 from app.engines.admin_catalog.skill_catalog_router import (
     member_skill_ids, replace_member_skills, resolve_team_category_id,
+    resolve_team_category_ids,
     validate_skill_ids,
 )
 
@@ -206,7 +207,11 @@ async def create_team_member(
             "INVALID_MEMBER_TYPE", "Choose technician, staff, or manager.", status_code=422
         )
 
-    cat_id = str(await resolve_team_category_id(db, tid))
+    team_category_ids = await resolve_team_category_ids(db, tid)
+    # provider_team_members.category_id is a legacy single-value column.
+    # Keep a deterministic primary value there while normalized skills may
+    # span every category represented by the provider's published services.
+    cat_id = str(team_category_ids[0])
 
     requested_offering_ids = [str(value) for value in (payload.get("supported_offering_ids") or [])]
     valid_offering_ids = await _validate_offering_ids(db, tid, requested_offering_ids)
@@ -225,7 +230,7 @@ async def create_team_member(
         )
 
     requested_skill_ids = [str(value) for value in (payload.get("skill_ids") or [])]
-    selected_skills = await validate_skill_ids(db, uuid.UUID(cat_id), requested_skill_ids)
+    selected_skills = await validate_skill_ids(db, team_category_ids, requested_skill_ids)
 
     # Technicians resolve business hours dynamically. Team creation precedes
     # coverage setup, so no schedule is required or copied during this step.
@@ -567,9 +572,9 @@ async def update_team_member(
             current_type = (await db.execute(text(
                 "SELECT member_type FROM provider_team_members WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"
             ), {"id": str(member_id), "tid": str(tid)})).scalar()
-        cat_id = await resolve_team_category_id(db, tid)
+        category_ids = await resolve_team_category_ids(db, tid)
         requested_skill_ids = [str(value) for value in (payload.get("skill_ids") or [])]
-        selected_skills = await validate_skill_ids(db, cat_id, requested_skill_ids)
+        selected_skills = await validate_skill_ids(db, category_ids, requested_skill_ids)
 
     if becomes_active_technician and not was_technician:
         if not payload.get("supported_offering_ids"):
@@ -1175,6 +1180,60 @@ async def list_availability_exceptions(
     return ok({"exceptions": rows, "count": len(rows)}, request_id=rid)
 
 
+@router.get("/availability/holiday-calendar")
+async def get_provider_holiday_calendar(
+    request: Request,
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+):
+    """Guided India/state holiday choices inferred from provider coverage.
+
+    This endpoint intentionally sits before ``/availability/{rule_id}``; a
+    literal calendar path declared below it would be parsed as a UUID and 422.
+    """
+    from app.engines.provider_portal.holiday_calendar import build_india_holiday_calendar
+
+    tid = _tid(user)
+    rid = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "—")
+    start = from_date or date.today()
+    end = to_date or (start + timedelta(days=366))
+    if end < start:
+        raise ServiceOSException(
+            "INVALID_HOLIDAY_RANGE", "Holiday calendar end date must be on or after the start date.",
+            status_code=422,
+        )
+    if (end - start).days > 732:
+        raise ServiceOSException(
+            "HOLIDAY_RANGE_TOO_LARGE", "Holiday calendar range cannot exceed two years.",
+            status_code=422,
+        )
+
+    area_rows = (await db.execute(text(
+        "SELECT state FROM tenant_service_areas "
+        "WHERE tenant_id=:tid AND is_active=true AND LOWER(COALESCE(country, 'india')) IN ('india', 'in') "
+        "ORDER BY is_primary DESC, state"
+    ), {"tid": str(tid)})).fetchall()
+    states = list(dict.fromkeys(str(row.state).strip() for row in area_rows if row.state))
+    calendar = build_india_holiday_calendar(start, end, states=states)
+
+    closed_rows = (await db.execute(text(
+        "SELECT id, date FROM tenant_availability_exceptions "
+        "WHERE tenant_id=:tid AND status='active' AND date BETWEEN :start AND :end"
+    ), {"tid": str(tid), "start": start, "end": end})).fetchall()
+    closed_by_date = {row.date.isoformat(): str(row.id) for row in closed_rows}
+    for item in calendar["holidays"]:
+        item["already_closed"] = item["date"] in closed_by_date
+        item["exception_id"] = closed_by_date.get(item["date"])
+
+    calendar.update({
+        "from_date": start.isoformat(), "to_date": end.isoformat(),
+        "states": states,
+    })
+    return ok(calendar, request_id=rid)
+
+
 @router.put("/availability/schedule", dependencies=[Depends(enforce_setup_sequence)])
 async def save_business_schedule(
     payload: dict, request: Request, db: AsyncSession = Depends(get_db),
@@ -1292,8 +1351,15 @@ def _parse_date(value):
 def _validate_exception_payload(payload: dict) -> None:
     if not payload.get("date"):
         raise ServiceOSException("EXCEPTION_DATE_REQUIRED", "Date is required.", status_code=422)
-    if not payload.get("reason"):
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
         raise ServiceOSException("EXCEPTION_REASON_REQUIRED", "Reason is required.", status_code=422)
+    if len(reason) > 160:
+        raise ServiceOSException(
+            "EXCEPTION_REASON_TOO_LONG", "Closure reason cannot exceed 160 characters.",
+            status_code=422,
+        )
+    payload["reason"] = reason
     full_day = payload.get("full_day_closed", True)
     if not full_day:
         if not payload.get("start_time") or not payload.get("end_time"):

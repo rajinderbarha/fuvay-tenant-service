@@ -2621,6 +2621,11 @@ export interface HomeServicesDashboardData {
   provider_health: {
     score: number | null;
     band: string | null;
+    source: "canonical" | "unassessed_default" | "unavailable" | string;
+    assessment_reason: string | null;
+    calculated_at: string | null;
+    history_window_days: number;
+    reschedule_grace_count: number;
     note: string;
     badges: Array<{
       name: string;
@@ -4575,6 +4580,7 @@ export const tenantPricingApi = {
 export interface CategoryTeamSkill {
   id: string;
   category_id: string;
+  category_name?: string | null;
   service_group_id: string | null;
   service_group_name: string | null;
   code: string;
@@ -4589,7 +4595,7 @@ export const providerTeamSkillsApi = {
     const params = new URLSearchParams();
     if (q?.trim()) params.set("q", q.trim());
     const suffix = params.toString() ? `?${params.toString()}` : "";
-    return apiFetch<{ category_id: string; skills: CategoryTeamSkill[] }>(`/v1/provider/team-skills${suffix}`);
+    return apiFetch<{ category_id: string; category_ids: string[]; skills: CategoryTeamSkill[] }>(`/v1/provider/team-skills${suffix}`);
   },
 };
 

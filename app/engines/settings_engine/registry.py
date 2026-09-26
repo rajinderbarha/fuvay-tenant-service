@@ -120,6 +120,116 @@ _reg(ConfigurationDefinition(
     consumer_note="app/jobs/complaint_sla.py _sla_warning_hours() via SettingsService.resolve(); applies to both the first-response and resolution deadlines.",
 ))
 
+# Customer health is intentionally evidence-based.  These controls are kept
+# in the governed configuration registry (versioned, audited and rollbackable)
+# rather than hidden in a finance screen or duplicated per provider.
+_reg(ConfigurationDefinition(
+    key="customer_health_payment_weight_percentage",
+    label="Customer Health Payment Weight",
+    description="Percentage of an assessed customer's health score driven by verified payment outcomes. Behaviour receives the remaining percentage.",
+    owner_module="platform_commerce", data_type="percentage", unit="percent",
+    allowed_scopes=["global", "vertical"], default_value=80,
+    minimum=51, maximum=95, risk_level="high", approval_required=True,
+    snapshot_behavior="all_active_records", has_real_consumer=True,
+    consumer_note="app/engines/platform_commerce/customer_health_policy.py; applied whenever customer health is read or recomputed.",
+))
+
+_reg(ConfigurationDefinition(
+    key="customer_health_minimum_evidence_events",
+    label="Customer Health Minimum Evidence",
+    description="Verified payment outcomes or completed-job staff assessments required before a customer receives a health score.",
+    owner_module="platform_commerce", data_type="integer", unit="events",
+    allowed_scopes=["global", "vertical"], default_value=1,
+    minimum=1, maximum=20, risk_level="medium", approval_required=False,
+    snapshot_behavior="all_active_records", has_real_consumer=True,
+    consumer_note="app/engines/platform_commerce/customer_health_policy.py; customers below this threshold are shown as New customer, without a score.",
+))
+
+_reg(ConfigurationDefinition(
+    key="customer_health_neutral_prior_score",
+    label="Customer Health Neutral Prior",
+    description="Neutral smoothing score used internally while genuine payment and behaviour evidence is still limited. It is never displayed as earned history.",
+    owner_module="platform_commerce", data_type="integer", unit="points",
+    allowed_scopes=["global", "vertical"], default_value=80,
+    minimum=60, maximum=90, risk_level="medium", approval_required=False,
+    snapshot_behavior="all_active_records", has_real_consumer=True,
+    consumer_note="app/engines/platform_commerce/customer_health_policy.py; used only for Bayesian smoothing after the minimum evidence gate is met.",
+))
+
+# Provider health uses recent, attributable evidence instead of a lifetime
+# average. These controls are global/vertical governance settings so policy
+# can be tuned without a deployment while every score remains reproducible.
+_reg(ConfigurationDefinition(
+    key="provider_health_history_window_days",
+    label="Provider Health History Window",
+    description="Rolling number of days of provider jobs, reviews, complaints and approved provider reschedules included in health scoring.",
+    owner_module="trust_quality", data_type="duration", unit="days",
+    allowed_scopes=["global", "vertical"], default_value=180,
+    minimum=30, maximum=730, risk_level="high", approval_required=True,
+    snapshot_behavior="all_active_records", has_real_consumer=True,
+    consumer_note="app/engines/trust_quality/provider_health_policy.py; used by both single-provider and batch Trust & Quality metric gathering.",
+))
+
+_reg(ConfigurationDefinition(
+    key="provider_health_reschedule_grace_count",
+    label="Provider Reschedule Grace Allowance",
+    description="Customer-approved provider reschedules in the rolling window that do not reduce provider health. Customer-requested changes never count.",
+    owner_module="trust_quality", data_type="integer", unit="reschedules",
+    allowed_scopes=["global", "vertical"], default_value=3,
+    minimum=0, maximum=20, risk_level="medium", approval_required=False,
+    snapshot_behavior="all_active_records", has_real_consumer=True,
+    consumer_note="app/engines/trust_quality/provider_health_policy.py; only approved booking_reschedule_requests with request_source=provider are counted.",
+))
+
+_reg(ConfigurationDefinition(
+    key="provider_health_confidence_prior_jobs",
+    label="Provider Health Confidence Prior",
+    description="Successful-job equivalents used to smooth completion, cancellation, complaint and reschedule metrics so one early incident cannot collapse health.",
+    owner_module="trust_quality", data_type="integer", unit="jobs",
+    allowed_scopes=["global", "vertical"], default_value=5,
+    minimum=1, maximum=50, risk_level="high", approval_required=True,
+    snapshot_behavior="all_active_records", has_real_consumer=True,
+    consumer_note="app/engines/trust_quality/provider_health_policy.py; Bayesian-style prior applied only to provider operational rates.",
+))
+
+_reg(ConfigurationDefinition(
+    key="provider_health_rating_prior_count",
+    label="Provider Rating Confidence Prior",
+    description="Neutral-rating equivalents used to smooth small review samples before ratings affect provider health at full strength.",
+    owner_module="trust_quality", data_type="integer", unit="reviews",
+    allowed_scopes=["global", "vertical"], default_value=5,
+    minimum=1, maximum=50, risk_level="medium", approval_required=False,
+    snapshot_behavior="all_active_records", has_real_consumer=True,
+    consumer_note="app/engines/trust_quality/provider_health_policy.py; applied to rolling customer review evidence.",
+))
+
+_reg(ConfigurationDefinition(
+    key="provider_health_neutral_rating_score",
+    label="Provider Neutral Rating Prior",
+    description="Neutral 0-100 rating score used only to smooth limited provider review evidence.",
+    owner_module="trust_quality", data_type="integer", unit="points",
+    allowed_scopes=["global", "vertical"], default_value=80,
+    minimum=60, maximum=90, risk_level="medium", approval_required=False,
+    snapshot_behavior="all_active_records", has_real_consumer=True,
+    consumer_note="app/engines/trust_quality/provider_health_policy.py; it is not displayed as an earned customer rating.",
+))
+
+_reg(ConfigurationDefinition(
+    key="platform_topup_invoice_profile",
+    label="Top-up Invoice Legal Profile",
+    description="Supplier identity printed on provider top-up tax invoices: legal name, GSTIN, registered address, support email and state code.",
+    owner_module="vertical_catalog", data_type="structured",
+    allowed_scopes=["global"],
+    default_value={
+        "legal_name": "Fuvay", "gstin": None,
+        "support_email": "support@fuvay.com", "state_code": None,
+        "address": {"line1": "", "line2": "", "city": "", "state": "", "zipcode": "", "country": "India"},
+    },
+    risk_level="critical", approval_required=True,
+    snapshot_behavior="new_records_only", has_real_consumer=True,
+    consumer_note="app/engines/vertical_catalog/topup_invoice.py; snapshotted when a top-up payment is captured so historical invoices never change.",
+))
+
 _reg(ConfigurationDefinition(
     key="notification_retry_max_attempts", label="Notification Retry Attempts",
     description="Maximum delivery retry attempts for a failed notification outbox record.",

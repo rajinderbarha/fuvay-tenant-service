@@ -22,6 +22,7 @@ def _policy(**overrides):
         "provider_credit_units": None,
         "provider_fixed_amount_minor": None,
         "provider_health_max_effective_percentage": Decimal("25"),
+        "provider_non_bookable_health_charge_mode": "BASE_RATE_ONLY",
     }
     data.update(overrides)
     return SimpleNamespace(**data)
@@ -153,3 +154,97 @@ async def test_runtime_uses_fresh_band_and_returns_auditable_snapshot():
     assert snapshot["provider_health"]["adjustment_percentage_points"] == "5"
     assert snapshot["calculation"]["base_percentage"] == "10"
     assert snapshot["calculation"]["percentage"] == "15"
+
+
+@pytest.mark.asyncio
+async def test_non_bookable_provider_keeps_base_rate_and_wallet_is_not_confiscated():
+    policy = _policy(
+        id=uuid.uuid4(), version_number=8,
+        provider_chargeable_event="job_completed",
+        provider_health_adjustment_enabled=True,
+        provider_health_adjustments_json={"blocked": 10},
+        provider_health_score_max_age_days=30,
+        provider_non_bookable_health_charge_mode="BASE_RATE_ONLY",
+    )
+    vertical = SimpleNamespace(id=uuid.uuid4())
+    health_row = SimpleNamespace(
+        health_score_id=uuid.uuid4(), formula_id=uuid.uuid4(),
+        formula_key="provider_business_health_default", formula_version=4,
+        score=20, band_key="blocked", calculated_at=datetime.now(timezone.utc),
+        health_band_rule_id=uuid.uuid4(), bookable_allowed=False,
+    )
+    vertical_result = MagicMock(); vertical_result.scalar_one_or_none.return_value = vertical
+    policy_result = MagicMock(); policy_result.scalar_one_or_none.return_value = policy
+    health_result = MagicMock(); health_result.first.return_value = health_row
+    db = MagicMock(); db.execute = AsyncMock(side_effect=[vertical_result, policy_result, health_result])
+
+    credits, _, snapshot = await _resolve_commission_charge(
+        db, tenant_id=uuid.uuid4(), job_price=Decimal("500"),
+        category_id=uuid.uuid4(), master_service_id=uuid.uuid4(),
+        offering_type_id=None, brand_id=None,
+    )
+    assert credits == Decimal("50.00")
+    assert snapshot["provider_health"]["reason"] == "non_bookable_band_base_rate_only"
+    assert snapshot["provider_health"]["adjustment_percentage_points"] == "0"
+    assert snapshot["calculation"]["percentage"] == "10"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_explicitly_apply_blocked_band_adjustment_to_existing_job():
+    policy = _policy(
+        id=uuid.uuid4(), version_number=9,
+        provider_chargeable_event="job_completed",
+        provider_health_adjustment_enabled=True,
+        provider_health_adjustments_json={"blocked": 10},
+        provider_health_score_max_age_days=30,
+        provider_non_bookable_health_charge_mode="BAND_ADJUSTMENT",
+    )
+    vertical = SimpleNamespace(id=uuid.uuid4())
+    health_row = SimpleNamespace(
+        health_score_id=uuid.uuid4(), formula_id=uuid.uuid4(),
+        formula_key="provider_business_health_default", formula_version=4,
+        score=20, band_key="blocked", calculated_at=datetime.now(timezone.utc),
+        health_band_rule_id=uuid.uuid4(), bookable_allowed=False,
+    )
+    vertical_result = MagicMock(); vertical_result.scalar_one_or_none.return_value = vertical
+    policy_result = MagicMock(); policy_result.scalar_one_or_none.return_value = policy
+    health_result = MagicMock(); health_result.first.return_value = health_row
+    db = MagicMock(); db.execute = AsyncMock(side_effect=[vertical_result, policy_result, health_result])
+
+    credits, _, snapshot = await _resolve_commission_charge(
+        db, tenant_id=uuid.uuid4(), job_price=Decimal("500"),
+        category_id=uuid.uuid4(), master_service_id=uuid.uuid4(),
+        offering_type_id=None, brand_id=None,
+    )
+    assert credits == Decimal("100.00")
+    assert snapshot["provider_health"]["adjustment_percentage_points"] == "10"
+    assert snapshot["calculation"]["percentage"] == "20"
+
+
+def test_admin_preview_explains_non_bookable_base_rate_guard():
+    result = VerticalMonetizationPolicyService().preview({
+        "provider_model": "PERCENTAGE_COMMISSION",
+        "provider_percentage": "10",
+        "provider_health_adjustment_enabled": True,
+        "provider_health_adjustments_json": {"blocked": 10},
+        "provider_health_max_effective_percentage": "25",
+        "provider_non_bookable_health_charge_mode": "BASE_RATE_ONLY",
+        "customer_fee_model": "NONE",
+        "currency": "INR",
+    }, Decimal("500"))
+    blocked = result["provider_health_adjustment_examples"]["blocked"]
+    assert blocked["configured_adjustment_percentage_points"] == "10"
+    assert blocked["adjustment_percentage_points"] == "0"
+    assert blocked["provider_charge_credit_units"] == "50.00"
+    assert blocked["non_bookable_base_rate_guard_applied"] is True
+
+
+def test_unknown_non_bookable_charge_mode_cannot_be_published():
+    errors = VerticalMonetizationPolicyService().validate({
+        "provider_model": "PERCENTAGE_COMMISSION",
+        "provider_percentage": "10",
+        "provider_non_bookable_health_charge_mode": "CONFISCATE_WALLET",
+        "customer_fee_model": "NONE",
+        "collection_stage": "after_estimate_approval",
+    })["errors"]
+    assert any("BASE_RATE_ONLY or BAND_ADJUSTMENT" in error for error in errors)

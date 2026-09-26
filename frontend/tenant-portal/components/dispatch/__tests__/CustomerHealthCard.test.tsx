@@ -16,7 +16,7 @@ describe("CustomerHealthCard", () => {
     expect(screen.getByLabelText("Customer health")).toHaveTextContent("High-risk customer");
     expect(screen.getByText("Payment reliability · 80%")).toBeInTheDocument();
     expect(screen.getByText("25/100")).toBeInTheDocument();
-    expect(screen.getByText("Poor payment history")).toBeInTheDocument();
+    expect(screen.getByText(/Poor payment history/)).toBeInTheDocument();
     expect(screen.getByText("Payment protection: collect 50% advance before service.")).toBeInTheDocument();
   });
 
@@ -29,6 +29,23 @@ describe("CustomerHealthCard", () => {
     }} />);
 
     expect(screen.getByText("Excellent customer")).toBeInTheDocument();
-    expect(screen.getByText("Reliable payment history")).toBeInTheDocument();
+    expect(screen.getByText(/Reliable payment history/)).toBeInTheDocument();
+  });
+
+  it("shows a new customer without inventing a health score", () => {
+    render(<CustomerHealthCard health={{
+      score: null,
+      band: "new_customer",
+      can_book: true,
+      assessment_status: "unassessed",
+      minimum_evidence_events: 1,
+      signals: {},
+    }} />);
+
+    const card = screen.getByLabelText("Customer health");
+    expect(card).toHaveTextContent("New customer");
+    expect(card).toHaveTextContent("Not yet rated");
+    expect(card).not.toHaveTextContent("/100");
+    expect(card).not.toHaveTextContent("Customer behaviour");
   });
 });

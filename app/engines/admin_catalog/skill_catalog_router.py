@@ -32,20 +32,31 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")[:100]
 
 
-async def resolve_team_category_id(db: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
-    """Resolve the category used by the Home Services team workspace.
+async def resolve_team_category_ids(db: AsyncSession, tenant_id: uuid.UUID) -> list[uuid.UUID]:
+    """Resolve every category represented by the provider's live services.
 
-    New onboarding is vertical/enrollment based, while old tenants stored a
-    category directly. Prefer an enabled offering (the actual runtime scope),
-    then the legacy value, then the active Home Services category.
+    A provider can publish services from several Home Services categories.
+    Team skills therefore cannot be scoped to the first tenant service.  The
+    legacy tenant category is only a compatibility fallback for workspaces
+    that have not published a service yet.
     """
+    rows = (await db.execute(text("""
+        SELECT DISTINCT ms.category_id
+          FROM tenant_services ts
+          JOIN master_services ms ON ms.id=ts.master_service_id
+         WHERE ts.tenant_id=:tid
+           AND ts.is_enabled=true
+           AND ts.is_active=true
+           AND ts.setup_status='published'
+           AND ts.deleted_at IS NULL
+           AND ms.category_id IS NOT NULL
+         ORDER BY ms.category_id
+    """), {"tid": str(tenant_id)})).scalars().all()
+    if rows:
+        return [uuid.UUID(str(value)) for value in rows]
+
     row = (await db.execute(text("""
         SELECT COALESCE(
-          (SELECT ms.category_id
-             FROM tenant_services ts
-             JOIN master_services ms ON ms.id=ts.master_service_id
-            WHERE ts.tenant_id=:tid AND ts.is_enabled=true AND ts.deleted_at IS NULL
-            ORDER BY ts.created_at LIMIT 1),
           t.category_id,
           (SELECT sc.id FROM service_categories sc
             WHERE sc.vertical_type='home_services' AND sc.is_active=true
@@ -59,11 +70,16 @@ async def resolve_team_category_id(db: AsyncSession, tenant_id: uuid.UUID) -> uu
             "Home Services is not configured for this workspace. Configure at least one service before adding a technician.",
             status_code=422,
         )
-    return uuid.UUID(str(row.category_id))
+    return [uuid.UUID(str(row.category_id))]
+
+
+async def resolve_team_category_id(db: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
+    """Compatibility primary category for the legacy staff category column."""
+    return (await resolve_team_category_ids(db, tenant_id))[0]
 
 
 async def validate_skill_ids(
-    db: AsyncSession, category_id: uuid.UUID, skill_ids: list[str]
+    db: AsyncSession, category_ids: uuid.UUID | list[uuid.UUID], skill_ids: list[str]
 ) -> list[dict[str, Any]]:
     if not skill_ids:
         return []
@@ -71,15 +87,23 @@ async def validate_skill_ids(
         normalized = list(dict.fromkeys(str(uuid.UUID(str(value))) for value in skill_ids))
     except (ValueError, TypeError):
         raise ServiceOSException("INVALID_SKILL_SELECTION", "One or more selected skills are invalid.", status_code=422)
+    allowed_category_ids = (
+        [category_ids] if isinstance(category_ids, uuid.UUID) else category_ids
+    )
     rows = (await db.execute(text("""
         SELECT cs.id::text, cs.name, cs.requires_verification
           FROM category_skills cs
-         WHERE cs.category_id=:cid AND cs.status='active' AND cs.id = ANY(CAST(:ids AS uuid[]))
-    """), {"cid": str(category_id), "ids": normalized})).mappings().all()
+         WHERE cs.category_id = ANY(CAST(:category_ids AS uuid[]))
+           AND cs.status='active'
+           AND cs.id = ANY(CAST(:ids AS uuid[]))
+    """), {
+        "category_ids": [str(value) for value in allowed_category_ids],
+        "ids": normalized,
+    })).mappings().all()
     if {row["id"] for row in rows} != set(normalized):
         raise ServiceOSException(
             "INVALID_SKILL_SELECTION",
-            "One or more skills are retired or do not belong to this business category.",
+            "One or more skills are retired or do not belong to this provider's published service catalog.",
             status_code=422,
         )
     by_id = {row["id"]: dict(row) for row in rows}
@@ -329,9 +353,9 @@ async def list_provider_team_skills(
     db: AsyncSession = Depends(get_db), user: UserContext = Depends(get_current_user),
 ):
     tenant_id = _tenant_id(user)
-    category_id = await resolve_team_category_id(db, tenant_id)
-    where = ["cs.category_id=:cid", "cs.status='active'"]
-    params: dict[str, Any] = {"cid": str(category_id)}
+    category_ids = await resolve_team_category_ids(db, tenant_id)
+    where = ["cs.category_id = ANY(CAST(:category_ids AS uuid[]))", "cs.status='active'"]
+    params: dict[str, Any] = {"category_ids": [str(value) for value in category_ids]}
     if q:
         where.append("(cs.name ILIKE :q OR COALESCE(cs.description,'') ILIKE :q)")
         params["q"] = f"%{q.strip()}%"
@@ -340,10 +364,17 @@ async def list_provider_team_skills(
         params["gid"] = str(service_group_id)
     rows = (await db.execute(text(f"""
         SELECT cs.id, cs.category_id, cs.service_group_id, cs.code, cs.name, cs.description,
-               cs.requires_verification, cs.display_order, sg.name AS service_group_name
-          FROM category_skills cs LEFT JOIN service_groups sg ON sg.id=cs.service_group_id
+               cs.requires_verification, cs.display_order, sg.name AS service_group_name,
+               sc.name AS category_name
+          FROM category_skills cs
+          JOIN service_categories sc ON sc.id=cs.category_id
+          LEFT JOIN service_groups sg ON sg.id=cs.service_group_id
          WHERE {' AND '.join(where)}
-         ORDER BY COALESCE(sg.display_order,0), sg.name NULLS FIRST, cs.display_order, cs.name
+         ORDER BY sc.name, COALESCE(sg.display_order,0), sg.name NULLS FIRST, cs.display_order, cs.name
     """), params)).fetchall()
-    return ok({"category_id": str(category_id), "skills": [_skill_dict(row) for row in rows]},
+    return ok({
+                  "category_id": str(category_ids[0]),
+                  "category_ids": [str(value) for value in category_ids],
+                  "skills": [_skill_dict(row) for row in rows],
+              },
               _rid(request), "admin_catalog", str(tenant_id))

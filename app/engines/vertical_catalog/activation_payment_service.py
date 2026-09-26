@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations import razorpay_client
@@ -249,6 +249,7 @@ async def create_activation_funding_order(db: AsyncSession, tenant_id: uuid.UUID
             status=STATUS_CREATED,
             policy_version=policy.version_number,
             raw_order_payload=raw,
+            plan_snapshot_json=dict(quote["suggested_plan"]),
         )
         db.add(pending)
         await db.commit()
@@ -508,6 +509,10 @@ async def confirm_activation_payment_webhook(
             status_code=422,
         )
 
+    if order_row.payment_kind == PAYMENT_KIND_FUNDING:
+        from app.engines.vertical_catalog.topup_invoice import ensure_invoice_snapshots
+        await ensure_invoice_snapshots(db, order_row)
+
     # ── Grant technician seats ───────────────────────────────────────────────
     # Seats come from the snapshot taken when the order was created, never from
     # the plan as it is priced today. They are recorded as an ENTITLEMENT rather
@@ -587,3 +592,41 @@ async def confirm_activation_payment_webhook(
     activation_result = await try_auto_activate(db, tenant_id, vertical_key=HOME_SERVICES_VERTICAL_KEY)
 
     return {**order_row.to_dict(), "idempotent": False, "activation": activation_result}
+
+
+async def list_topup_plan_orders(
+    db: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    status: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> dict:
+    filters = [
+        ActivationPaymentOrder.tenant_id == tenant_id,
+        ActivationPaymentOrder.payment_kind == PAYMENT_KIND_FUNDING,
+    ]
+    if status:
+        filters.append(ActivationPaymentOrder.status == status)
+    total = int((await db.execute(
+        select(func.count(ActivationPaymentOrder.id)).where(*filters)
+    )).scalar_one() or 0)
+    rows = (await db.execute(
+        select(ActivationPaymentOrder).where(*filters)
+        .order_by(ActivationPaymentOrder.created_at.desc())
+        .offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    return {"items": [row.to_dict() for row in rows], "total": total, "page": page, "page_size": page_size}
+
+
+async def get_topup_plan_order(
+    db: AsyncSession, *, tenant_id: uuid.UUID, order_id: uuid.UUID,
+) -> ActivationPaymentOrder:
+    row = (await db.execute(select(ActivationPaymentOrder).where(
+        ActivationPaymentOrder.id == order_id,
+        ActivationPaymentOrder.tenant_id == tenant_id,
+        ActivationPaymentOrder.payment_kind == PAYMENT_KIND_FUNDING,
+    ))).scalar_one_or_none()
+    if not row:
+        raise NotFoundException("ActivationPaymentOrder", str(order_id))
+    return row

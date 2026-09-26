@@ -71,3 +71,4 @@ sentry-sdk[fastapi]==2.26.0
 # silently degrades to server-local time -- a 5h30m error for an
 # Asia/Kolkata tenant on a UTC server.
 tzdata==2025.2
+holidays==0.105  # India national + state holiday calendar for provider closures

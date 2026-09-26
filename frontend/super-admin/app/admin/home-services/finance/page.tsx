@@ -435,6 +435,7 @@ function customerPriceExample(form: Partial<MonetizationPolicy>) {
 }
 
 function MonetizationTab() {
+  const router = useRouter();
   const { toasts, push, remove } = useToasts();
   const [showDraftDrawer, setShowDraftDrawer] = useState(false);
   const [policyStep, setPolicyStep] = useState<PolicyStep>("provider");
@@ -504,6 +505,7 @@ function MonetizationTab() {
       provider_health_adjustments_json: DEFAULT_HEALTH_ADJUSTMENTS,
       provider_health_score_max_age_days: 30,
       provider_health_max_effective_percentage: "25",
+      provider_non_bookable_health_charge_mode: "BASE_RATE_ONLY",
       sla_breach_hours: 0,
       sla_penalty_type: "fixed",
       sla_penalty_amount: 50,
@@ -983,6 +985,21 @@ function MonetizationTab() {
                     <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "10px 0 0" }}>
                       These are additive percentage points, not a second charge. The final rate is capped, frozen on the ledger entry, and never recalculated retroactively.
                     </p>
+                    <div style={{ marginTop: 10 }}>
+                      <label style={{ fontSize: 11, color: "var(--text-secondary)" }}>Existing jobs when health becomes non-bookable</label>
+                      <select className="adm-input" style={{ width: "100%", marginTop: 5 }}
+                        value={form.provider_non_bookable_health_charge_mode ?? "BASE_RATE_ONLY"}
+                        onChange={e => setForm({
+                          ...form,
+                          provider_non_bookable_health_charge_mode: e.target.value as "BASE_RATE_ONLY" | "BAND_ADJUSTMENT",
+                        })}>
+                        <option value="BASE_RATE_ONLY">Base rate only (recommended)</option>
+                        <option value="BAND_ADJUSTMENT">Apply configured health adjustment</option>
+                      </select>
+                      <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "5px 0 0" }}>
+                        A health block always stops new assignments. Credits already purchased remain in the wallet; buying credits never removes a health block.
+                      </p>
+                    </div>
                   </>
                 )}
               </div>
@@ -1479,6 +1496,20 @@ function MonetizationTab() {
 
           </section>
           <section role="tabpanel" id="policy-panel-trust" aria-labelledby="policy-tab-trust" hidden={policyStep !== "trust"}>
+          <div style={{ marginTop: 12, padding: 14, border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface-sunken)" }}>
+            <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 4 }}>
+              Provider health governance
+            </label>
+            <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "0 0 10px", lineHeight: 1.55 }}>
+              Score window, three-reschedule grace, confidence smoothing and rating prior are governed settings.
+              Formula weights, bands, penalties and bookability remain under Trust &amp; Quality. Financial rates stay
+              versioned here so changing health evidence cannot silently rewrite a published charge policy.
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Btn variant="secondary" onClick={() => router.push("/admin/settings?tab=global&search=provider_health")}>Health scoring settings</Btn>
+              <Btn variant="secondary" onClick={() => router.push("/admin/trust-quality")}>Formula &amp; health bands</Btn>
+            </div>
+          </div>
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
             <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 8 }}>
               Retention &amp; credit reminders

@@ -43,6 +43,12 @@ from app.engines.trust_quality.service import (
     FIXED_BADGE_BY_KEY, FIXED_BADGE_KEYS, _evaluate_operator,
     _is_tenant_verified, calc_health_score,
 )
+from app.engines.trust_quality.provider_health_policy import (
+    provider_reschedule_metrics,
+    resolve_provider_health_policy,
+    smoothed_provider_outcomes,
+    smoothed_rating_score,
+)
 
 log = structlog.get_logger("trust_quality.recalculation")
 
@@ -228,6 +234,16 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
     str_ids = [str(i) for i in ids]
     out: dict[uuid.UUID, dict] = {t: {} for t in ids}
     terminal_by_target: dict[uuid.UUID, int] = {}
+    is_provider = target_type in ("tenant", "tenant_provider")
+    health_policy = await resolve_provider_health_policy(db) if is_provider else None
+    window_start = (
+        _now() - timedelta(days=health_policy["history_window_days"])
+        if health_policy else None
+    )
+    window_params = {"window_start": window_start} if window_start else {}
+    if health_policy:
+        for target_id in ids:
+            out[target_id]["health_history_window_days"] = health_policy["history_window_days"]
 
     def _key(v) -> uuid.UUID | None:
         if v is None:
@@ -243,7 +259,8 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
         f"       count(*) FILTER (WHERE status IN ({cancel_list})) AS cancelled "
         f"FROM service_jobs WHERE {job_col} = ANY(CAST(:ids AS uuid[])) "
         f"  AND {_COUNTED_JOB_OUTCOME_SQL} "
-        f"GROUP BY {job_col}"), {"ids": str_ids})).mappings().all()
+        + ("AND updated_at >= :window_start " if is_provider else "")
+        + f"GROUP BY {job_col}"), {"ids": str_ids, **window_params})).mappings().all()
     for row in rows:
         t = _key(row["target_key"])
         if t not in out:
@@ -252,7 +269,11 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
         terminal = done + cancelled
         terminal_by_target[t] = terminal
         out[t]["completed_jobs_count"] = done
-        if terminal:
+        if is_provider:
+            out[t].update(smoothed_provider_outcomes(
+                done, cancelled, health_policy["confidence_prior_jobs"],
+            ))
+        elif terminal:
             out[t]["job_completion_rate"] = round(done * 100.0 / terminal, 2)
             out[t]["cancellation_rate"] = round(cancelled * 100.0 / terminal, 2)
     # A target with no job rows at all still reports a real zero.
@@ -264,7 +285,8 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
         f"SELECT {review_col} AS target_key, avg(overall_rating) AS avg_rating, count(*) AS n "
         f"FROM customer_reviews "
         f"WHERE {review_col} = ANY(CAST(:ids AS uuid[])) AND hidden_at IS NULL "
-        f"GROUP BY {review_col}"), {"ids": str_ids})).mappings().all()
+        + ("AND created_at >= :window_start " if is_provider else "")
+        + f"GROUP BY {review_col}"), {"ids": str_ids, **window_params})).mappings().all()
     seen_reviews = set()
     for row in rows:
         t = _key(row["target_key"])
@@ -275,7 +297,13 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
         if row["avg_rating"] is not None:
             out[t]["average_rating"] = round(float(row["avg_rating"]), 2)
             # Formulas score out of 100, ratings are out of 5.
-            out[t]["rating_score"] = round(float(row["avg_rating"]) * 20.0, 2)
+            out[t]["rating_score"] = (
+                smoothed_rating_score(
+                    float(row["avg_rating"]), int(row["n"] or 0),
+                    health_policy["rating_prior_count"],
+                    health_policy["neutral_rating_score"],
+                ) if is_provider else round(float(row["avg_rating"]) * 20.0, 2)
+            )
     for t in ids:
         if t not in seen_reviews:
             out[t]["review_count"] = 0
@@ -291,7 +319,8 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
             f"       count(*) FILTER (WHERE sla_status = 'breached') AS breached "
             f"FROM customer_complaints "
             f"WHERE {complaint_col} = ANY(CAST(:ids AS uuid[])) "
-            f"GROUP BY {complaint_col}"), {"ids": str_ids})).mappings().all()
+            + ("AND created_at >= :window_start " if is_provider else "")
+            + f"GROUP BY {complaint_col}"), {"ids": str_ids, **window_params})).mappings().all()
         for row in rows:
             t = _key(row["target_key"])
             if t not in out:
@@ -299,14 +328,19 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
             n = int(row["n"] or 0)
             unresolved = int(row["unresolved"] or 0)
             breached = int(row["breached"] or 0)
+            out[t]["complaint_count"] = n
             terminal = terminal_by_target.get(t, 0)
             if terminal:
-                rate = round(unresolved * 100.0 / terminal, 2)
+                denominator = terminal + (
+                    health_policy["confidence_prior_jobs"] if is_provider else 0
+                )
+                rate = round(unresolved * 100.0 / denominator, 2)
                 out[t]["complaint_rate"] = rate
                 out[t]["complaint_dispute_score"] = rate
             if n:
                 # Share of complaints answered inside the SLA.
-                sla = round((n - breached) * 100.0 / n, 2)
+                prior = health_policy["confidence_prior_jobs"] if is_provider else 0
+                sla = round((n - breached + prior) * 100.0 / (n + prior), 2)
                 out[t]["response_sla_score"] = sla
                 out[t]["sla_success_rate"] = sla
     elif target_type in ("staff", "technician", "tenant_staff"):
@@ -338,6 +372,25 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
 
     # 4. Platform verification and target-specific operational signals.
     if target_type in ("tenant", "tenant_provider"):
+        rows = (await db.execute(text(
+            "SELECT tenant_id AS target_key, count(*) AS approved_reschedules "
+            "FROM booking_reschedule_requests "
+            "WHERE tenant_id = ANY(CAST(:ids AS uuid[])) "
+            "  AND request_source = 'provider' AND status = 'approved' "
+            "  AND COALESCE(resolved_at, updated_at, created_at) >= :window_start "
+            "GROUP BY tenant_id"
+        ), {"ids": str_ids, "window_start": window_start})).mappings().all()
+        reschedules_by_target = {
+            _key(row["target_key"]): int(row["approved_reschedules"] or 0)
+            for row in rows
+        }
+        for target_id in ids:
+            out[target_id].update(provider_reschedule_metrics(
+                reschedules_by_target.get(target_id, 0),
+                terminal_by_target.get(target_id, 0),
+                health_policy["reschedule_grace_count"],
+                health_policy["confidence_prior_jobs"],
+            ))
         rows = (await db.execute(text(
             "SELECT id AS target_key, status, verification_status, business_name, "
             "       email, phone, address_line1, city, state, zipcode, business_type "
@@ -396,7 +449,10 @@ async def gather_metrics_bulk(db: AsyncSession, target_type: str,
             "FROM customer_complaints "
             "WHERE tenant_id = ANY(CAST(:ids AS uuid[])) "
             "  AND provider_responded_at IS NOT NULL "
-            "GROUP BY tenant_id"), {"ids": str_ids})).mappings().all()
+            "  AND created_at >= :window_start "
+            "GROUP BY tenant_id"), {
+                "ids": str_ids, "window_start": window_start,
+            })).mappings().all()
         for row in rows:
             t = _key(row["target_key"])
             if t in out and row["response_minutes"] is not None:

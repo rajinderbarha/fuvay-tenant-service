@@ -74,6 +74,8 @@ class ConfigurationService:
             errors.append(f"value must be a decimal number, got {type(value).__name__}")
         elif d.data_type in ("string", "timestamp") and not isinstance(value, str):
             errors.append(f"value must be a string, got {type(value).__name__}")
+        elif d.data_type == "structured" and not isinstance(value, (dict, list)):
+            errors.append(f"value must be an object or array, got {type(value).__name__}")
         elif d.data_type == "enum":
             if not d.enum_values:
                 errors.append(f"'{d.key}' is declared enum but has no registered enum_values")

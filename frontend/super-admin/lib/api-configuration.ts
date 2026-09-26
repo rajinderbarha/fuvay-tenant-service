@@ -179,6 +179,7 @@ export interface MonetizationPolicy {
   provider_health_adjustments_json?: Record<string, number>;
   provider_health_score_max_age_days?: number;
   provider_health_max_effective_percentage?: string;
+  provider_non_bookable_health_charge_mode?: "BASE_RATE_ONLY" | "BAND_ADJUSTMENT";
 
   sla_breach_hours?: number | null;
   sla_penalty_amount?: number | null;

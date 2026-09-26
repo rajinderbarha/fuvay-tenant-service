@@ -14,13 +14,15 @@ an amount.
 from __future__ import annotations
 
 import uuid
+from io import BytesIO
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.permissions import P, permission_checker
+from app.core.permissions import P, permission_checker, require_permission
 from app.dependencies.auth import UserContext, get_current_user
 from app.dependencies.db import get_db
 from app.exceptions import ServiceOSException
@@ -187,6 +189,11 @@ async def tenant_status(
     credit = await se.get_credit_state(db, tenant_id)
     seats = await se.get_seat_usage(db, tenant_id)
     plans = await svc.list_plans(db, vertical_key=HOME_SERVICES, active_only=True)
+    from app.engines.trust_quality.provider_health import get_provider_health_snapshot
+    health = await get_provider_health_snapshot(db, tenant_id, max_age_days=30)
+    health_blocked = bool(
+        health.get("source") == "canonical" and health.get("bookable_allowed") is False
+    )
 
     # One word the UI can colour on, resolved server-side so the pill and any
     # other surface can never disagree about what "low" means.
@@ -208,6 +215,14 @@ async def tenant_status(
         "seats_over_limit": seats["over_limit"],
         "plans": plans,
         "currency": "INR",
+        "provider_health": health,
+        "health_blocked": health_blocked,
+        "credits_preserved_during_health_block": True,
+        "topup_allowed_during_health_block": True,
+        "health_block_notice": (
+            "New job assignment is paused by Trust & Quality. Existing credits remain available and are never confiscated; purchasing credits does not remove the health block."
+            if health_blocked else None
+        ),
         # Expose only a boolean. The publishable key belongs on a server-created
         # order and secrets must never leave the backend. This lets the plan
         # page explain why checkout is unavailable before a provider clicks.
@@ -226,3 +241,59 @@ async def tenant_list(
     """Active plans only — a retired plan must never be offered for purchase."""
     plans = await svc.list_plans(db, vertical_key=HOME_SERVICES, active_only=True)
     return ok({"plans": plans, "total": len(plans)}, _rid(r), engine_id=ENGINE_ID)
+
+
+@tenant_router.get("/orders", response_model=ApiResponse[dict],
+                   summary="List seat-plan top-up orders")
+async def tenant_orders(
+    r: Request,
+    status: str | None = Query(None, pattern="^(created|captured|failed)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    user: UserContext = Depends(require_permission(P.TENANT_FINANCE_TRANSACTIONS_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.engines.vertical_catalog.activation_payment_service import list_topup_plan_orders
+    result = await list_topup_plan_orders(
+        db, tenant_id=_tid(user), status=status, page=page, page_size=page_size,
+    )
+    return ok(result, _rid(r), engine_id=ENGINE_ID)
+
+
+@tenant_router.get("/orders/{order_id}", response_model=ApiResponse[dict],
+                   summary="Read one seat-plan top-up order")
+async def tenant_order(
+    order_id: uuid.UUID,
+    r: Request,
+    user: UserContext = Depends(require_permission(P.TENANT_FINANCE_TRANSACTIONS_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.engines.vertical_catalog.activation_payment_service import get_topup_plan_order
+    row = await get_topup_plan_order(db, tenant_id=_tid(user), order_id=order_id)
+    return ok(row.to_dict(), _rid(r), engine_id=ENGINE_ID)
+
+
+@tenant_router.get("/orders/{order_id}/invoice", summary="Download the captured top-up invoice")
+async def tenant_order_invoice(
+    order_id: uuid.UUID,
+    user: UserContext = Depends(require_permission(P.TENANT_FINANCE_RECEIPTS_DOWNLOAD)),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.engines.vertical_catalog.activation_payment_models import STATUS_CAPTURED
+    from app.engines.vertical_catalog.activation_payment_service import get_topup_plan_order
+    from app.engines.vertical_catalog.topup_invoice import (
+        ensure_invoice_snapshots, invoice_payload, render_topup_invoice_pdf,
+    )
+    row = await get_topup_plan_order(db, tenant_id=_tid(user), order_id=order_id)
+    if row.status != STATUS_CAPTURED:
+        raise HTTPException(409, "An invoice is available only after the payment is captured.")
+    # Migration 387 gave legacy captures a number; complete the historical
+    # snapshots on first access and keep them immutable thereafter.
+    await ensure_invoice_snapshots(db, row)
+    await db.commit()
+    pdf = render_topup_invoice_pdf(invoice_payload(row))
+    filename = f"{row.invoice_number or 'topup-invoice'}.pdf"
+    return StreamingResponse(
+        BytesIO(pdf), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

@@ -142,6 +142,17 @@ class TestFinanceTabUsesOneCatalogue:
         assert "Validity (days)" in src
         assert "Technician seats" in src
 
+    def test_provider_finance_buys_only_admin_published_seat_plans(self):
+        from pathlib import Path
+        src = Path(
+            "frontend/tenant-portal/app/(tenant)/home-services/finance/FinancePage.tsx"
+        ).read_text(encoding="utf-8")
+        assert "topupApi.status()" in src
+        assert "topupApi.createOrder(selectedPlanId)" in src
+        assert "homeServicesFinanceApi.getCreditPackages()" not in src
+        assert "homeServicesFinanceApi.createTopup(" not in src
+        assert "downloadTopupInvoice" in src
+
 
 class TestActivationRequirementRetired:
     """The one-time starter purchase is gone; the plan is the only thing sold."""

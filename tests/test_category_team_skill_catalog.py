@@ -32,15 +32,18 @@ def test_catalog_is_category_scoped_and_has_retire_restore_lifecycle():
     assert "cs.status='active'" in ROUTER
 
 
-def test_provider_catalog_returns_only_category_active_choices():
+def test_provider_catalog_returns_active_choices_from_all_published_service_categories():
     assert '@provider_router.get("/team-skills")' in ROUTER
-    assert "resolve_team_category_id" in ROUTER
-    assert "skills are retired or do not belong to this business category" in ROUTER
+    assert "resolve_team_category_ids" in ROUTER
+    assert "ts.setup_status='published'" in ROUTER
+    assert "cs.category_id = ANY(CAST(:category_ids AS uuid[]))" in ROUTER
+    assert "provider's published service catalog" in ROUTER
+    assert "category_name" in ROUTER
 
 
 def test_team_creation_no_longer_requires_legacy_tenant_category_column():
     assert "Complete the business workspace setup before adding team members" not in PROVIDER
-    assert "resolve_team_category_id(db, tid)" in PROVIDER
+    assert "resolve_team_category_ids(db, tid)" in PROVIDER
     assert "TECHNICIAN_SERVICE_REQUIRED" in PROVIDER
     assert "TECHNICIAN_SKILL_REQUIRED" not in PROVIDER
 

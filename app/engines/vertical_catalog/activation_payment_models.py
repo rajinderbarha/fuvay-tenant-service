@@ -65,6 +65,14 @@ class ActivationPaymentOrder(ServiceOSBase):
     raw_order_payload:   Mapped[dict | None]    = mapped_column(JSONB, nullable=True)
     raw_webhook_payload: Mapped[dict | None]    = mapped_column(JSONB, nullable=True)
     captured_at:        Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Tax invoices are immutable commercial records.  These snapshots are
+    # populated at capture so changing a plan, provider profile or platform
+    # legal identity later cannot rewrite an already-issued invoice.
+    invoice_number:     Mapped[str | None]      = mapped_column(String(50), nullable=True, unique=True)
+    invoice_issued_at:  Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    plan_snapshot_json: Mapped[dict | None]     = mapped_column(JSONB, nullable=True)
+    invoice_issuer_snapshot_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    invoice_buyer_snapshot_json:  Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     def to_dict(self) -> dict:
         credited = Decimal(str(self.credited_amount or 0))
@@ -81,5 +89,9 @@ class ActivationPaymentOrder(ServiceOSBase):
             "seats_granted": self.seats_granted,
             "currency": self.currency, "status": self.status,
             "captured_at": self.captured_at.isoformat() if self.captured_at else None,
+            "invoice_number": self.invoice_number,
+            "invoice_issued_at": self.invoice_issued_at.isoformat() if self.invoice_issued_at else None,
+            "invoice_available": bool(self.status == STATUS_CAPTURED and self.invoice_number),
+            "plan": self.plan_snapshot_json,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

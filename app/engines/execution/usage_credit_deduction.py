@@ -143,7 +143,22 @@ async def _resolve_commission_charge(
                     # to the base rate if old/corrupt data is encountered.
                     health_adjustment = Decimal("0")
                     health_snapshot["reason"] = "invalid_band_adjustment"
+                if (
+                    health_snapshot.get("bookable_allowed") is False
+                    and getattr(
+                        policy, "provider_non_bookable_health_charge_mode", "BASE_RATE_ONLY"
+                    ) == "BASE_RATE_ONLY"
+                ):
+                    # Health blocking controls future assignment.  It does not
+                    # retroactively punish already-accepted work or confiscate
+                    # wallet credit.  The normal base completion rate still
+                    # applies so a provider cannot gain by becoming blocked.
+                    health_adjustment = Decimal("0")
+                    health_snapshot["reason"] = "non_bookable_band_base_rate_only"
             health_snapshot["adjustment_percentage_points"] = str(health_adjustment)
+            health_snapshot["non_bookable_charge_mode"] = getattr(
+                policy, "provider_non_bookable_health_charge_mode", "BASE_RATE_ONLY"
+            )
         from app.engines.vertical_monetization.calculation_service import calculate_provider_completion_credits
         calculated = calculate_provider_completion_credits(
             policy=policy,

@@ -537,6 +537,14 @@ class TenantHomeServicesFinanceService:
                         health_snapshot["band_key"], 0
                     )
                 )
+                if (
+                    health_snapshot.get("bookable_allowed") is False
+                    and getattr(
+                        policy, "provider_non_bookable_health_charge_mode", "BASE_RATE_ONLY"
+                    ) == "BASE_RATE_ONLY"
+                ):
+                    health_adjustment_pct = Decimal("0")
+                    health_snapshot["reason"] = "non_bookable_band_base_rate_only"
             effective_pct = min(
                 Decimal("100"),
                 _d(policy.provider_health_max_effective_percentage),
@@ -579,6 +587,10 @@ class TenantHomeServicesFinanceService:
             "health_adjustment_pct_points": str(health_adjustment_pct),
             "effective_rate_pct": str(effective_pct) if effective_pct is not None else None,
             "health_snapshot": health_snapshot,
+            "non_bookable_health_charge_mode": (
+                getattr(policy, "provider_non_bookable_health_charge_mode", "BASE_RATE_ONLY")
+                if policy else "BASE_RATE_ONLY"
+            ),
             "basis": "Percentage of the amount you collect from the customer for each completed job",
             "charged_as": "Usage credits deducted from your balance at job completion",
             "customer_fee_recovery_enabled": bool(

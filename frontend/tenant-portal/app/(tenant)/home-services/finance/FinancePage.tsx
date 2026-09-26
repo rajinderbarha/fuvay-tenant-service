@@ -32,9 +32,12 @@ import { Card, Badge, Btn, Skeleton, KpiGrid, SummaryCard, Pagination } from "..
 import {
   homeServicesFinanceApi, ServiceOSError,
   type HsFinanceOverview, type HsFinanceTxnRow, type HsFinanceTxnPage,
-  type HsCreditPackage, type HsTopupOrder,
   type HsFinanceReadinessCheck, type HsLiabilityHold, type HsCommissionRates,
 } from "../../../../lib/api";
+import {
+  completeTopupPayment, downloadTopupInvoice, inr, topupApi,
+  type TopupPlan, type TopupPurchase,
+} from "../../../../lib/api-topup";
 import { useRazorpayCheckout } from "../../../../hooks/useRazorpayCheckout";
 
 /* ── tabs ─────────────────────────────────────────────────────────────────── */
@@ -78,9 +81,9 @@ function dt(iso: string | null | undefined): string {
   });
 }
 function statusVariant(s: string): "success" | "warning" | "danger" | "muted" | "info" {
-  if (["posted", "credited", "refunded", "confirmed"].includes(s)) return "success";
+  if (["posted", "credited", "refunded", "confirmed", "captured"].includes(s)) return "success";
   if (["failed", "rejected", "cancelled", "mismatch", "disputed"].includes(s)) return "danger";
-  if (["pending", "initiated", "paid_pending_credit", "processing", "info_requested"].includes(s)) return "warning";
+  if (["pending", "initiated", "created", "paid_pending_credit", "processing", "info_requested"].includes(s)) return "warning";
   if (["submitted", "eligibility_review", "liability_review", "admin_decision"].includes(s)) return "info";
   return "muted";
 }
@@ -397,19 +400,16 @@ export default function HomeServicesFinancePage() {
   const [topupTotal, setTopupTotal] = useState(0);
   const [topupPage, setTopupPage] = useState(1);
   const [topupStatus, setTopupStatus] = useState("");
-  /** GST receipt for a credited order. `getTopup` returns it, but nothing
-   *  called that endpoint, so the receipt a tenant needs for their books was
-   *  unreachable from the UI. */
-  const [receipt, setReceipt] = useState<{ order: HsTopupOrder; loading: boolean } | null>(null);
   const [txnPage, setTxnPage] = useState(1);
   const [txnLoading, setTxnLoading] = useState(false);
 
-  const [topups, setTopups] = useState<HsTopupOrder[] | null>(null);
-  const [packages, setPackages] = useState<HsCreditPackage[] | null>(null);
+  const [topups, setTopups] = useState<TopupPurchase[] | null>(null);
+  const [packages, setPackages] = useState<TopupPlan[] | null>(null);
   const [buyOpen, setBuyOpen] = useState(false);
-  const [buyQty, setBuyQty] = useState(1);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [buyBusy, setBuyBusy] = useState(false);
   const [buyResult, setBuyResult] = useState<string | null>(null);
+  const [healthBlockNotice, setHealthBlockNotice] = useState<string | null>(null);
 
 
   const [policyOpen, setPolicyOpen] = useState(false);
@@ -478,25 +478,19 @@ export default function HomeServicesFinancePage() {
   useEffect(() => { if (tab === "topups") loadTxns(); }, [tab, loadTxns]);
   useEffect(() => {
     if (tab !== "topups") return;
-    homeServicesFinanceApi.listTopups({ status: topupStatus || undefined, page: topupPage, page_size: 25 })
+    topupApi.orders({ status: topupStatus || undefined, page: topupPage, page_size: 25 })
       .then(r => { setTopups(r.items); setTopupTotal(Number(r.total ?? 0)); })
       .catch(() => setTopups(null));
   }, [tab, topupStatus, topupPage]);
 
-  const openReceipt = useCallback(async (topupId: string) => {
-    setReceipt({ order: {} as HsTopupOrder, loading: true });
-    try {
-      const full = await homeServicesFinanceApi.getTopup(topupId);
-      setReceipt({ order: full, loading: false });
-    } catch {
-      setReceipt(null);
-    }
-  }, []);
-
   const openBuy = useCallback(() => {
     setBuyOpen(true); setBuyResult(null);
     if (!packages) {
-      homeServicesFinanceApi.getCreditPackages().then(r => setPackages(r.packages)).catch(() => setPackages([]));
+      topupApi.status().then(r => {
+        setPackages(r.plans);
+        setHealthBlockNotice(r.health_block_notice);
+        setSelectedPlanId(current => current ?? r.plans[0]?.id ?? null);
+      }).catch(() => setPackages([]));
     }
   }, [packages]);
 
@@ -513,35 +507,28 @@ export default function HomeServicesFinancePage() {
    */
   const submitBuy = useCallback(async () => {
     setBuyBusy(true); setBuyResult(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let order: any = null;
     try {
-      order = await homeServicesFinanceApi.createTopup(buyQty);
-      const result = await openCheckout({
-        keyId: order.key, orderId: order.gateway_order_id, amountPaise: order.amount_paise,
-        currency: order.currency ?? "INR", name: "Fuvay — Home Services Usage Credit",
-        description: `${buyQty} credit package${buyQty === 1 ? "" : "s"}`,
+      if (!selectedPlanId) throw new Error("Select a published seat plan first.");
+      const selectedPlan = packages?.find(plan => plan.id === selectedPlanId);
+      const order = await topupApi.createOrder(selectedPlanId);
+      await completeTopupPayment(order, () => openCheckout({
+        keyId: order.key, orderId: order.order_id, amountPaise: order.amount_paise,
+        currency: order.currency ?? "INR", name: "Fuvay — Home Services",
+        description: selectedPlan?.name ?? "Technician seats and usage credits",
+      }));
+      setBuyResult(
+        `Payment confirmed — ${inr(order.credited_amount)} added as usage credit and ${order.seats_granted} technician seat${order.seats_granted === 1 ? "" : "s"} granted.`,
+      );
+      const refreshed = await topupApi.orders({
+        status: topupStatus || undefined, page: 1, page_size: 25,
       });
-      const confirmed = await homeServicesFinanceApi.confirmTopup({
-        gateway_order_id: result.razorpay_order_id,
-        gateway_payment_id: result.razorpay_payment_id,
-        signature: result.razorpay_signature,
-      });
-      setBuyResult(`Payment confirmed — ${money(confirmed.usable_credits_on_success ?? order.usable_credits_on_success)} credited to your wallet.`);
+      setTopups(refreshed.items); setTopupTotal(refreshed.total); setTopupPage(1);
     } catch (e: unknown) {
-      // The order is already created (and visible in the table) the moment
-      // checkout opens -- if the tenant dismisses the Razorpay popup or the
-      // signature confirm fails, cancel that same order rather than leaving
-      // it stuck at "initiated" (which the table badges the same warning
-      // yellow as a real in-flight payment, reading as "awaiting approval").
-      if (order?.topup_id) {
-        await homeServicesFinanceApi.cancelTopup(order.topup_id).catch(() => {});
-      }
       setBuyResult(e instanceof ServiceOSError ? e.message : (e instanceof Error ? e.message : "Could not complete the top-up."));
     } finally {
       setBuyBusy(false); load();
     }
-  }, [buyQty, load, openCheckout]);
+  }, [load, openCheckout, packages, selectedPlanId, topupStatus]);
 
   const doExport = useCallback(() => {
     setExportMsg("Preparing…");
@@ -919,11 +906,9 @@ export default function HomeServicesFinancePage() {
                   <select className="fh-input" style={{ width: 180 }} value={topupStatus}
                     onChange={e => { setTopupStatus(e.target.value); setTopupPage(1); }}>
                     <option value="">All payment statuses</option>
-                    <option value="initiated">Initiated</option>
-                    <option value="paid">Paid</option>
-                    <option value="credited">Credited</option>
+                    <option value="created">Awaiting payment</option>
+                    <option value="captured">Captured</option>
                     <option value="failed">Failed</option>
-                    <option value="cancelled">Cancelled</option>
                   </select>
                   <Btn size="sm" variant="primary" icon={<CreditCard size={13} />} onClick={openBuy}>Buy usage credits</Btn>
                 </>
@@ -934,26 +919,27 @@ export default function HomeServicesFinancePage() {
                 <div style={{ overflowX: "auto" }}>
                   <TableSurface style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
                     <thead><tr>
-                      {["Created", "Order ref", "Base credits", "GST", "Total payable", "Payment", "Wallet", "Gateway payment", "Receipt"].map(c =>
+                      {["Created", "Plan", "Seats", "Usable credits", "GST", "Total paid", "Payment", "Gateway payment", "Invoice"].map(c =>
                         <th key={c} style={{ textAlign: "left", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.05em",
                           textTransform: "uppercase", color: "var(--text-tertiary)", padding: "8px 10px",
                           borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{c}</th>)}
                     </tr></thead>
                     <tbody>
                       {topups.map(t => (
-                        <tr key={t.topup_id}>
+                        <tr key={t.id}>
                           <td style={td()}>{dt(t.created_at)}</td>
-                          <td style={{ ...td(), fontFamily: "monospace", fontSize: 11 }}>{t.order_ref}</td>
-                          <td style={td()}>{money(t.base_credits ?? String(t.credits_purchased))}</td>
-                          <td style={td()}>{money(t.gst_amount)}</td>
-                          <td style={{ ...td(), fontWeight: 700 }}>{money(t.total_payable ?? String(t.amount_paid))}</td>
-                          <td style={td()}><Badge variant={statusVariant(t.payment_status)} size="sm">{humanStatus(t.payment_status)}</Badge></td>
-                          <td style={td()}><Badge variant={statusVariant(t.wallet_credit_status)} size="sm">{humanStatus(t.wallet_credit_status)}</Badge></td>
+                          <td style={td()}>{t.plan?.name ?? "Retired seat plan"}</td>
+                          <td style={td()}>{t.seats_granted ?? 0}</td>
+                          <td style={td()}>{inr(Number(t.credited_amount ?? 0))}</td>
+                          <td style={td()}>{inr(Number(t.tax_amount ?? 0))}</td>
+                          <td style={{ ...td(), fontWeight: 700 }}>{inr(Number(t.amount ?? 0))}</td>
+                          <td style={td()}><Badge variant={statusVariant(t.status)} size="sm">{humanStatus(t.status)}</Badge></td>
                           <td style={{ ...td(), fontFamily: "monospace", fontSize: 10.5 }}>{t.gateway_payment_id ?? "—"}</td>
                           <td style={td()}>
-                            {t.payment_status === "credited"
-                              ? <Btn size="xs" variant="secondary" icon={<Eye size={11} />}
-                                  onClick={() => openReceipt(String(t.topup_id))}>Receipt</Btn>
+                            {t.invoice_available
+                              ? <Btn size="xs" variant="secondary" icon={<Download size={11} />}
+                                  onClick={() => downloadTopupInvoice(t.id, t.invoice_number)
+                                    .catch(() => setBuyResult("Invoice download is temporarily unavailable."))}>Download</Btn>
                               : <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>—</span>}
                           </td>
                         </tr>
@@ -1006,10 +992,7 @@ export default function HomeServicesFinancePage() {
             </div>
             {txnLoading ? <div style={{ padding: 18 }}><Skeleton height={160} /></div>
               : txns ? <>
-                  <ActivityTable page={txns} onReceipt={r => {
-                    const id = topupIdFromRow(r);
-                    if (id) openReceipt(id);
-                  }} />
+                  <ActivityTable page={txns} />
                   <Pagination page={txns.page} pageSize={txns.page_size} total={txns.total}
                     onPage={p => { setTxnPage(p); pushUrl({ page: p }); }} itemLabel="transactions" />
                 </>
@@ -1064,6 +1047,15 @@ export default function HomeServicesFinancePage() {
                   <div style={{ marginTop: 10, background: "var(--surface-sunken)", border: "1px solid var(--border)",
                     borderRadius: 10, padding: "9px 11px", fontSize: 12, color: "var(--text-secondary)" }}>
                     {rates.not_live_reason}
+                  </div>
+                )}
+                {rates.health_snapshot?.source === "canonical" && rates.health_snapshot.bookable_allowed === false && (
+                  <div style={{ marginTop: 10, background: "var(--warning-bg)", border: "1px solid var(--warning-border)",
+                    borderRadius: 10, padding: "9px 11px", fontSize: 12, color: "var(--warning-text)", lineHeight: 1.5 }}>
+                    New assignments are paused by the current health band. Existing usage credits remain yours and are not confiscated.
+                    {rates.non_bookable_health_charge_mode === "BASE_RATE_ONLY"
+                      ? " Existing accepted jobs use the base commission rate only."
+                      : " Existing accepted jobs use the administrator-configured health adjustment."}
                   </div>
                 )}
                 {rates.customer_fee_recovery_enabled && (
@@ -1201,39 +1193,46 @@ export default function HomeServicesFinancePage() {
           <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560 }}>
             <Card>
               <SectionTitle icon={<CreditCard size={16} />} title="Buy usage credits"
-                subtitle="Admin-approved packages only — amounts are re-derived server-side from the published policy"
+                subtitle="Only active seat plans published by the administrator are shown"
                 actions={<Btn size="xs" variant="ghost" onClick={() => setBuyOpen(false)}>Close</Btn>} />
               {packages === null ? <Skeleton height={140} /> : packages.length === 0 ? (
                 <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
                   borderRadius: 10, padding: "10px 12px", fontSize: 12.5, color: "var(--danger-text)" }}>
-                  No approved credit package is available — the finance policy could not be resolved.
+                  No active seat plan is available. Ask the administrator to publish a Home Services top-up plan.
                 </div>
               ) : (
                 <>
+                  {healthBlockNotice && (
+                    <div style={{ background: "var(--warning-bg)", border: "1px solid var(--warning-border)",
+                      borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12,
+                      color: "var(--warning-text)", lineHeight: 1.5 }}>
+                      {healthBlockNotice}
+                    </div>
+                  )}
                   <div style={{ display: "grid", gap: 8 }}>
                     {packages.map(p => (
-                      <button key={p.package_key} onClick={() => setBuyQty(p.quantity)} style={{
+                      <button key={p.id} onClick={() => setSelectedPlanId(p.id)} style={{
                         textAlign: "left", cursor: "pointer", fontFamily: "inherit",
-                        background: buyQty === p.quantity ? "var(--accent-muted)" : "var(--surface-sunken)",
-                        border: `1px solid ${buyQty === p.quantity ? "var(--accent)" : "var(--border)"}`,
+                        background: selectedPlanId === p.id ? "var(--accent-muted)" : "var(--surface-sunken)",
+                        border: `1px solid ${selectedPlanId === p.id ? "var(--accent)" : "var(--border)"}`,
                         borderRadius: 12, padding: "11px 13px",
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                          <span style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)" }}>{p.label}</span>
+                          <span style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)" }}>{p.name}</span>
                           <span style={{ fontSize: 13.5, fontWeight: 800, color: "var(--text-primary)" }}>
-                            {money(p.total_payable)}
+                            {inr(p.total_amount)}
                           </span>
                         </div>
                         <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 4 }}>
-                          Base {money(p.base_credits)} + GST {p.gst_percent}% ({money(p.gst_amount)})
-                          {" · "}usable credit posted: {money(p.base_credits)}
+                          {p.seats} technician seat{p.seats === 1 ? "" : "s"} · {inr(p.credited_amount)} usable credits
+                          {" · "}GST {p.gst_percent}% ({inr(p.gst_amount)})
                         </div>
                       </button>
                     ))}
                   </div>
                   <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "12px 0 0" }}>
-                    GST is platform tax and is never added to your usable credits. Credits are posted only
-                    after Fuvay verifies the payment signature server-side — a pending payment credits nothing.
+                    GST is never added to usable credits. Seats and credits are granted only after a
+                    server-verified payment. A tax invoice is then available in this table.
                   </p>
                   {buyResult && (
                     <div style={{ marginTop: 12, background: "var(--info-bg)", border: "1px solid var(--info-border)",
@@ -1249,40 +1248,6 @@ export default function HomeServicesFinancePage() {
               )}
             </Card>
           </div>
-        </div>
-      )}
-      {/* GST receipt for a credited top-up. `/top-ups/{id}` returns a real
-          receipt object (number, base/GST split, transaction reference,
-          policy version) but had no caller, so the document a tenant needs
-          for their own books was unreachable from the product. */}
-      {receipt && (
-        <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget) setReceipt(null); }}
-          style={{ position: "fixed", inset: 0, zIndex: 900, display: "grid", placeItems: "center",
-            background: "rgba(0,0,0,.5)", padding: 20 }}>
-          <Card style={{ width: "min(520px, 100%)", maxHeight: "88vh", overflowY: "auto" }}>
-            <SectionTitle icon={<Receipt size={16} />} title="Usage credit receipt"
-              subtitle="Issued by Fuvay for this credit purchase"
-              actions={<Btn size="sm" variant="ghost" onClick={() => setReceipt(null)}>Close</Btn>} />
-            {receipt.loading ? <Skeleton height={200} /> : !receipt.order.receipt ? (
-              <div style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)",
-                borderRadius: 10, padding: "10px 12px", fontSize: 12.5, color: "var(--text-secondary)" }}>
-                A receipt is issued once the payment is credited to your wallet.
-              </div>
-            ) : (
-              <>
-                <Row label="Receipt number" value={receipt.order.receipt.receipt_number} />
-                <Row label="Issued" value={dt(receipt.order.receipt.issued_at)} />
-                <Row label="Order reference" value={receipt.order.order_ref ?? "—"} />
-                <Row label="Base credit value" value={money(receipt.order.receipt.base_credit_value)} />
-                <Row label="GST" value={money(receipt.order.receipt.gst_amount)} />
-                <Row label="Total paid" value={money(receipt.order.receipt.total_paid)} />
-                <Row label="Posted to usable wallet" value={money(receipt.order.receipt.usable_credit_posted)}
-                  hint="GST never enters the wallet" />
-                <Row label="Transaction reference" value={receipt.order.receipt.transaction_reference ?? "—"} />
-                <Row label="Policy version" value={receipt.order.receipt.policy_version ?? "—"} />
-              </>
-            )}
-          </Card>
         </div>
       )}
     </PageShell>

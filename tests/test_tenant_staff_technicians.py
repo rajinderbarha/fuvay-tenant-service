@@ -46,7 +46,8 @@ class TestRouterHardening:
 
     def test_category_id_is_server_derived_not_client_trusted(self):
         c = _read(ROUTER)
-        assert "cat_id = str(await resolve_team_category_id(db, tid))" in c
+        assert "team_category_ids = await resolve_team_category_ids(db, tid)" in c
+        assert "cat_id = str(team_category_ids[0])" in c
         idx = c.index("async def create_team_member")
         block = c[idx:idx + 2500]
         assert 'payload.get("category_id")' not in block
