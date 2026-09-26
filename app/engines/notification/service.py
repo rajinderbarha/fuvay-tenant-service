@@ -636,13 +636,16 @@ class NotificationService:
 
     async def seed_defaults_preview(self) -> dict:
         from app.engines.notification.seed_data import DEFAULT_TEMPLATE_SPECS
-        return {"templates_to_create": len(DEFAULT_TEMPLATE_SPECS) * 3}  # 3 channels each
+        return {"templates_to_create": sum(
+            len(spec.get("channels", ("in_app", "email", "push")))
+            for spec in DEFAULT_TEMPLATE_SPECS
+        )}
 
     async def seed_defaults(self) -> dict:
         from app.engines.notification.seed_data import DEFAULT_TEMPLATE_SPECS
         created = 0
         for spec in DEFAULT_TEMPLATE_SPECS:
-            for channel in ("in_app", "email", "push"):
+            for channel in spec.get("channels", ("in_app", "email", "push")):
                 existing = (await self.db.execute(select(NotificationTemplate).where(
                     NotificationTemplate.event_type == spec["event_type"],
                     NotificationTemplate.channel == channel,
@@ -655,10 +658,11 @@ class NotificationService:
                 t = NotificationTemplate(
                     tenant_id=None, notif_type=spec["event_type"], channel=channel,
                     title=spec["title"], body=spec["body"], variables=spec.get("variables", []),
-                    is_active=True, vertical=None,
+                    is_active=True, vertical=spec.get("vertical_key"),
                     event_type=spec["event_type"], audience=spec["audience"], app_scope=spec["app_scope"],
                     scope_type="platform_default", language=DEFAULT_LANGUAGE, status="active",
                     subject=spec.get("subject", spec["title"]) if channel == "email" else None,
+                    action_label=spec.get("action_label"),
                     priority="normal", is_platform_default=True, is_system=True,
                     created_by_user_id=self.actor_id, updated_by_user_id=self.actor_id,
                 )

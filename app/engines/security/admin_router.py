@@ -352,6 +352,40 @@ async def update_policy(r: Request, policy_key: str, body: UpdatePolicyBody,
     return ok(await s.update_policy(policy_key, body.value, body.reason), _rid(r), ENGINE_ID)
 
 
+@router.get("/provider-identity-cases", response_model=ApiResponse[dict],
+            summary="List provider identity continuity reviews")
+async def list_provider_identity_cases(
+    r: Request,
+    status: str | None = Query("open"),
+    q: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    u: UserContext = Depends(require_permission(P.SECURITY_THREATS_READ)),
+    s: SecurityAdminService = Depends(_svc),
+):
+    return ok(await s.list_provider_identity_cases(status, q, limit, offset), _rid(r), ENGINE_ID)
+
+
+class ResolveProviderIdentityCaseBody(BaseModel):
+    decision: Literal["restore_existing_account", "reject_evasion", "false_positive"]
+    note: str = Field(min_length=8, max_length=1000)
+
+
+@router.post("/provider-identity-cases/{case_id}/resolve", response_model=ApiResponse[dict],
+             summary="Resolve a provider identity continuity review")
+async def resolve_provider_identity_case(
+    r: Request,
+    case_id: uuid.UUID,
+    body: ResolveProviderIdentityCaseBody,
+    u: UserContext = Depends(require_permission(P.SECURITY_THREATS_RESOLVE)),
+    s: SecurityAdminService = Depends(_svc),
+):
+    return ok(
+        await s.resolve_provider_identity_case(case_id, body.decision, body.note),
+        _rid(r), ENGINE_ID,
+    )
+
+
 # Admin key management is hidden and non-callable under the same server-side
 # feature gate as tenant key management.
 from app.core.feature_flags import hide_disabled_api_key_routes

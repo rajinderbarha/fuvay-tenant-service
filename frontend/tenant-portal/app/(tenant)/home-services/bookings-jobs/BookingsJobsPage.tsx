@@ -62,11 +62,14 @@ function BookingsJobsWorkspace() {
   const complaint = searchParams.get("complaint") ?? "";
   const sort = searchParams.get("sort") ?? "created_at:desc";
   const selectedJobId = searchParams.get("job_id");
+  // Cards are the canonical operational view. Board mode is opt-in and is
+  // encoded in the URL so client-side route caching cannot unexpectedly
+  // restore an old in-memory board selection when the provider returns here.
+  const viewMode: "cards" | "board" = searchParams.get("view") === "board" ? "board" : "cards";
   const page = cleanPage(searchParams.get("page"));
   const pageSize = cleanPageSize(searchParams.get("page_size"));
   const [searchDraft, setSearchDraft] = useState(search);
   const [showFilters, setShowFilters] = useState(false);
-  const [viewMode, setViewMode] = useState<"cards" | "board">("cards");
   useEffect(() => setSearchDraft(search), [search]);
 
   const updateParams = useCallback((updates: Record<string, string | null>) => {
@@ -184,8 +187,8 @@ function BookingsJobsWorkspace() {
         <button type="button" onClick={() => setShowFilters(v => !v)} style={{ ...toolbarButtonStyle, borderColor: showFilters || advancedFilterCount ? "var(--accent)" : "var(--border)", color: showFilters || advancedFilterCount ? "var(--accent)" : "var(--text-secondary)" }}><SlidersHorizontal size={15} />Filters {advancedFilterCount > 0 && <span style={filterCountStyle}>{advancedFilterCount}</span>}</button>
         {hasAnyFilter && <button type="button" onClick={clearFilters} style={toolbarButtonStyle}><X size={14} />Clear</button>}
         <div className="bj-view-switch" aria-label="Bookings view">
-          <button type="button" aria-label="Card view" aria-pressed={viewMode === "cards"} onClick={() => setViewMode("cards")}><LayoutList size={16} /></button>
-          <button type="button" aria-label="Board view" aria-pressed={viewMode === "board"} onClick={() => setViewMode("board")}><Columns3 size={16} /></button>
+          <button type="button" aria-label="Card view" aria-pressed={viewMode === "cards"} onClick={() => updateParams({ view: null })}><LayoutList size={16} /></button>
+          <button type="button" aria-label="Board view" aria-pressed={viewMode === "board"} onClick={() => updateParams({ view: "board" })}><Columns3 size={16} /></button>
         </div>
       </div>
       {showFilters && <AdvancedFilters data={list.data} values={{ offeringId, jobTypeId, technicianId, assignment, sla, complaint, dateFrom, dateTo, sort }} onChange={updateFilter} onDateChange={(key, value) => updateParams({ [key]: value || null, date: null, page: null, job_id: null })} />}

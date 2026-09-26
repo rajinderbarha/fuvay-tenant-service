@@ -33,6 +33,11 @@ from app.exceptions import ServiceOSException, NotFoundException
 from app.core.audit import record_platform_audit
 from app.config import get_settings
 from app.schemas.base import encode_cursor, decode_cursor
+from app.engines.public_registration.models import (
+    PendingTenantRegistration,
+    ProviderIdentityReviewCase,
+)
+from app.engines.tenant_engine.models import Tenant
 
 utcnow = lambda: datetime.now(timezone.utc)
 
@@ -57,6 +62,8 @@ POLICY_RULES = {
     "api_key_max_expiry_days": (int, 1, 730),
     "ip_block_auto_expiry_default_days": (int, 1, 365),
     "export_audit_retention_days": (int, 30, 3650),
+    "provider_reregistration_guard_enabled": (bool, None, None),
+    "provider_reregistration_composite_match_enabled": (bool, None, None),
 }
 
 POLICY_DEFAULTS = {
@@ -75,6 +82,8 @@ POLICY_DEFAULTS = {
     "api_key_max_expiry_days": 365,
     "ip_block_auto_expiry_default_days": 30,
     "export_audit_retention_days": 365,
+    "provider_reregistration_guard_enabled": True,
+    "provider_reregistration_composite_match_enabled": True,
 }
 
 # Recommendations are deliberately separate from migration-safe defaults. This
@@ -111,6 +120,122 @@ class SecurityAdminService:
             actor_id=self.actor_id, actor_role=self.actor_role, actor_ip=self.actor_ip,
             request_id=self.request_id, before=before, after=after,
         )
+
+    # Provider identity continuity belongs in Security: it prevents a failed
+    # provider from laundering penalties and health history through a new
+    # email/phone registration.
+    async def list_provider_identity_cases(
+        self, status: str | None = "open", q: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> dict:
+        stmt = (
+            select(ProviderIdentityReviewCase, PendingTenantRegistration, Tenant)
+            .join(
+                PendingTenantRegistration,
+                PendingTenantRegistration.id == ProviderIdentityReviewCase.registration_id,
+            )
+            .join(Tenant, Tenant.id == ProviderIdentityReviewCase.matched_tenant_id)
+        )
+        count_stmt = (
+            select(func.count(ProviderIdentityReviewCase.id))
+            .join(
+                PendingTenantRegistration,
+                PendingTenantRegistration.id == ProviderIdentityReviewCase.registration_id,
+            )
+            .join(Tenant, Tenant.id == ProviderIdentityReviewCase.matched_tenant_id)
+        )
+        filters = []
+        if status:
+            filters.append(ProviderIdentityReviewCase.status == status)
+        if q and q.strip():
+            needle = f"%{q.strip()}%"
+            filters.append(or_(
+                PendingTenantRegistration.business_name.ilike(needle),
+                PendingTenantRegistration.legal_name.ilike(needle),
+                Tenant.tenant_name.ilike(needle),
+                Tenant.tenant_code.ilike(needle),
+            ))
+        if filters:
+            stmt = stmt.where(*filters)
+            count_stmt = count_stmt.where(*filters)
+        total = int((await self.db.execute(count_stmt)).scalar_one() or 0)
+        rows = (await self.db.execute(
+            stmt.order_by(ProviderIdentityReviewCase.created_at.desc())
+            .offset(max(0, offset)).limit(max(1, min(limit, 200)))
+        )).all()
+        return {
+            "cases": [self._provider_identity_case_to_dict(*row) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    @staticmethod
+    def _provider_identity_case_to_dict(
+        case: ProviderIdentityReviewCase,
+        registration: PendingTenantRegistration,
+        tenant: Tenant,
+    ) -> dict:
+        return {
+            "case_id": str(case.id),
+            "reference": f"PIR-{str(case.id).split('-')[0].upper()}",
+            "status": case.status,
+            "match_strength": case.match_strength,
+            "match_signals": case.match_signals or [],
+            "risk_snapshot": case.risk_snapshot or {},
+            "applicant_business_name": registration.business_name or registration.legal_name,
+            "existing_provider_id": str(tenant.id),
+            "existing_provider_name": tenant.business_name or tenant.tenant_name,
+            "existing_provider_code": tenant.tenant_code,
+            "existing_provider_status": tenant.status,
+            "decision": case.decision,
+            "resolution_note": case.resolution_note,
+            "reviewed_by": str(case.reviewed_by) if case.reviewed_by else None,
+            "reviewed_at": case.reviewed_at.isoformat() if case.reviewed_at else None,
+            "created_at": case.created_at.isoformat(),
+        }
+
+    async def resolve_provider_identity_case(
+        self, case_id: uuid.UUID, decision: str, note: str,
+    ) -> dict:
+        allowed = {"restore_existing_account", "reject_evasion", "false_positive"}
+        if decision not in allowed:
+            raise ServiceOSException("VALIDATION_ERROR", "Unsupported identity-review decision.")
+        case = await self.db.get(ProviderIdentityReviewCase, case_id)
+        if not case:
+            raise NotFoundException("ProviderIdentityReviewCase", str(case_id))
+        if case.status != "open":
+            raise ServiceOSException("CONFLICT", "This identity review has already been resolved.", status_code=409)
+        registration = await self.db.get(PendingTenantRegistration, case.registration_id)
+        tenant = await self.db.get(Tenant, case.matched_tenant_id)
+        if not registration or not tenant:
+            raise ServiceOSException("CONFLICT", "The registration or provider record no longer exists.", status_code=409)
+
+        before = {"status": case.status, "decision": case.decision}
+        case.status = "resolved"
+        case.decision = decision
+        case.resolution_note = note.strip()
+        case.reviewed_by = self.actor_id
+        case.reviewed_at = utcnow()
+        if decision == "false_positive":
+            # The registration may continue, but the exemption is scoped to
+            # this exact registration/provider pair. Other matches still block.
+            other_open = int((await self.db.execute(
+                select(func.count(ProviderIdentityReviewCase.id)).where(
+                    ProviderIdentityReviewCase.registration_id == registration.id,
+                    ProviderIdentityReviewCase.id != case.id,
+                    ProviderIdentityReviewCase.status == "open",
+                )
+            )).scalar_one() or 0)
+            if other_open == 0:
+                registration.status = "in_progress"
+
+        await self._audit(
+            "provider_identity_review.resolve", str(case.id), "provider_identity_review_case",
+            tenant_id=tenant.id, before=before,
+            after={"status": case.status, "decision": decision, "note": case.resolution_note},
+        )
+        return self._provider_identity_case_to_dict(case, registration, tenant)
 
     # ─────────────────────────────────────────────────────────────────────
     # OVERVIEW

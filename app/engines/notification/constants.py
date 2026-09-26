@@ -5,6 +5,7 @@ class Channel:
     SMS   = "sms"
     EMAIL = "email"
     INAPP = "in_app"
+    INSTAGRAM = "instagram"
 
 class NotifStatus:
     PENDING   = "pending"
@@ -40,9 +41,23 @@ VALID_EVENT_TYPES = {
     "tenant_changes_requested", "staff_invited", "package_expiring",
     "usage_credit_low", "document_expiring",
     "login_otp", "password_reset", "marketing_post_scheduled",
+    "customer_technician_assigned", "customer_technician_on_the_way",
+    "customer_technician_arrived", "customer_arrival_confirmation_requested",
+    "customer_arrival_confirmed", "customer_reschedule_approval_requested",
+    "customer_provider_cancellation_confirmation_requested",
+    "customer_stage_scheduled", "customer_stage_inspection_started",
+    "customer_stage_inspection_done", "customer_stage_quote_required",
+    "customer_stage_service_started", "customer_stage_work_done",
+    "customer_stage_customer_not_available",
+    "customer_stage_delay_action_required", "customer_stage_delay_critical",
+    "customer_stage_delay_warning", "customer_handover_requested",
+    "customer_handover_reminder", "customer_payment_requested",
+    "customer_payment_reminder", "customer_provider_cancelled",
+    "customer_technician_unavailable_cancelled", "customer_sla_cancelled",
+    "customer_visit_reminder", "customer_assignment_cancelled",
 }
 
-VALID_CHANNELS = {"in_app", "email", "sms", "whatsapp", "push"}
+VALID_CHANNELS = {"in_app", "email", "sms", "whatsapp", "push", "instagram"}
 VALID_AUDIENCES = {
     "admin", "tenant_owner", "tenant_staff", "technician",
     "customer", "support_admin", "finance_admin",
@@ -77,6 +92,32 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "login_otp": ["customer_name"],
     "password_reset": ["customer_name"],
     "marketing_post_scheduled": ["tenant_name"],
+    "customer_technician_assigned": ["booking_number", "technician_name", "visit_label"],
+    "customer_technician_on_the_way": ["technician_name", "visit_label"],
+    "customer_technician_arrived": ["technician_name", "visit_label"],
+    "customer_arrival_confirmation_requested": ["technician_name", "arrival_code", "expiry_minutes"],
+    "customer_arrival_confirmed": [],
+    "customer_reschedule_approval_requested": ["booking_number", "current_slot", "requested_slot", "reason", "expires_at"],
+    "customer_provider_cancellation_confirmation_requested": ["booking_number", "reason", "expires_at"],
+    "customer_stage_scheduled": ["job_number", "stage_label"],
+    "customer_stage_inspection_started": ["job_number", "stage_label"],
+    "customer_stage_inspection_done": ["job_number", "stage_label"],
+    "customer_stage_quote_required": ["job_number", "stage_label"],
+    "customer_stage_service_started": ["job_number", "stage_label"],
+    "customer_stage_work_done": ["job_number", "stage_label"],
+    "customer_stage_customer_not_available": ["job_number", "stage_label"],
+    "customer_stage_delay_action_required": ["job_number", "stage_label"],
+    "customer_stage_delay_critical": ["job_number", "stage_label"],
+    "customer_stage_delay_warning": ["job_number", "stage_label"],
+    "customer_handover_requested": ["job_number"],
+    "customer_handover_reminder": ["job_number"],
+    "customer_payment_requested": ["job_number", "amount"],
+    "customer_payment_reminder": ["job_number", "amount"],
+    "customer_provider_cancelled": ["booking_number", "reason"],
+    "customer_technician_unavailable_cancelled": ["booking_number"],
+    "customer_sla_cancelled": ["booking_number"],
+    "customer_visit_reminder": ["job_number", "technician_name", "visit_label"],
+    "customer_assignment_cancelled": ["booking_number"],
 }
 # Always allowed regardless of event (generic/system).
 COMMON_VARIABLES = ["customer_name", "tenant_name"]

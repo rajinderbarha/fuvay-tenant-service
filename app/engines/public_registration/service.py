@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import structlog
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engines.auth.models import User, OTPRecord, AuthAuditLog
@@ -29,7 +29,10 @@ from app.engines.auth.constants import OTP_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_
 from app.engines.tenant_engine.models import Tenant, TenantBusinessProfile, TenantSettings, TenantAuditLog
 from app.engines.vertical_catalog.models import Vertical, TenantVerticalEnrollment, VerticalAuditLog
 from app.engines.compliance.models import ConsentRecord, DPDPPolicyVersion
-from app.engines.public_registration.models import PendingTenantRegistration
+from app.engines.public_registration.models import (
+    PendingTenantRegistration,
+    ProviderIdentityReviewCase,
+)
 from app.exceptions import ServiceOSException
 from app.config import get_settings
 from app.core.security import enforce_otp_send_limits
@@ -77,6 +80,20 @@ def _normalize_mobile(mobile: str) -> str:
     return normalized
 
 
+def _normalize_legal_identifier(value: str | None) -> str:
+    """Canonical tax/company identity without retaining formatting noise."""
+    return re.sub(r"[^A-Z0-9]", "", (value or "").strip().upper())
+
+
+def _normalize_business_name(value: str | None) -> str:
+    return re.sub(r"[^A-Z0-9]", "", (value or "").strip().upper())
+
+
+def _registered_postcode(address: dict | None) -> str:
+    value = (address or {}).get("zipcode") or (address or {}).get("pincode") or ""
+    return re.sub(r"\D", "", str(value))
+
+
 class RegistrationService:
     def __init__(self, db: AsyncSession, ip_address: str | None = None, user_agent: str | None = None):
         self.db = db
@@ -92,10 +109,28 @@ class RegistrationService:
         if not pending:
             raise ServiceOSException("REGISTRATION_NOT_FOUND", "Registration session not found or expired.",
                                       status_code=404)
+        if pending.status == "identity_review":
+            case = (await self.db.execute(
+                select(ProviderIdentityReviewCase).where(
+                    ProviderIdentityReviewCase.registration_id == pending.id,
+                ).order_by(ProviderIdentityReviewCase.created_at.desc())
+            )).scalars().first()
+            raise ServiceOSException(
+                "PROVIDER_IDENTITY_REVIEW_REQUIRED",
+                "This business appears linked to an existing provider account. "
+                "New registration is paused so its service history, charges and health record are not lost. "
+                "Recover the existing account or contact support with the review reference.",
+                status_code=409,
+                context={"review_reference": self._case_reference(case) if case else None},
+            )
         if pending.status != "in_progress":
             raise ServiceOSException("REGISTRATION_ALREADY_COMPLETED",
                                       "This registration has already been completed.", status_code=409)
         return pending
+
+    @staticmethod
+    def _case_reference(case: ProviderIdentityReviewCase | None) -> str | None:
+        return f"PIR-{str(case.id).split('-')[0].upper()}" if case else None
 
     async def _audit(self, action_type: str, outcome: str, target_id=None, metadata: dict | None = None):
         self.db.add(AuthAuditLog(
@@ -340,9 +375,13 @@ class RegistrationService:
         pending = await self._get_pending(registration_id)
         self._require_verified(pending)
 
-        gstin = fields.get("gstin")
-        if gstin and not GSTIN_RE.match(gstin.strip().upper()):
+        gstin = _normalize_legal_identifier(fields.get("gstin"))
+        if gstin and not GSTIN_RE.match(gstin):
             raise ServiceOSException("VALIDATION_ERROR", "GSTIN format is invalid.", status_code=422)
+
+        for identity_key in ("gstin", "pan", "cin"):
+            if fields.get(identity_key) is not None:
+                fields[identity_key] = _normalize_legal_identifier(fields[identity_key]) or None
 
         for key in ("legal_name", "business_name", "gstin", "pan", "cin", "business_type",
                     "year_established", "employee_count", "website_url", "description"):
@@ -354,6 +393,182 @@ class RegistrationService:
         await self.db.flush()
         await self._audit("registration.business_identity_saved", "success", target_id=pending.id)
         return {"registration_id": str(pending.id), "saved": True}
+
+    async def _identity_matches(
+        self, pending: PendingTenantRegistration, *, composite_enabled: bool,
+    ) -> list[tuple[Tenant, list[str], str]]:
+        """Find existing legal businesses across every tenant lifecycle state.
+
+        No status filter is intentional: suspended, terminated and archived
+        providers retain their obligations and history.
+        """
+        profile = TenantBusinessProfile
+        compact = lambda column: func.regexp_replace(
+            func.upper(func.coalesce(column, "")), "[^A-Z0-9]", "", "g"
+        )
+        conditions = []
+        gstin = _normalize_legal_identifier(pending.gstin)
+        pan = _normalize_legal_identifier(pending.pan)
+        cin = _normalize_legal_identifier(pending.cin)
+        if gstin:
+            conditions.append(or_(compact(profile.gstin) == gstin, compact(Tenant.gst_number) == gstin))
+        if pan:
+            conditions.append(compact(profile.pan) == pan)
+        if cin:
+            conditions.append(compact(profile.cin) == cin)
+
+        postcode = _registered_postcode(pending.registered_address)
+        names = {
+            value for value in (
+                _normalize_business_name(pending.legal_name),
+                _normalize_business_name(pending.business_name),
+            ) if value
+        }
+        if composite_enabled and postcode and names:
+            stored_postcode = func.regexp_replace(
+                func.coalesce(
+                    Tenant.zipcode,
+                    profile.registered_address.op("->>")("zipcode"),
+                    profile.registered_address.op("->>")("pincode"),
+                    "",
+                ),
+                "[^0-9]", "", "g",
+            )
+            conditions.append(and_(
+                or_(
+                    compact(Tenant.legal_name).in_(names),
+                    compact(Tenant.business_name).in_(names),
+                    compact(Tenant.tenant_name).in_(names),
+                    compact(profile.trade_name).in_(names),
+                ),
+                stored_postcode == postcode,
+            ))
+        if not conditions:
+            return []
+
+        rows = (await self.db.execute(
+            select(Tenant, profile)
+            .outerjoin(profile, profile.tenant_id == Tenant.id)
+            .where(or_(*conditions))
+            .order_by(Tenant.created_at.asc())
+        )).all()
+        matches: list[tuple[Tenant, list[str], str]] = []
+        for tenant, business_profile in rows:
+            signals: list[str] = []
+            if gstin and gstin in {
+                _normalize_legal_identifier(tenant.gst_number),
+                _normalize_legal_identifier(business_profile.gstin if business_profile else None),
+            }:
+                signals.append("gstin")
+            if pan and business_profile and pan == _normalize_legal_identifier(business_profile.pan):
+                signals.append("pan")
+            if cin and business_profile and cin == _normalize_legal_identifier(business_profile.cin):
+                signals.append("cin")
+
+            stored_names = {
+                _normalize_business_name(tenant.legal_name),
+                _normalize_business_name(tenant.business_name),
+                _normalize_business_name(tenant.tenant_name),
+                _normalize_business_name(business_profile.trade_name if business_profile else None),
+            }
+            stored_address = business_profile.registered_address if business_profile else {}
+            stored_zip = re.sub(
+                r"\D", "", str(
+                    tenant.zipcode
+                    or (stored_address or {}).get("zipcode")
+                    or (stored_address or {}).get("pincode")
+                    or ""
+                ),
+            )
+            if composite_enabled and postcode and postcode == stored_zip and names.intersection(stored_names):
+                signals.append("business_name_and_registered_postcode")
+            if signals:
+                strength = "high" if any(s in signals for s in ("gstin", "pan", "cin")) else "medium"
+                matches.append((tenant, signals, strength))
+        return matches
+
+    async def _enforce_provider_identity_continuity(
+        self, pending: PendingTenantRegistration,
+    ) -> None:
+        from app.engines.security.policy_runtime import security_policy_value
+        enabled = bool(await security_policy_value(
+            self.db, "provider_reregistration_guard_enabled", True,
+        ))
+        if not enabled:
+            return
+        composite_enabled = bool(await security_policy_value(
+            self.db, "provider_reregistration_composite_match_enabled", True,
+        ))
+        matches = await self._identity_matches(pending, composite_enabled=composite_enabled)
+        if not matches:
+            return
+
+        review_case = None
+        for tenant, signals, strength in matches:
+            existing = (await self.db.execute(
+                select(ProviderIdentityReviewCase).where(
+                    ProviderIdentityReviewCase.registration_id == pending.id,
+                    ProviderIdentityReviewCase.matched_tenant_id == tenant.id,
+                )
+            )).scalar_one_or_none()
+            if existing and existing.status == "resolved" and existing.decision == "false_positive":
+                continue
+            if existing:
+                review_case = review_case or existing
+                continue
+
+            # Snapshot operational exposure without copying raw identity values.
+            from app.engines.final_records.models import ServiceJob
+            job_stats = (await self.db.execute(
+                select(
+                    func.count(ServiceJob.id),
+                    func.coalesce(func.sum(ServiceJob.sla_penalty_charged), 0),
+                ).where(
+                    ServiceJob.tenant_id == tenant.id,
+                    ServiceJob.sla_breached_at.isnot(None),
+                )
+            )).one()
+            case = ProviderIdentityReviewCase(
+                registration_id=pending.id,
+                matched_tenant_id=tenant.id,
+                status="open",
+                match_strength=strength,
+                match_signals=signals,
+                risk_snapshot={
+                    "provider_status": tenant.status,
+                    "health_score": float(tenant.health_score or 0),
+                    "health_band": tenant.health_band,
+                    "sla_breached_jobs": int(job_stats[0] or 0),
+                    "sla_penalties": float(job_stats[1] or 0),
+                },
+            )
+            self.db.add(case)
+            await self.db.flush()
+            review_case = review_case or case
+
+        if review_case is None:
+            return
+        pending.status = "identity_review"
+        await self._audit(
+            "registration.provider_identity_review_opened", "blocked",
+            target_id=pending.id,
+            metadata={
+                "review_reference": self._case_reference(review_case),
+                "match_strength": review_case.match_strength,
+                "signals": review_case.match_signals,
+            },
+        )
+        # This is an intentional durable security decision. Commit the case
+        # before returning 409 so request middleware cannot roll it back.
+        await self.db.commit()
+        raise ServiceOSException(
+            "PROVIDER_IDENTITY_REVIEW_REQUIRED",
+            "This business appears linked to an existing provider account. "
+            "New registration is paused so its job history, charges and provider health remain intact. "
+            "Recover the existing account or contact support with the review reference.",
+            status_code=409,
+            context={"review_reference": self._case_reference(review_case)},
+        )
 
     def _require_verified(self, pending: PendingTenantRegistration) -> None:
         if not (pending.mobile_verified and pending.email_verified):
@@ -426,6 +641,10 @@ class RegistrationService:
             raise ServiceOSException("REGISTRATION_DUPLICATE",
                                       "An account with these details already exists. Please sign in.",
                                       status_code=409)
+
+        # Email/phone changes must never create a clean provider identity.
+        # Resolve legal-business continuity before any workspace rows exist.
+        await self._enforce_provider_identity_continuity(pending)
 
         vertical = (await self.db.execute(
             select(Vertical).where(Vertical.key == pending.selected_vertical_key)
@@ -741,6 +960,21 @@ class RegistrationService:
                 return {"stage": "not_found"}
             if pending.status == "completed":
                 return {"stage": "completed", "tenant_id": str(pending.created_tenant_id)}
+            if pending.status == "identity_review":
+                case = (await self.db.execute(
+                    select(ProviderIdentityReviewCase).where(
+                        ProviderIdentityReviewCase.registration_id == pending.id,
+                    ).order_by(ProviderIdentityReviewCase.created_at.desc())
+                )).scalars().first()
+                return {
+                    "stage": "identity_review",
+                    "registration_id": str(pending.id),
+                    "review_reference": self._case_reference(case),
+                    "message": (
+                        "Registration is paused while this business is linked to its existing provider history. "
+                        "Recover the existing account or contact support."
+                    ),
+                }
             return {"stage": self._resume_step(pending), "registration_id": str(pending.id)}
         return {"stage": "unknown"}
 

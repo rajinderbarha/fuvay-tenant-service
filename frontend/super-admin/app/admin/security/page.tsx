@@ -15,20 +15,21 @@ import { PageHeader, Pagination, Skeleton, StatusBadge } from "@serviceos/design
 import { ActionMenu } from "../../../components/shared/layout";
 import {
   securityAdminApi, SecurityApiKey, SecurityAuditEntry, SecurityOverview,
-  SecurityPolicy, SecuritySession, SecurityThreat, IPBlockEntry,
+  SecurityPolicy, SecuritySession, SecurityThreat, IPBlockEntry, ProviderIdentityReviewCase,
 } from "../../../lib/api";
 import { useApi, useAction } from "../../../hooks/useApi";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { RequirePermission } from "../../../components/shared/PermissionGate";
 import styles from "./security.module.css";
 
-type Tab = "overview" | "threats" | "sessions" | "ip_blocklist" | "policies";
+type Tab = "overview" | "threats" | "sessions" | "ip_blocklist" | "identity_reviews" | "policies";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "overview", label: "Overview", icon: <Shield size={15} /> },
   { key: "threats", label: "Threats", icon: <AlertTriangle size={15} /> },
   { key: "sessions", label: "Active Sessions", icon: <UserCheck size={15} /> },
   { key: "ip_blocklist", label: "IP Blocklist", icon: <Ban size={15} /> },
+  { key: "identity_reviews", label: "Provider Identity", icon: <Fingerprint size={15} /> },
   { key: "policies", label: "Security Policies", icon: <SlidersHorizontal size={15} /> },
 ];
 const LEVEL_VARIANT: Record<string, "danger" | "warning" | "info" | "muted"> = { critical: "danger", high: "warning", medium: "info", low: "muted" };
@@ -75,7 +76,7 @@ export default function SecurityPage() {
   return <AdminLayout activeNav="security"><RequirePermission requiredPermission="security:read" parentLabel="Dashboard"><main className={styles.page}>
     <PageHeader eyebrow="Platform protection" context="Security operations" title="Security & Threats" description="Investigate risk, control access, and manage enforceable platform security policy." actions={<div className={styles.headerActions}><span className={styles.lastUpdated}><Clock3 size={14} />{overview.data ? `Updated ${formatDate(overview.data.generated_at)}` : "Loading posture…"}</span><Btn variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={() => setRefreshKey(v => v + 1)}>Refresh</Btn></div>} />
     <nav className={styles.tabs} aria-label="Security sections">{TABS.map(item => <button key={item.key} className={tab === item.key ? styles.activeTab : ""} aria-current={tab === item.key ? "page" : undefined} onClick={() => changeTab(item.key)}>{item.icon}<span>{item.label}</span>{counts[item.key] !== undefined && <b>{counts[item.key]!.toLocaleString()}</b>}</button>)}</nav>
-    <section className={styles.tabContent}>{tab === "overview" && <OverviewTab data={overview.data} loading={overview.loading} error={overview.error} onNavigate={changeTab} onOpenAudit={() => router.push("/admin/audit-logs?engine_key=security")} />}{tab === "threats" && <ThreatsTab refreshKey={refreshKey} />}{tab === "sessions" && <SessionsTab refreshKey={refreshKey} />}{tab === "ip_blocklist" && <IpBlocklistTab refreshKey={refreshKey} />}{tab === "policies" && <PoliciesTab refreshKey={refreshKey} />}</section>
+    <section className={styles.tabContent}>{tab === "overview" && <OverviewTab data={overview.data} loading={overview.loading} error={overview.error} onNavigate={changeTab} onOpenAudit={() => router.push("/admin/audit-logs?engine_key=security")} />}{tab === "threats" && <ThreatsTab refreshKey={refreshKey} />}{tab === "sessions" && <SessionsTab refreshKey={refreshKey} />}{tab === "ip_blocklist" && <IpBlocklistTab refreshKey={refreshKey} />}{tab === "identity_reviews" && <ProviderIdentityReviewsTab refreshKey={refreshKey} />}{tab === "policies" && <PoliciesTab refreshKey={refreshKey} />}</section>
   </main></RequirePermission></AdminLayout>;
 }
 
@@ -153,7 +154,33 @@ const POLICY_META: Record<string, { label: string; group: string; unit?: string;
   refresh_token_lifetime_days: { label: "Refresh-token lifetime", group: "Session controls", unit: "days", impact: "Caps newly issued refresh tokens; never exceeds the session lifetime.", icon: <RefreshCw size={18} /> },
   ip_block_auto_expiry_default_days: { label: "Default network block", group: "Network controls", unit: "days", impact: "Default duration when no custom block expiry is supplied.", icon: <Network size={18} /> },
   export_audit_retention_days: { label: "Audit export lookback", group: "Evidence retention", unit: "days", impact: "Caps how far back synchronous security exports may read; it does not delete audit records.", icon: <ScrollText size={18} /> },
+  provider_reregistration_guard_enabled: { label: "Provider re-registration guard", group: "Identity protection", impact: "Pauses a new signup when its legal identity belongs to an existing provider, preserving job history, charges, and provider health.", icon: <Fingerprint size={18} /> },
+  provider_reregistration_composite_match_enabled: { label: "Business and postcode matching", group: "Identity protection", impact: "Reviews an exact business-name and registered-postcode match when a tax identifier is unavailable.", icon: <ShieldCheck size={18} /> },
 };
+
+function ProviderIdentityReviewsTab({ refreshKey }: { refreshKey: number }) {
+  const perm = usePermissions();
+  const [q, setQ] = useState(""); const search = useDebouncedValue(q);
+  const [status, setStatus] = useState("open"); const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<ProviderIdentityReviewCase | null>(null);
+  const [decision, setDecision] = useState<"restore_existing_account" | "reject_evasion" | "false_positive">("restore_existing_account");
+  const [note, setNote] = useState(""); const pageSize = 25;
+  useEffect(() => setPage(1), [search, status]);
+  const cases = useApi(useCallback(() => securityAdminApi.listProviderIdentityCases({ status, q: search || undefined, limit: pageSize, offset: (page - 1) * pageSize }), [status, search, page]), [status, search, page, refreshKey]);
+  const resolveAction = useAction(useCallback((id: string, d: typeof decision, n: string) => securityAdminApi.resolveProviderIdentityCase(id, d, n), []));
+  async function resolve() { if (!selected) return; const result = await resolveAction.execute(selected.case_id, decision, note.trim()); if (result) { setSelected(null); setNote(""); cases.refetch(); } }
+  const rows = cases.data?.cases ?? []; const total = cases.data?.total ?? 0;
+  return <div className={styles.stack}>
+    <div className={styles.infoNotice}><Fingerprint size={18} /><span>A provider cannot reset penalties, no-show history, or health by changing email or phone. Legitimate ownership changes must be linked to the existing provider record.</span></div>
+    <div className={styles.toolbar}><div className={styles.searchBox}><Search size={15} /><Input value={q} onChange={setQ} placeholder="Search applicant or existing provider" /></div><Select value={status} onChange={setStatus} options={[{ value: "open", label: "Open reviews" }, { value: "resolved", label: "Resolved reviews" }, { value: "", label: "All reviews" }]} /></div>
+    <ErrorBanner message={cases.error} />
+    <TableShell loading={cases.loading} empty={!cases.loading && rows.length === 0 ? <EmptyState icon={<ShieldCheck size={24} />} title="No identity reviews" description="No provider registration matches the selected queue." /> : undefined}>
+      <div className={styles.tableScroll}><TableSurface><thead><tr><Th>Reference</Th><Th>Applicant</Th><Th>Existing provider</Th><Th>Match</Th><Th>Operational exposure</Th><Th>Status</Th><Th>Created</Th><Th>Action</Th></tr></thead><tbody>{rows.map(item => <tr key={item.case_id}><Td mono>{item.reference}</Td><Td><strong>{item.applicant_business_name ?? "Unnamed business"}</strong></Td><Td><strong>{item.existing_provider_name}</strong><span className={styles.cellSub}>{item.existing_provider_code ?? item.existing_provider_id.slice(0, 8)} · {humanize(item.existing_provider_status)}</span></Td><Td><Badge variant={item.match_strength === "high" ? "danger" : "warning"} size="sm">{humanize(item.match_strength)}</Badge><span className={styles.cellSub}>{item.match_signals.map(humanize).join(", ")}</span></Td><Td><strong>{Number(item.risk_snapshot.sla_breached_jobs ?? 0)} breached jobs</strong><span className={styles.cellSub}>₹{Number(item.risk_snapshot.sla_penalties ?? 0).toLocaleString("en-IN")} penalties · health {Number(item.risk_snapshot.health_score ?? 0)}</span></Td><Td><StatusBadge status={item.status} size="sm" /></Td><Td>{formatDate(item.created_at)}</Td><Td>{item.status === "open" && perm.has("security:threats:resolve") ? <Btn size="xs" variant="secondary" onClick={() => { setSelected(item); setDecision("restore_existing_account"); setNote(""); }}>Review</Btn> : <span>{item.decision ? humanize(item.decision) : "—"}</span>}</Td></tr>)}</tbody></TableSurface></div>
+      <Pagination page={page} pageSize={pageSize} pageCount={Math.max(1, Math.ceil(total / pageSize))} hasPrevious={page > 1} hasNext={page * pageSize < total} navigationMode="adjacent" onPage={setPage} alwaysShow />
+    </TableShell>
+    <Modal open={!!selected} onClose={() => setSelected(null)} title={`Resolve ${selected?.reference ?? "identity review"}`} size="lg">{selected && <div className={styles.modalStack}><div className={styles.dangerNotice}><ShieldAlert size={18} /><span>Never approve a fresh provider merely to clear old health or debt. Restore the existing account unless evidence proves this is a different legal business.</span></div><div className={styles.detailGrid}><Detail label="Applicant" value={selected.applicant_business_name ?? "Unnamed business"} /><Detail label="Existing provider" value={selected.existing_provider_name} /><Detail label="Matched by" value={selected.match_signals.map(humanize).join(", ")} /><Detail label="Existing status" value={humanize(selected.existing_provider_status)} /></div><Select label="Decision" value={decision} onChange={v => setDecision(v as typeof decision)} options={[{ value: "restore_existing_account", label: "Restore / recover existing account" }, { value: "reject_evasion", label: "Reject suspected evasion" }, { value: "false_positive", label: "Different legal business — allow signup" }]} /><Textarea label="Decision evidence" value={note} onChange={setNote} rows={4} placeholder="Record the evidence used for this decision" required /><ErrorBanner message={resolveAction.error} /><div className={styles.modalActions}><Btn variant="ghost" onClick={() => setSelected(null)}>Cancel</Btn><Btn loading={resolveAction.loading} disabled={note.trim().length < 8} variant={decision === "false_positive" ? "primary" : "danger"} onClick={resolve}>Record decision</Btn></div></div>}</Modal>
+  </div>;
+}
 
 function PoliciesTab({ refreshKey }: { refreshKey: number }) {
   const perm = usePermissions();

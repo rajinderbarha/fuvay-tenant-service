@@ -65,6 +65,8 @@ async def booking_thread(db, booking) -> MessagingThread | None:
 async def notify_booking_customer(
     db, booking, message: str, *, rows: list[dict] | None = None,
     section_title: str = "Your booking",
+    template_event: str | None = None,
+    template_data: dict[str, object] | None = None,
 ) -> bool:
     """Tell the customer about their job, in the chat they booked from.
 
@@ -73,6 +75,25 @@ async def notify_booking_customer(
     business-initiated messages outside its 24-hour window.
     """
     try:
+        if template_event:
+            from app.engines.notification.runtime_copy import render_runtime_copy
+
+            rendered = await render_runtime_copy(
+                db,
+                event_type=template_event,
+                channel=CHANNEL_INSTAGRAM,
+                audience="customer",
+                data=template_data or {},
+                fallback_title=section_title,
+                fallback_body=message,
+                tenant_id=getattr(booking, "tenant_id", None),
+                vertical_key="home_services",
+            )
+            message = rendered.body
+            section_title = rendered.title
+            if rows and rendered.action_label:
+                rows = [dict(row) for row in rows]
+                rows[0]["title"] = rendered.action_label
         thread = await booking_thread(db, booking)
         if thread is None:
             return False
@@ -236,6 +257,12 @@ async def send_technician_assigned(db, job) -> bool:
             f"ਟੈਕਨੀਸ਼ੀਅਨ assign ਹੋ ਗਿਆ ਹੈ\nBooking: {booking.booking_number}\n{name} ਤੁਹਾਡੀ service ਲਈ assign ਹੋ ਗਏ ਹਨ।{when_pa}",
         ),
         rows=[_track_row()], section_title="Your technician",
+        template_event="customer_technician_assigned",
+        template_data={
+            "booking_number": booking.booking_number,
+            "technician_name": name,
+            "visit_label": visit or "To be confirmed",
+        },
     )
     if sent and staff_id is not None:
         db.add(ServiceJobExecutionEvent(
@@ -258,6 +285,8 @@ async def send_on_the_way(db, job) -> bool:
             f"ਟੈਕਨੀਸ਼ੀਅਨ ਰਸਤੇ ਵਿੱਚ ਹੈ\n{name} ਹੁਣ ਤੁਹਾਡੇ service location ਵੱਲ ਆ ਰਹੇ ਹਨ।",
         ),
         rows=[_track_row()], section_title="Your technician",
+        template_event="customer_technician_on_the_way",
+        template_data={"technician_name": name, "visit_label": visit or "To be confirmed"},
     )
 
 
@@ -272,6 +301,8 @@ async def send_arrived(db, job) -> bool:
             f"ਪਹੁੰਚ ਅਪਡੇਟ\n{name} ਤੁਹਾਡੀ service location 'ਤੇ ਪਹੁੰਚ ਗਏ ਹਨ।",
         ),
         rows=[_track_row()], section_title="Your technician",
+        template_event="customer_technician_arrived",
+        template_data={"technician_name": name, "visit_label": visit or "To be confirmed"},
     )
 
 
@@ -303,6 +334,12 @@ async def send_arrival_confirmation_request(db, job, challenge, code: str) -> bo
              "title": "No, not here"},
         ],
         section_title="Confirm arrival",
+        template_event="customer_arrival_confirmation_requested",
+        template_data={
+            "technician_name": name,
+            "arrival_code": code,
+            "expiry_minutes": ttl_minutes,
+        },
     )
 
 
@@ -315,6 +352,8 @@ async def send_arrival_confirmed(db, job) -> bool:
             "ਪਹੁੰਚ verify ਹੋ ਗਈ ਹੈ। ਟੈਕਨੀਸ਼ੀਅਨ ਹੁਣ inspection ਜਾਂ approved service ਸ਼ੁਰੂ ਕਰ ਸਕਦਾ ਹੈ।",
         ),
         rows=[_track_row()], section_title="Arrival verified",
+        template_event="customer_arrival_confirmed",
+        template_data={},
     )
 
 
@@ -351,6 +390,14 @@ async def send_reschedule_approval_request(db, job, request) -> bool:
              "title": "Keep current slot"},
         ],
         section_title="Visit slot approval",
+        template_event="customer_reschedule_approval_requested",
+        template_data={
+            "booking_number": booking.booking_number,
+            "current_slot": original,
+            "requested_slot": proposed,
+            "reason": request.reason,
+            "expires_at": expiry,
+        },
     )
 
 
@@ -381,6 +428,12 @@ async def send_provider_cancellation_confirmation_request(db, job, request) -> b
              "title": "No, keep booking"},
         ],
         section_title="Confirm cancellation",
+        template_event="customer_provider_cancellation_confirmation_requested",
+        template_data={
+            "booking_number": booking.booking_number,
+            "reason": request.reason_label,
+            "expires_at": expiry,
+        },
     )
 
 
@@ -449,6 +502,11 @@ async def send_stage_update(db, job, stage: str) -> bool:
     message, title = content
     sent = await notify_job_customer(
         db, job, message, rows=[_track_row()], section_title=title,
+        template_event=f"customer_stage_{stage}",
+        template_data={
+            "job_number": getattr(job, "job_number", ""),
+            "stage_label": stage.replace("_", " "),
+        },
     )
     if sent:
         db.add(ServiceJobExecutionEvent(
@@ -491,8 +549,15 @@ async def send_stage_delay(
             "Provider ਨੂੰ alert ਕਰ ਦਿੱਤਾ ਗਿਆ ਹੈ। Latest status ਹੇਠਾਂ track ਕਰੋ।",
         )
         title = "Service status update"
+    template_event = (
+        "customer_stage_delay_action_required" if waiting_on == "customer"
+        else "customer_stage_delay_critical" if critical
+        else "customer_stage_delay_warning"
+    )
     return await notify_job_customer(
         db, job, message, rows=[_track_row()], section_title=title,
+        template_event=template_event,
+        template_data={"job_number": getattr(job, "job_number", ""), "stage_label": stage_label},
     )
 
 
@@ -510,6 +575,8 @@ async def send_handover_request(db, job, *, reminder: bool = False) -> bool:
             {"id": PICKER_SEP.join((PICK_COMPLAINT, "new")), "title": "Report issue"},
         ],
         section_title="Service handover",
+        template_event="customer_handover_reminder" if reminder else "customer_handover_requested",
+        template_data={"job_number": getattr(job, "job_number", "")},
     )
 
 
@@ -533,6 +600,8 @@ async def send_payment_request(db, job, pay, *, reminder: bool = False) -> bool:
              "title": PAYMENT_NOT_PAID_ROW},
         ],
         section_title="Direct payment",
+        template_event="customer_payment_reminder" if reminder else "customer_payment_requested",
+        template_data={"job_number": getattr(job, "job_number", ""), "amount": amount},
     )
 
 
@@ -552,6 +621,8 @@ async def send_provider_cancelled(db, job, reason: str | None) -> bool:
         ),
         rows=[{"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Book again"}],
         section_title="Booking cancelled",
+        template_event="customer_provider_cancelled",
+        template_data={"booking_number": booking.booking_number, "reason": reason_text},
     )
 
 
@@ -652,6 +723,8 @@ async def send_technician_unavailable_cancelled(job_id: str | uuid.UUID) -> bool
                 ),
                 rows=[{"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Book again"}],
                 section_title="Booking cancelled",
+                template_event="customer_technician_unavailable_cancelled",
+                template_data={"booking_number": booking.booking_number},
             )
             if not sent:
                 return False
@@ -705,6 +778,8 @@ async def send_sla_cancelled(job_id: str | uuid.UUID) -> bool:
                 ),
                 rows=[{"id": f"{PICK_RESTART}{PICKER_SEP}1", "title": "Book again"}],
                 section_title="Booking cancelled",
+                template_event="customer_sla_cancelled",
+                template_data={"booking_number": booking.booking_number},
             )
             if not sent:
                 return False
@@ -740,6 +815,12 @@ async def send_visit_reminder(db, job, when_label: str) -> bool:
             f"Visit reminder\n{name} ਦੀ ਤੁਹਾਡੇ ਕੋਲ visit {when_label} ਲਈ scheduled ਹੈ।",
         ),
         rows=[_track_row()], section_title="Visit reminder",
+        template_event="customer_visit_reminder",
+        template_data={
+            "job_number": getattr(job, "job_number", ""),
+            "technician_name": name,
+            "visit_label": when_label,
+        },
     )
 
 
@@ -790,8 +871,21 @@ async def send_assignment_cancelled(job_id: str | uuid.UUID) -> bool:
                 f"Booking cancel ਹੋ ਗਈ\nBooking: {booking.booking_number}\nProvider ਨੇ required time ਵਿੱਚ technician assign ਨਹੀਂ ਕੀਤਾ ਅਤੇ ਕੋਈ available provider job ਨਹੀਂ ਲੈ ਸਕਿਆ। "
                 "ਅਸੁਵਿਧਾ ਲਈ ਸਾਨੂੰ ਅਫਸੋਸ ਹੈ। ਹੋਰ slot ਲਈ ਨਵੀਂ booking ਕਰੋ ਜਾਂ ਮਦਦ ਲਈ /human ਲਿਖੋ।",
             )
+            from app.engines.notification.runtime_copy import render_runtime_copy
+            rendered = await render_runtime_copy(
+                db,
+                event_type="customer_assignment_cancelled",
+                channel=CHANNEL_INSTAGRAM,
+                audience="customer",
+                data={"booking_number": booking.booking_number},
+                fallback_title="Booking cancelled",
+                fallback_body=message,
+                tenant_id=getattr(booking, "tenant_id", None),
+                vertical_key="home_services",
+            )
             result = await meta_client.send_text(
-                thread.channel_user_id, message, channel=CHANNEL_INSTAGRAM, config=config,
+                thread.channel_user_id, rendered.body,
+                channel=CHANNEL_INSTAGRAM, config=config,
             )
             if not result.get("sent"):
                 logger.warning("booking_updates.cancel_send_failed", job_id=str(job.id), reason=result.get("reason"))

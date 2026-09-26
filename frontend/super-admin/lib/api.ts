@@ -8296,6 +8296,16 @@ export interface SecurityPolicy {
   is_default: boolean; is_recommended: boolean;
 }
 
+export interface ProviderIdentityReviewCase {
+  case_id: string; reference: string; status: string; match_strength: string;
+  match_signals: string[]; risk_snapshot: Record<string, unknown>;
+  applicant_business_name: string | null;
+  existing_provider_id: string; existing_provider_name: string;
+  existing_provider_code: string | null; existing_provider_status: string;
+  decision: string | null; resolution_note: string | null;
+  reviewed_by: string | null; reviewed_at: string | null; created_at: string;
+}
+
 export const securityAdminApi = {
   getOverview: () => apiFetch<SecurityOverview>("/v1/admin/security/overview"),
 
@@ -8441,6 +8451,19 @@ export const securityAdminApi = {
   updatePolicy: (policyKey: string, value: unknown, reason: string) =>
     apiFetch<SecurityPolicy>(`/v1/admin/security/policies/${policyKey}`,
       { method: "PATCH", body: JSON.stringify({ value, reason }) }),
+
+  // Provider identity continuity
+  listProviderIdentityCases: (params?: { status?: string; q?: string; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status !== undefined) qs.set("status", params.status);
+    if (params?.q) qs.set("q", params.q);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.offset) qs.set("offset", String(params.offset));
+    return apiFetch<{ cases: ProviderIdentityReviewCase[]; total: number; limit: number; offset: number }>(`/v1/admin/security/provider-identity-cases?${qs.toString()}`);
+  },
+  resolveProviderIdentityCase: (caseId: string, decision: "restore_existing_account" | "reject_evasion" | "false_positive", note: string) =>
+    apiFetch<ProviderIdentityReviewCase>(`/v1/admin/security/provider-identity-cases/${caseId}/resolve`,
+      { method: "POST", body: JSON.stringify({ decision, note }) }),
 };
 
 
