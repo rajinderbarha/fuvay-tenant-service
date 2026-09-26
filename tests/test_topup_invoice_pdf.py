@@ -44,3 +44,6 @@ def test_invoice_pdf_has_one_readable_page_and_financial_split():
     assert "INR 1,000.00" in text
     assert "INR 180.00" in text
     assert "INR 1,180.00" in text
+    resources = reader.pages[0]["/Resources"]
+    xobjects = resources.get("/XObject", {})
+    assert any(obj.get_object().get("/Subtype") == "/Image" for obj in xobjects.values())

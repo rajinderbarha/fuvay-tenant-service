@@ -7,7 +7,9 @@ rewrite a historical commercial document.
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +19,9 @@ from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
+    Image,
     KeepTogether,
     Paragraph,
     SimpleDocTemplate,
@@ -33,6 +37,10 @@ from app.engines.tenant_engine.models import Tenant, TenantBilling, TenantBusine
 
 
 INVOICE_PROFILE_KEY = "platform_topup_invoice_profile"
+_BUNDLED_FUVAY_LOGO = (
+    Path(__file__).resolve().parents[3]
+    / "frontend" / "tenant-portal" / "public" / "brand" / "fuvay-logo.png"
+)
 
 
 def _text(value: Any, fallback: str = "Not provided") -> str:
@@ -57,6 +65,54 @@ def _address(snapshot: dict) -> str:
         ]
         return ", ".join(str(part).strip() for part in parts if str(part or "").strip())
     return _text(value)
+
+
+def _invoice_logo(issuer: dict) -> Image | None:
+    """Return the configured document logo with the bundled Fuvay logo as fallback.
+
+    Remote artwork is deliberately restricted to HTTPS Cloudinary URLs, matching
+    the platform-branding validation. Invoice generation remains available when
+    the remote asset is temporarily unreachable.
+    """
+    sources: list[bytes | str] = []
+    configured_url = str(issuer.get("document_logo_url") or "").strip()
+    parsed = urlsplit(configured_url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme == "https" and (host == "cloudinary.com" or host.endswith(".cloudinary.com")):
+        try:
+            import httpx
+
+            response = httpx.get(configured_url, follow_redirects=True, timeout=4.0)
+            final_host = (urlsplit(str(response.url)).hostname or "").lower()
+            content_type = response.headers.get("content-type", "").lower()
+            if (
+                response.status_code < 400
+                and (final_host == "cloudinary.com" or final_host.endswith(".cloudinary.com"))
+                and content_type.startswith("image/")
+                and len(response.content) <= 2_000_000
+            ):
+                sources.append(response.content)
+        except Exception:
+            pass
+
+    if _BUNDLED_FUVAY_LOGO.is_file():
+        sources.append(str(_BUNDLED_FUVAY_LOGO))
+
+    for source in sources:
+        try:
+            image_source = BytesIO(source) if isinstance(source, bytes) else source
+            reader = ImageReader(image_source)
+            image_width, image_height = reader.getSize()
+            if isinstance(image_source, BytesIO):
+                image_source.seek(0)
+            max_width, max_height = 46 * mm, 15 * mm
+            scale = min(max_width / image_width, max_height / image_height)
+            logo = Image(image_source, width=image_width * scale, height=image_height * scale)
+            logo.hAlign = "LEFT"
+            return logo
+        except Exception:
+            continue
+    return None
 
 
 async def resolve_invoice_snapshots(
@@ -199,9 +255,18 @@ def render_topup_invoice_pdf(invoice: dict) -> bytes:
 
     brand_name = _text(issuer.get("brand_name"), "Fuvay")
     legal_name = _text(issuer.get("legal_name"), brand_name)
+    logo = _invoice_logo(issuer)
+    brand_block = [
+        *([logo, Spacer(1, 2 * mm)] if logo is not None else []),
+        Paragraph(
+            ("" if logo is not None else f"<b>{brand_name}</b><br/>")
+            + f"<font size='9'>{legal_name}</font>",
+            styles["InvoiceBody"],
+        ),
+    ]
     header = Table([
         [
-            Paragraph(f"<b>{brand_name}</b><br/><font size='9'>{legal_name}</font>", styles["InvoiceBody"]),
+            brand_block,
             Paragraph(document_title, styles["InvoiceTitle"]),
         ]
     ], colWidths=[95 * mm, 79 * mm])
