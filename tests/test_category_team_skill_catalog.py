@@ -3,7 +3,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = (ROOT / "alembic/versions/294_category_skill_catalog.py").read_text(encoding="utf-8")
+EXPANDED_MIGRATION = (ROOT / "alembic/versions/388_expand_home_service_skill_catalog.py").read_text(encoding="utf-8")
 ROUTER = (ROOT / "app/engines/admin_catalog/skill_catalog_router.py").read_text(encoding="utf-8")
+STARTERS = (ROOT / "app/engines/admin_catalog/starter_skills.py").read_text(encoding="utf-8")
 PROVIDER = (ROOT / "app/engines/provider_portal/router.py").read_text(encoding="utf-8")
 TEAM_MODAL = (ROOT / "frontend/tenant-portal/components/onboarding/AddTeamMemberWizard.tsx").read_text(encoding="utf-8")
 ADMIN_CATEGORY = (ROOT / "frontend/super-admin/app/admin/categories/[id]/page.tsx").read_text(encoding="utf-8")
@@ -41,6 +43,30 @@ def test_provider_catalog_returns_active_choices_from_all_published_service_cate
     assert "category_name" in ROUTER
 
 
+def test_provider_skill_catalog_is_scoped_to_published_service_groups():
+    assert "resolve_team_service_group_ids" in ROUTER
+    assert "ms.service_group_id" in ROUTER
+    assert "cs.service_group_id IS NULL OR cs.service_group_id = ANY" in ROUTER
+    assert '"service_group_ids"' in ROUTER
+
+
+def test_home_service_starters_cover_standard_trade_groups():
+    for expected in (
+        "plumbing_diagnostics",
+        "microwave_oven_repair",
+        "washing_machine_repair",
+        "chimney_servicing_repair",
+        "geyser_repair",
+        "cctv_installation",
+        "furniture_repair",
+        "interior_painting",
+    ):
+        assert expected in STARTERS
+        assert expected in EXPANDED_MIGRATION
+    assert "service_group_id" in STARTERS
+    assert "service_group_id" in EXPANDED_MIGRATION
+
+
 def test_team_creation_no_longer_requires_legacy_tenant_category_column():
     assert "Complete the business workspace setup before adding team members" not in PROVIDER
     assert "resolve_team_category_ids(db, tid)" in PROVIDER
@@ -50,6 +76,7 @@ def test_team_creation_no_longer_requires_legacy_tenant_category_column():
 
 def test_staff_skills_are_validated_and_written_as_normalized_assignments():
     assert "validate_skill_ids" in PROVIDER
+    assert "resolve_team_service_group_ids" in PROVIDER
     assert "replace_member_skills" in PROVIDER
     assert 'payload.get("skill_ids")' in PROVIDER
     assert '"skills": json.dumps([skill["name"] for skill in selected_skills])' in PROVIDER

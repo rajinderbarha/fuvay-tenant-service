@@ -27,7 +27,7 @@ from app.config import get_settings
 from app.models.base import utcnow
 from app.engines.admin_catalog.skill_catalog_router import (
     member_skill_ids, replace_member_skills, resolve_team_category_id,
-    resolve_team_category_ids,
+    resolve_team_category_ids, resolve_team_service_group_ids,
     validate_skill_ids,
 )
 
@@ -230,7 +230,10 @@ async def create_team_member(
         )
 
     requested_skill_ids = [str(value) for value in (payload.get("skill_ids") or [])]
-    selected_skills = await validate_skill_ids(db, team_category_ids, requested_skill_ids)
+    team_service_group_ids = await resolve_team_service_group_ids(db, tid)
+    selected_skills = await validate_skill_ids(
+        db, team_category_ids, requested_skill_ids, team_service_group_ids,
+    )
 
     # Technicians resolve business hours dynamically. Team creation precedes
     # coverage setup, so no schedule is required or copied during this step.
@@ -573,8 +576,11 @@ async def update_team_member(
                 "SELECT member_type FROM provider_team_members WHERE id=:id AND tenant_id=:tid AND deleted_at IS NULL"
             ), {"id": str(member_id), "tid": str(tid)})).scalar()
         category_ids = await resolve_team_category_ids(db, tid)
+        service_group_ids = await resolve_team_service_group_ids(db, tid)
         requested_skill_ids = [str(value) for value in (payload.get("skill_ids") or [])]
-        selected_skills = await validate_skill_ids(db, category_ids, requested_skill_ids)
+        selected_skills = await validate_skill_ids(
+            db, category_ids, requested_skill_ids, service_group_ids,
+        )
 
     if becomes_active_technician and not was_technician:
         if not payload.get("supported_offering_ids"):

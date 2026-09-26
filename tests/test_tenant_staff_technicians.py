@@ -74,7 +74,7 @@ class TestRouterHardening:
         """
         c = _read(ROUTER)
         idx = c.index("async def update_team_member")
-        block = c[idx:idx + 6500]
+        block = c[idx:idx + 8000]
         assert 'json_array_fields = {' in block
         for field in (
             "supported_offering_ids",

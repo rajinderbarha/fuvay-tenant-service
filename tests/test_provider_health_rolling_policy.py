@@ -20,6 +20,12 @@ DASHBOARD = (
 MIGRATION = (
     ROOT / "alembic/versions/386_provider_health_rolling_window.py"
 ).read_text(encoding="utf-8")
+FINANCE_PAGE = (
+    ROOT / "frontend/super-admin/app/admin/home-services/finance/page.tsx"
+).read_text(encoding="utf-8")
+CONFIGURATION_PAGE = (
+    ROOT / "frontend/super-admin/app/admin/configuration/page.tsx"
+).read_text(encoding="utf-8")
 
 
 def test_policy_defaults_are_six_months_and_three_reschedules():
@@ -76,6 +82,12 @@ def test_all_policy_values_are_governed_admin_configuration():
         assert f'key="{key}"' in REGISTRY
     assert 'default_value=180' in REGISTRY
     assert 'default_value=3' in REGISTRY
+
+
+def test_health_settings_link_opens_the_governed_registry_with_its_filter():
+    assert '/admin/configuration?tab=registry&search=provider_health' in FINANCE_PAGE
+    assert 'const requestedSearch = params.get("search") ?? ""' in CONFIGURATION_PAGE
+    assert '<ConfigurationRegistryTab initialSearch={requestedSearch}/>' in CONFIGURATION_PAGE
 
 
 def test_dashboard_uses_canonical_health_not_legacy_tenant_projection():

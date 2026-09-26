@@ -1,6 +1,7 @@
 "use client";
 import { TableSurface } from "@serviceos/design-system";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AdminLayout } from "../../../components/layout/AdminLayout";
 import { Card, Badge, Btn, Select, Input, Modal, SectionHeader, SummaryCard } from "../../../components/shared/ui";
 import {
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 
 type Tab = "registry" | "flags" | "changes" | "history" | "audit";
+const VALID_TABS: Tab[] = ["registry", "flags", "changes", "history", "audit"];
 
 const RISK_VARIANT: Record<string, "success" | "warning" | "danger" | "muted"> = {
   low: "muted", medium: "warning", high: "danger", critical: "danger",
@@ -24,7 +26,26 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "danger" | "muted">
 };
 
 export default function PlatformConfigurationPage() {
-  const [tab, setTab] = useState<Tab>("registry");
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const requestedTab = params.get("tab") as Tab | null;
+  const requestedSearch = params.get("search") ?? "";
+  const [tab, setTab] = useState<Tab>(
+    requestedTab && VALID_TABS.includes(requestedTab) ? requestedTab : "registry",
+  );
+
+  useEffect(() => {
+    if (requestedTab && VALID_TABS.includes(requestedTab)) setTab(requestedTab);
+  }, [requestedTab]);
+
+  function selectTab(nextTab: Tab) {
+    setTab(nextTab);
+    const query = new URLSearchParams(params.toString());
+    query.set("tab", nextTab);
+    if (nextTab !== "registry") query.delete("search");
+    router.replace(`${pathname}?${query.toString()}`);
+  }
 
   return (
     <AdminLayout activeNav="configuration">
@@ -33,9 +54,9 @@ export default function PlatformConfigurationPage() {
         subtitle="Review and safely manage registered Fuvay configuration policies."
         actions={
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn size="sm" variant="ghost" onClick={() => setTab("audit")}><FileText size={14} style={{ marginRight: 4 }}/>View Audit</Btn>
-            <Btn size="sm" variant="ghost" onClick={() => setTab("history")}><GitCompare size={14} style={{ marginRight: 4 }}/>Compare Versions</Btn>
-            <Btn size="sm" variant="primary" onClick={() => setTab("registry")}><Plus size={14} style={{ marginRight: 4 }}/>Create Change Request</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => selectTab("audit")}><FileText size={14} style={{ marginRight: 4 }}/>View Audit</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => selectTab("history")}><GitCompare size={14} style={{ marginRight: 4 }}/>Compare Versions</Btn>
+            <Btn size="sm" variant="primary" onClick={() => selectTab("registry")}><Plus size={14} style={{ marginRight: 4 }}/>Create Change Request</Btn>
           </div>
         }
       />
@@ -53,7 +74,7 @@ export default function PlatformConfigurationPage() {
           ["registry", "Configuration Registry"], ["flags", "Feature Flags"],
           ["changes", "Change Requests"], ["history", "Version History"], ["audit", "Audit"],
         ] as [Tab, string][]).map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)} style={{
+          <button key={id} onClick={() => selectTab(id)} style={{
             padding: "10px 16px", fontSize: 13, fontWeight: 600, background: "none", border: "none",
             borderBottom: tab === id ? "2px solid var(--brand)" : "2px solid transparent",
             color: tab === id ? "var(--brand)" : "var(--text-secondary)", cursor: "pointer",
@@ -61,7 +82,7 @@ export default function PlatformConfigurationPage() {
         ))}
       </div>
 
-      {tab === "registry" && <ConfigurationRegistryTab/>}
+      {tab === "registry" && <ConfigurationRegistryTab initialSearch={requestedSearch}/>}
       {tab === "flags" && <FeatureFlagsTab/>}
       {tab === "changes" && <ChangeRequestsTab/>}
       {tab === "history" && <VersionHistoryTab/>}
@@ -71,12 +92,14 @@ export default function PlatformConfigurationPage() {
 }
 
 // ── Tab 1: Configuration Registry ────────────────────────────────────────────
-function ConfigurationRegistryTab() {
+function ConfigurationRegistryTab({ initialSearch = "" }: { initialSearch?: string }) {
   const [ownerFilter, setOwnerFilter] = useState("");
   const [riskFilter, setRiskFilter] = useState("");
   const [scopeFilter, setScopeFilter] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
+  useEffect(() => { setSearch(initialSearch); }, [initialSearch]);
 
   const listApi = useApi(useCallback(() => configurationApi.list({
     owner_module: ownerFilter || undefined, risk_level: riskFilter || undefined,

@@ -1,16 +1,21 @@
-"""Explicit admin-managed starter catalog; never mutate skill data on provider reads.
+"""Expand Home Services skills and scope them to service groups.
 
-Skills are qualifications, not service assignments. Each starter is tied to
-the matching service group so a provider only sees qualifications relevant to
-the services it has actually published.
+Revision ID: 388
+Revises: 387
 """
-from sqlalchemy import text
+import uuid
+
+import sqlalchemy as sa
+from alembic import op
 
 
-# (group aliases, code, name, description, order, requires verification)
-# Aliases are matched against the service-group code, slug and name. Admins
-# can still add project-specific skills from the category workspace.
-HOME_SERVICE_SKILLS = (
+revision = "388"
+down_revision = "387"
+branch_labels = None
+depends_on = None
+
+
+SKILLS = (
     (("ac", "air conditioner", "air conditioning", "hvac"), "ac_diagnostics", "AC Diagnostics", "Diagnose cooling, electrical and airflow faults.", 10, True),
     (("ac", "air conditioner", "air conditioning", "hvac"), "ac_repair", "AC Repair", "Repair approved AC components after diagnosis.", 20, True),
     (("ac", "air conditioner", "air conditioning", "hvac"), "ac_installation", "AC Installation", "Install and commission supported AC systems.", 30, True),
@@ -54,41 +59,70 @@ HOME_SERVICE_SKILLS = (
     (("painting", "wall"), "wall_repair_putty", "Wall Repair & Putty", "Repair minor wall defects and apply putty before finishing.", 40, False),
 )
 
+SKILL_NAMESPACE = uuid.UUID("33e400b7-1fc7-4f07-9d09-379082ae6305")
 
-async def add_starter_skills(db, category_id, actor_id):
-    """Add applicable starters for service groups that exist in a category.
 
-    Existing (including retired) skills are intentionally left untouched so
-    an explicit admin retirement is never silently reversed.
-    """
-    added = 0
-    for aliases, code, name, description, order, verify in HOME_SERVICE_SKILLS:
-        patterns = [f"%{alias.lower()}%" for alias in aliases]
-        result = await db.execute(text("""
-            WITH matched_group AS (
-                SELECT sg.id
-                  FROM service_groups sg
-                 WHERE sg.category_id=:cid
-                   AND sg.status='active'
-                   AND sg.deleted_at IS NULL
-                   AND (
-                       lower(COALESCE(sg.code,'')) LIKE ANY(CAST(:patterns AS text[]))
-                       OR lower(COALESCE(sg.slug,'')) LIKE ANY(CAST(:patterns AS text[]))
-                       OR lower(sg.name) LIKE ANY(CAST(:patterns AS text[]))
-                   )
-                 ORDER BY sg.display_order, sg.created_at, sg.id
-                 LIMIT 1
-            )
-            INSERT INTO category_skills
-                (category_id, service_group_id, code, name, description, status,
-                 requires_verification, display_order, created_by_user_id, updated_by_user_id)
-            SELECT :cid,matched_group.id,:code,:name,:description,'active',:verify,:ordering,:actor,:actor
-              FROM matched_group
-             WHERE NOT EXISTS (SELECT 1 FROM category_skills
-                 WHERE category_id=:cid AND lower(name)=lower(:name))
-            ON CONFLICT (category_id, code) DO NOTHING
-        """), {"cid": str(category_id), "patterns": patterns, "code": code,
-               "name": name, "description": description, "verify": verify,
-               "ordering": order, "actor": str(actor_id)})
-        added += result.rowcount
-    return added
+def _skill_id(category_id, code: str) -> uuid.UUID:
+    return uuid.uuid5(SKILL_NAMESPACE, f"{category_id}:{code}")
+
+
+def upgrade() -> None:
+    bind = op.get_bind()
+    category_ids = bind.execute(sa.text(
+        "SELECT id FROM service_categories "
+        "WHERE vertical_type='home_services' AND is_active=true ORDER BY created_at, id"
+    )).scalars().all()
+
+    for category_id in category_ids:
+        groups = bind.execute(sa.text("""
+            SELECT id, code, slug, name
+              FROM service_groups
+             WHERE category_id=:cid AND status='active' AND deleted_at IS NULL
+             ORDER BY display_order, created_at, id
+        """), {"cid": category_id}).mappings().all()
+        for aliases, code, name, description, ordering, verify in SKILLS:
+            group = next((row for row in groups if any(
+                alias in " ".join(str(row.get(field) or "").lower() for field in ("code", "slug", "name"))
+                for alias in aliases
+            )), None)
+            if group is None:
+                continue
+
+            # Correct the original AC-only seed, which could be category-wide
+            # when no group match was found during migration 294.
+            bind.execute(sa.text("""
+                UPDATE category_skills
+                   SET service_group_id=:gid, updated_at=now()
+                 WHERE category_id=:cid AND code=:code AND service_group_id IS NULL
+            """), {"cid": category_id, "gid": group["id"], "code": code})
+            bind.execute(sa.text("""
+                INSERT INTO category_skills
+                    (id, category_id, service_group_id, code, name, description,
+                     status, requires_verification, display_order)
+                SELECT :id,:cid,:gid,:code,:name,:description,'active',:verify,:ordering
+                 WHERE NOT EXISTS (
+                    SELECT 1 FROM category_skills
+                     WHERE category_id=:cid AND (code=:code OR lower(name)=lower(:name))
+                 )
+                ON CONFLICT (category_id, code) DO NOTHING
+            """), {
+                "id": _skill_id(category_id, code), "cid": category_id,
+                "gid": group["id"], "code": code, "name": name,
+                "description": description, "verify": verify, "ordering": ordering,
+            })
+
+
+def downgrade() -> None:
+    bind = op.get_bind()
+    category_ids = bind.execute(sa.text(
+        "SELECT id FROM service_categories WHERE vertical_type='home_services'"
+    )).scalars().all()
+    for category_id in category_ids:
+        inserted_ids = [_skill_id(category_id, code) for _, code, *_ in SKILLS]
+        bind.execute(sa.text("""
+            DELETE FROM category_skills cs
+             WHERE cs.id = ANY(CAST(:ids AS uuid[]))
+               AND NOT EXISTS (
+                   SELECT 1 FROM provider_team_member_skills ptms WHERE ptms.skill_id=cs.id
+               )
+        """), {"ids": inserted_ids})

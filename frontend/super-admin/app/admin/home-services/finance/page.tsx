@@ -1506,7 +1506,7 @@ function MonetizationTab() {
               versioned here so changing health evidence cannot silently rewrite a published charge policy.
             </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Btn variant="secondary" onClick={() => router.push("/admin/settings?tab=global&search=provider_health")}>Health scoring settings</Btn>
+              <Btn variant="secondary" onClick={() => router.push("/admin/configuration?tab=registry&search=provider_health")}>Health scoring settings</Btn>
               <Btn variant="secondary" onClick={() => router.push("/admin/trust-quality")}>Formula &amp; health bands</Btn>
             </div>
           </div>
