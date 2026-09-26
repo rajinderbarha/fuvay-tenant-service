@@ -3,7 +3,7 @@ from io import BytesIO
 
 from pypdf import PdfReader
 
-from app.engines.vertical_catalog.topup_invoice import render_topup_invoice_pdf
+from app.engines.vertical_catalog.topup_invoice import _BUNDLED_FUVAY_LOGO, render_topup_invoice_pdf
 
 
 def _invoice():
@@ -33,6 +33,7 @@ def _invoice():
 
 
 def test_invoice_pdf_has_one_readable_page_and_financial_split():
+    assert _BUNDLED_FUVAY_LOGO.name == "fuvay-green-light.png"
     payload = render_topup_invoice_pdf(_invoice())
     assert payload.startswith(b"%PDF")
     reader = PdfReader(BytesIO(payload))

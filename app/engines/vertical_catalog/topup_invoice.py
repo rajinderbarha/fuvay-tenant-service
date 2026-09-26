@@ -39,7 +39,7 @@ from app.engines.tenant_engine.models import Tenant, TenantBilling, TenantBusine
 INVOICE_PROFILE_KEY = "platform_topup_invoice_profile"
 _BUNDLED_FUVAY_LOGO = (
     Path(__file__).resolve().parents[3]
-    / "frontend" / "tenant-portal" / "public" / "brand" / "fuvay-logo.png"
+    / "frontend" / "tenant-portal" / "public" / "brand" / "fuvay-green-light.png"
 )
 
 
