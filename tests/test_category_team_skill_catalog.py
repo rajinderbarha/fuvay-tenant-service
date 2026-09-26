@@ -65,6 +65,12 @@ def test_home_service_starters_cover_standard_trade_groups():
         assert expected in EXPANDED_MIGRATION
     assert "service_group_id" in STARTERS
     assert "service_group_id" in EXPANDED_MIGRATION
+    # asyncpg/PostgreSQL cannot infer a shared bind as both TEXT (LOWER) and
+    # VARCHAR (column insertion/comparison). Explicit casts keep deployment
+    # migrations deterministic on the production driver.
+    assert "CAST(:code AS varchar)" in EXPANDED_MIGRATION
+    assert "lower(CAST(:name AS varchar))" in EXPANDED_MIGRATION
+    assert "CAST(:code AS varchar)" in STARTERS
 
 
 def test_team_creation_no_longer_requires_legacy_tenant_category_column():

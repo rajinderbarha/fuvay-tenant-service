@@ -132,5 +132,5 @@ async def test_starter_skills_are_idempotent_and_do_not_restore_retired(context)
     for call in db.execute.call_args_list:
         sql = str(call.args[0])
         assert "ON CONFLICT (category_id, code) DO NOTHING" in sql
-        assert "lower(name)=lower(:name)" in sql
+        assert "lower(name)=lower(CAST(:name AS varchar))" in sql
         assert "UPDATE" not in sql

@@ -93,16 +93,25 @@ def upgrade() -> None:
             bind.execute(sa.text("""
                 UPDATE category_skills
                    SET service_group_id=:gid, updated_at=now()
-                 WHERE category_id=:cid AND code=:code AND service_group_id IS NULL
+                 WHERE category_id=CAST(:cid AS uuid)
+                   AND code=CAST(:code AS varchar)
+                   AND service_group_id IS NULL
             """), {"cid": category_id, "gid": group["id"], "code": code})
             bind.execute(sa.text("""
                 INSERT INTO category_skills
                     (id, category_id, service_group_id, code, name, description,
                      status, requires_verification, display_order)
-                SELECT :id,:cid,:gid,:code,:name,:description,'active',:verify,:ordering
+                SELECT CAST(:id AS uuid), CAST(:cid AS uuid), CAST(:gid AS uuid),
+                       CAST(:code AS varchar), CAST(:name AS varchar),
+                       CAST(:description AS varchar), 'active',
+                       CAST(:verify AS boolean), CAST(:ordering AS integer)
                  WHERE NOT EXISTS (
                     SELECT 1 FROM category_skills
-                     WHERE category_id=:cid AND (code=:code OR lower(name)=lower(:name))
+                     WHERE category_id=CAST(:cid AS uuid)
+                       AND (
+                           code=CAST(:code AS varchar)
+                           OR lower(name)=lower(CAST(:name AS varchar))
+                       )
                  )
                 ON CONFLICT (category_id, code) DO NOTHING
             """), {

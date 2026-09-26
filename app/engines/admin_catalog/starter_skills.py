@@ -82,10 +82,14 @@ async def add_starter_skills(db, category_id, actor_id):
             INSERT INTO category_skills
                 (category_id, service_group_id, code, name, description, status,
                  requires_verification, display_order, created_by_user_id, updated_by_user_id)
-            SELECT :cid,matched_group.id,:code,:name,:description,'active',:verify,:ordering,:actor,:actor
+            SELECT CAST(:cid AS uuid), matched_group.id, CAST(:code AS varchar),
+                   CAST(:name AS varchar), CAST(:description AS varchar), 'active',
+                   CAST(:verify AS boolean), CAST(:ordering AS integer),
+                   CAST(:actor AS uuid), CAST(:actor AS uuid)
               FROM matched_group
              WHERE NOT EXISTS (SELECT 1 FROM category_skills
-                 WHERE category_id=:cid AND lower(name)=lower(:name))
+                 WHERE category_id=CAST(:cid AS uuid)
+                   AND lower(name)=lower(CAST(:name AS varchar)))
             ON CONFLICT (category_id, code) DO NOTHING
         """), {"cid": str(category_id), "patterns": patterns, "code": code,
                "name": name, "description": description, "verify": verify,
